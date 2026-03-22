@@ -1,0 +1,26 @@
+﻿{
+    "autoReferenced":  true,
+    "includePlatforms":  [
+
+                         ],
+    "references":  [
+                       "STGEngine.Core"
+                   ],
+    "excludePlatforms":  [
+
+                         ],
+    "overrideReferences":  false,
+    "allowUnsafeCode":  false,
+    "precompiledReferences":  [
+
+                              ],
+    "name":  "STGEngine.Runtime",
+    "rootNamespace":  "STGEngine.Runtime",
+    "versionDefines":  [
+
+                       ],
+    "defineConstraints":  [
+
+                          ],
+    "noEngineReferences":  false
+}

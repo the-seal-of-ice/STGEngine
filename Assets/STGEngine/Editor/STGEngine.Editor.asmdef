@@ -1,0 +1,27 @@
+﻿{
+    "autoReferenced":  true,
+    "includePlatforms":  [
+
+                         ],
+    "references":  [
+                       "STGEngine.Core",
+                       "STGEngine.Runtime"
+                   ],
+    "excludePlatforms":  [
+
+                         ],
+    "overrideReferences":  false,
+    "allowUnsafeCode":  false,
+    "precompiledReferences":  [
+
+                              ],
+    "name":  "STGEngine.Editor",
+    "rootNamespace":  "STGEngine.Editor",
+    "versionDefines":  [
+
+                       ],
+    "defineConstraints":  [
+
+                          ],
+    "noEngineReferences":  false
+}
