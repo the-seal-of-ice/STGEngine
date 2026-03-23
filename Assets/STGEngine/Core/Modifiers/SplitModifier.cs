@@ -34,8 +34,7 @@ namespace STGEngine.Core.Modifiers
         public void Step(float dt, ref Vector3 position, ref Vector3 velocity)
         {
             _elapsed += dt;
-            // Movement is handled by the base evaluator; this modifier only tracks time.
-            position += velocity * dt;
+            // Movement is handled by the evaluator; this modifier only tracks time.
         }
 
         /// <summary>

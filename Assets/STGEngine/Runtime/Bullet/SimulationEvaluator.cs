@@ -34,7 +34,6 @@ namespace STGEngine.Runtime.Bullet
 
         // Cached formula modifiers (shared, stateless)
         private List<IFormulaModifier> _formulaMods;
-        private bool _hasSpeedCurve;
         private SpeedCurveModifier _speedCurveMod;
 
         public SimulationEvaluator(BulletPattern pattern)
@@ -89,7 +88,7 @@ namespace STGEngine.Runtime.Bullet
                 var b = _bullets[i];
                 if (!b.Active) continue;
 
-                // Apply simulation modifiers
+                // Apply simulation modifiers (they modify velocity, not position)
                 foreach (var mod in b.SimMods)
                 {
                     if (mod is SplitModifier split)
@@ -112,11 +111,8 @@ namespace STGEngine.Runtime.Bullet
                     }
                 }
 
-                // If no sim mods handled movement (shouldn't happen, but safety)
-                if (b.SimMods.Count == 0)
-                {
-                    b.Position += b.Velocity * dt;
-                }
+                // Unified position advancement (single source of truth)
+                b.Position += b.Velocity * dt;
 
                 b.Elapsed += dt;
             }
@@ -276,7 +272,6 @@ namespace STGEngine.Runtime.Bullet
             var mods = new List<ISimulationModifier>();
             if (_pattern.Modifiers == null) return mods;
 
-            bool hasSimMovement = false;
             foreach (var mod in _pattern.Modifiers)
             {
                 if (mod is ISimulationModifier)
@@ -286,7 +281,6 @@ namespace STGEngine.Runtime.Bullet
                     if (instance != null)
                     {
                         mods.Add(instance);
-                        hasSimMovement = true;
                     }
                 }
             }
@@ -384,7 +378,6 @@ namespace STGEngine.Runtime.Bullet
                     _formulaMods.Add(fm);
                     if (mod is SpeedCurveModifier scm)
                     {
-                        _hasSpeedCurve = true;
                         _speedCurveMod = scm;
                     }
                 }

@@ -111,13 +111,22 @@ namespace STGEngine.Runtime.Preview
                 _simEvaluator.Reset();
                 float dt = 1f / 60f;
                 float target = Playback.CurrentTime;
-                while (target > dt)
+
+                // Even at t=0, we need at least one Step to initialize bullet states
+                if (target <= 0f)
                 {
-                    _simEvaluator.Step(dt);
-                    target -= dt;
+                    _simEvaluator.Step(0f); // Initialize without advancing time
                 }
-                if (target > 0f)
-                    _simEvaluator.Step(target);
+                else
+                {
+                    while (target > dt)
+                    {
+                        _simEvaluator.Step(dt);
+                        target -= dt;
+                    }
+                    if (target > 0f)
+                        _simEvaluator.Step(target);
+                }
 
                 _currStates = _simEvaluator.GetStates();
             }

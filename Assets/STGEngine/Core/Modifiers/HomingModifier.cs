@@ -34,25 +34,16 @@ namespace STGEngine.Core.Modifiers
 
             if (_elapsed < Delay)
             {
-                // Before delay: just move straight
-                position += velocity * dt;
+                // Before delay: velocity unchanged, position advanced by evaluator
                 return;
             }
 
             float speed = velocity.magnitude;
-            if (speed < 0.0001f)
-            {
-                position += velocity * dt;
-                return;
-            }
+            if (speed < 0.0001f) return;
 
             // Compute desired direction
             var toTarget = TargetPosition - position;
-            if (toTarget.sqrMagnitude < 0.0001f)
-            {
-                position += velocity * dt;
-                return;
-            }
+            if (toTarget.sqrMagnitude < 0.0001f) return;
 
             var desiredDir = toTarget.normalized;
             var currentDir = velocity / speed;
@@ -62,7 +53,7 @@ namespace STGEngine.Core.Modifiers
             var newDir = Vector3.RotateTowards(currentDir, desiredDir, maxAngle * Mathf.Deg2Rad, 0f);
 
             velocity = newDir * speed;
-            position += velocity * dt;
+            // Position advancement is handled by SimulationEvaluator
         }
 
         public object CaptureState()

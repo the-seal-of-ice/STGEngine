@@ -29,20 +29,19 @@ namespace STGEngine.Core.Modifiers
         public void Step(float dt, ref Vector3 position, ref Vector3 velocity)
         {
             _lastVelocity = velocity;
-            position += velocity * dt;
+            // Position advancement is handled by SimulationEvaluator;
+            // we check boundary against the *next* position to detect collision.
+            var nextPos = position + velocity * dt;
 
             // Check boundary collision
             if (_bounceCount >= MaxBounces) return;
 
-            float dist = position.magnitude;
+            float dist = nextPos.magnitude;
             if (dist > BoundaryRadius)
             {
                 // Reflect velocity off the sphere normal (pointing inward)
-                var normal = -position.normalized;
+                var normal = -nextPos.normalized;
                 velocity = Vector3.Reflect(velocity, normal);
-
-                // Push position back inside boundary
-                position = position.normalized * (BoundaryRadius - 0.01f);
 
                 _bounceCount++;
             }

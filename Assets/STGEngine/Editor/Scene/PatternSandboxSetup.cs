@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
@@ -34,8 +35,19 @@ namespace STGEngine.Editor.Scene
         [Header("Default Pattern")]
         [Tooltip("Load demo YAML from Resources on start.")]
         [SerializeField] private bool _loadDemoYaml = true;
+        [Tooltip("Default demo pattern to load.")]
+        [SerializeField] private string _defaultDemoPattern = "demo_sphere_homing";
 
         private PatternEditorView _editorView;
+
+        /// <summary>All available demo pattern names in Resources/DefaultPatterns.</summary>
+        private static readonly string[] DemoPatterns = new[]
+        {
+            "demo_ring_wave",
+            "demo_sphere_homing",
+            "demo_cone_bounce",
+            "demo_ring_split",
+        };
 
         private void Awake()
         {
@@ -51,7 +63,17 @@ namespace STGEngine.Editor.Scene
             // Build editor view and attach to UIDocument
             _editorView = new PatternEditorView(_previewer);
 
+            // Wire MeshType change to update bullet visuals
+            _editorView.OnMeshTypeChanged += mt =>
+            {
+                EnsureBulletVisuals(mt);
+                _previewer.SetBulletVisuals(_bulletMesh, _bulletMaterial);
+            };
+
             var root = _uiDocument.rootVisualElement;
+
+            // Demo pattern selector at the top
+            BuildDemoSelector(root);
 
             // Editor panel on the right side
             var panel = _editorView.Root;
@@ -176,25 +198,63 @@ namespace STGEngine.Editor.Scene
             }
         }
 
+        private void BuildDemoSelector(VisualElement root)
+        {
+            var bar = new VisualElement();
+            bar.style.position = Position.Absolute;
+            bar.style.left = 10;
+            bar.style.top = 10;
+            bar.style.flexDirection = FlexDirection.Row;
+            bar.style.alignItems = Align.Center;
+
+            var label = new Label("Demo:");
+            label.style.color = Color.white;
+            label.style.marginRight = 6;
+            bar.Add(label);
+
+            var dropdown = new DropdownField(
+                new System.Collections.Generic.List<string>(DemoPatterns),
+                System.Array.IndexOf(DemoPatterns, _defaultDemoPattern));
+            dropdown.style.width = 200;
+            dropdown.RegisterValueChangedCallback(evt =>
+            {
+                LoadDemoPattern(evt.newValue);
+            });
+            bar.Add(dropdown);
+
+            root.Add(bar);
+        }
+
         private void LoadDemoPattern()
         {
-            var yamlAsset = Resources.Load<TextAsset>("DefaultPatterns/demo_ring_wave");
+            LoadDemoPattern(_defaultDemoPattern);
+        }
+
+        /// <summary>
+        /// Load a named demo pattern from Resources/DefaultPatterns.
+        /// </summary>
+        public void LoadDemoPattern(string patternName)
+        {
+            var yamlAsset = Resources.Load<TextAsset>($"DefaultPatterns/{patternName}");
             if (yamlAsset != null)
             {
                 try
                 {
                     var pattern = YamlSerializer.Deserialize(yamlAsset.text);
                     _editorView.SetPattern(pattern);
-                    Debug.Log("[SandboxSetup] Loaded demo pattern from Resources.");
+                    Debug.Log($"[SandboxSetup] Loaded demo pattern: {patternName}");
                     return;
                 }
                 catch (System.Exception e)
                 {
-                    Debug.LogWarning($"[SandboxSetup] Failed to load demo YAML: {e.Message}");
+                    Debug.LogWarning($"[SandboxSetup] Failed to load demo YAML '{patternName}': {e.Message}");
                 }
             }
 
-            Debug.Log("[SandboxSetup] No demo YAML found, using code-generated default.");
+            Debug.Log($"[SandboxSetup] Demo pattern '{patternName}' not found in Resources.");
         }
+
+        /// <summary>Get available demo pattern names for UI.</summary>
+        public string[] GetDemoPatternNames() => DemoPatterns;
     }
 }

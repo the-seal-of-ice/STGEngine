@@ -29,6 +29,9 @@ namespace STGEngine.Editor.UI
         private DataBinder _emitterBinder;
         private readonly List<DataBinder> _modifierBinders = new();
 
+        /// <summary>Callback invoked when MeshType changes. Scene setup hooks this to update bullet mesh.</summary>
+        public Action<MeshType> OnMeshTypeChanged;
+
         // Root
         private readonly VisualElement _outerContainer; // 最外层容器（定位 + 尺寸 + 背景色）
         private readonly ScrollView _scrollView;        // 滚动视图，内容超出时可垂直滚动
@@ -185,7 +188,11 @@ namespace STGEngine.Editor.UI
                     var cmd = new PropertyChangeCommand<MeshType>(
                         $"Change MeshType to {evt.newValue}",
                         () => _pattern.MeshType,
-                        v => _pattern.MeshType = v,
+                        v =>
+                        {
+                            _pattern.MeshType = v;
+                            OnMeshTypeChanged?.Invoke(v);
+                        },
                         mt);
                     _commandStack.Execute(cmd);
                 }
@@ -378,6 +385,9 @@ namespace STGEngine.Editor.UI
             RebuildEmitterParams();
             RebuildModifierList();
             RebuildCollisionEditor();
+
+            // Notify mesh type change so scene setup can update bullet visuals
+            OnMeshTypeChanged?.Invoke(_pattern.MeshType);
 
             _previewer.SetDefaultPattern(_pattern);
             UpdateTimeSliderRange();
