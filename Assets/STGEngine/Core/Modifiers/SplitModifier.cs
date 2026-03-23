@@ -25,6 +25,9 @@ namespace STGEngine.Core.Modifiers
         /// <summary>Total spread angle in degrees for child bullets.</summary>
         public float SpreadAngle { get; set; } = 60f;
 
+        /// <summary>If true, the parent bullet is destroyed after splitting.</summary>
+        public bool DestroyParent { get; set; } = false;
+
         // Internal state
         private float _elapsed;
         private bool _hasSplit;

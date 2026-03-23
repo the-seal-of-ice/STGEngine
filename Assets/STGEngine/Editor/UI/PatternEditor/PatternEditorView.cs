@@ -278,6 +278,7 @@ namespace STGEngine.Editor.UI
             {
                 _previewer.Playback.Seek(0f);
                 _previewer.ForceRefresh();
+                ResetTimeSliderRange();
             }) { text = "Reset" };
             resetBtn.style.width = 50;  // 固定宽度 50px
             controlBar.Add(resetBtn);
@@ -668,6 +669,11 @@ namespace STGEngine.Editor.UI
                         binder.Bind(spreadAngleField, sm,
                             nameof(SplitModifier.SpreadAngle), _commandStack);
                         container.Add(spreadAngleField);
+
+                        var destroyParentToggle = new Toggle("DestroyParent") { value = sm.DestroyParent };
+                        binder.Bind(destroyParentToggle, sm,
+                            nameof(SplitModifier.DestroyParent), _commandStack);
+                        container.Add(destroyParentToggle);
                         break;
                 }
 
@@ -724,9 +730,12 @@ namespace STGEngine.Editor.UI
 
         private void OnPlaybackTimeChanged(float t)
         {
+            // Grow slider upper bound to follow playback time
+            if (t > _timeSlider.highValue)
+                _timeSlider.highValue = t;
+
             _timeSlider.SetValueWithoutNotify(t);
-            if (_pattern != null)
-                _timeLabel.text = $"{t:F2} / {_pattern.Duration:F2}";
+            _timeLabel.text = $"{t:F2}";
         }
 
         private void OnPlayStateChanged(bool playing)
@@ -771,6 +780,14 @@ namespace STGEngine.Editor.UI
         private void UpdateTimeSliderRange()
         {
             _timeSlider.highValue = Mathf.Max(_pattern?.Duration ?? 5f, 0.1f);
+        }
+
+        /// <summary>Reset slider range back to a small initial value (called on Reset).</summary>
+        private void ResetTimeSliderRange()
+        {
+            _timeSlider.highValue = Mathf.Max(_pattern?.Duration ?? 5f, 0.1f);
+            _timeSlider.SetValueWithoutNotify(0f);
+            _timeLabel.text = "0.00";
         }
 
         private void DisposeModifierBinders()

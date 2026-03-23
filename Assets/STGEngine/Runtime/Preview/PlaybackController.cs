@@ -50,7 +50,7 @@ namespace STGEngine.Runtime.Preview
         /// </summary>
         public void Seek(float time)
         {
-            CurrentTime = Mathf.Clamp(time, 0f, Duration);
+            CurrentTime = Mathf.Max(time, 0f);
             _simLoop.Reset();
             OnTimeChanged?.Invoke(CurrentTime);
         }
@@ -73,18 +73,9 @@ namespace STGEngine.Runtime.Preview
             {
                 CurrentTime += dt;
 
-                if (CurrentTime >= Duration)
+                if (Loop && Duration > 0f && CurrentTime >= Duration)
                 {
-                    if (Loop)
-                    {
-                        CurrentTime %= Duration;
-                    }
-                    else
-                    {
-                        CurrentTime = Duration;
-                        Pause();
-                        return;
-                    }
+                    CurrentTime %= Duration;
                 }
 
                 OnTimeChanged?.Invoke(CurrentTime);

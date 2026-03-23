@@ -103,6 +103,8 @@ namespace STGEngine.Runtime.Bullet
                                 newBullets ??= new List<BulletInstance>();
                                 newBullets.Add(child);
                             }
+                            if (split.DestroyParent)
+                                b.Active = false;
                         }
                     }
                     else
@@ -316,7 +318,8 @@ namespace STGEngine.Runtime.Bullet
                 {
                     SplitTime = sm.SplitTime,
                     SplitCount = sm.SplitCount,
-                    SpreadAngle = sm.SpreadAngle
+                    SpreadAngle = sm.SpreadAngle,
+                    DestroyParent = sm.DestroyParent
                 };
             }
             return null;
