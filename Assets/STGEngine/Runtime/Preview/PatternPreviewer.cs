@@ -1,0 +1,139 @@
+using System.Collections.Generic;
+using UnityEngine;
+using STGEngine.Core.DataModel;
+using STGEngine.Runtime.Bullet;
+using STGEngine.Runtime.Rendering;
+
+namespace STGEngine.Runtime.Preview
+{
+    /// <summary>
+    /// Sandbox previewer MonoBehaviour. Owns no time logic — delegates entirely
+    /// to PlaybackController (validation #10). Evaluates bullet states via
+    /// BulletEvaluator and renders via BulletRenderer with alpha interpolation.
+    /// </summary>
+    [AddComponentMenu("STGEngine/Pattern Previewer")]
+    public class PatternPreviewer : MonoBehaviour
+    {
+        [Header("Bullet Visuals")]
+        [SerializeField] private Mesh _bulletMesh;
+        [SerializeField] private Material _bulletMaterial;
+
+        /// <summary>Playback controller — exposed for Editor UI binding.</summary>
+        public PlaybackController Playback { get; private set; } = new();
+
+        /// <summary>Current pattern being previewed.</summary>
+        public BulletPattern Pattern
+        {
+            get => _pattern;
+            set
+            {
+                _pattern = value;
+                if (_pattern != null)
+                    Playback.Duration = _pattern.Duration;
+            }
+        }
+
+        private BulletPattern _pattern;
+        private BulletRenderer _renderer;
+
+        // Two-frame state for render interpolation
+        private List<BulletState> _prevStates;
+        private List<BulletState> _currStates;
+
+        private void Awake()
+        {
+            _renderer = new BulletRenderer();
+            Playback.OnTimeChanged += OnTimeChanged;
+        }
+
+        private void OnDestroy()
+        {
+            Playback.OnTimeChanged -= OnTimeChanged;
+            _renderer?.Dispose();
+        }
+
+        private void Update()
+        {
+            Playback.Tick(Time.deltaTime);
+            Render();
+        }
+
+        /// <summary>
+        /// Configure bullet visuals at runtime (called by scene setup).
+        /// </summary>
+        public void SetBulletVisuals(Mesh mesh, Material material)
+        {
+            _bulletMesh = mesh;
+            _bulletMaterial = material;
+        }
+
+        /// <summary>
+        /// Set a default pattern for quick testing (called from scene setup).
+        /// </summary>
+        public void SetDefaultPattern(BulletPattern pattern)
+        {
+            Pattern = pattern;
+            Playback.Seek(0f);
+            ForceRefresh();
+            Playback.Play();
+        }
+
+        /// <summary>
+        /// Force-refresh states at current time. Call after Seek or pattern change
+        /// to snap visuals without interpolation artifacts.
+        /// </summary>
+        public void ForceRefresh()
+        {
+            if (_pattern == null) return;
+            _currStates = BulletEvaluator.EvaluateAll(_pattern, Playback.CurrentTime);
+            _prevStates = _currStates; // No interpolation gap
+        }
+
+        /// <summary>Called by PlaybackController on every time change.</summary>
+        private void OnTimeChanged(float t)
+        {
+            if (_pattern == null) return;
+
+            // Shift current → previous for interpolation
+            _prevStates = _currStates;
+            _currStates = BulletEvaluator.EvaluateAll(_pattern, t);
+        }
+
+        /// <summary>Render with alpha interpolation between prev and curr states.</summary>
+        private void Render()
+        {
+            if (_currStates == null || _bulletMesh == null || _bulletMaterial == null)
+                return;
+
+            float alpha = Playback.Alpha;
+            bool canInterpolate = _prevStates != null
+                && _prevStates.Count == _currStates.Count;
+
+            for (int i = 0; i < _currStates.Count; i++)
+            {
+                var curr = _currStates[i];
+                Vector3 pos;
+                float scale;
+                Color color;
+
+                if (canInterpolate)
+                {
+                    var prev = _prevStates[i];
+                    pos = Vector3.Lerp(prev.Position, curr.Position, alpha);
+                    scale = Mathf.Lerp(prev.Scale, curr.Scale, alpha);
+                    color = Color.Lerp(prev.Color, curr.Color, alpha);
+                }
+                else
+                {
+                    pos = curr.Position;
+                    scale = curr.Scale;
+                    color = curr.Color;
+                }
+
+                _renderer.Submit(_bulletMesh, _bulletMaterial, pos, scale, color);
+            }
+
+            _renderer.Flush();
+        }
+    }
+}

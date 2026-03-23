@@ -30,6 +30,7 @@ crashlytics-buildid.txt
 # OS
 .DS_Store
 Thumbs.db
+~$*
 
 # IDE
 .idea/

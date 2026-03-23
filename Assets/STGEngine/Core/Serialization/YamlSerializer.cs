@@ -1,0 +1,591 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using UnityEngine;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+using STGEngine.Core.DataModel;
+using STGEngine.Core.Modifiers;
+// Alias to avoid conflict with YamlDotNet.Core.IEmitter
+using IEmitterData = STGEngine.Core.Emitters.IEmitter;
+using YamlEmitter = YamlDotNet.Core.IEmitter;
+
+namespace STGEngine.Core.Serialization
+{
+    /// <summary>
+    /// YamlDotNet wrapper with polymorphic type support via TypeRegistry.
+    /// Handles IEmitter, IModifier, Vector3, Color, SerializableCurve.
+    /// </summary>
+    public static class YamlSerializer
+    {
+        private static ISerializer _serializer;
+        private static IDeserializer _deserializer;
+
+        public static ISerializer Serializer
+        {
+            get
+            {
+                if (_serializer == null) Build();
+                return _serializer;
+            }
+        }
+
+        public static IDeserializer Deserializer
+        {
+            get
+            {
+                if (_deserializer == null) Build();
+                return _deserializer;
+            }
+        }
+
+        private static void Build()
+        {
+            TypeRegistry.EnsureInitialized();
+
+            var converters = new IYamlTypeConverter[]
+            {
+                new EmitterTypeConverter(),
+                new ModifierTypeConverter(),
+                new Vector3TypeConverter(),
+                new ColorTypeConverter(),
+                new SerializableCurveTypeConverter(),
+            };
+
+            var sb = new SerializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull);
+            var db = new DeserializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance);
+
+            foreach (var c in converters)
+            {
+                sb = sb.WithTypeConverter(c);
+                db = db.WithTypeConverter(c);
+            }
+
+            _serializer = sb.Build();
+            _deserializer = db.Build();
+        }
+
+        /// <summary>Force rebuild after TypeRegistry changes.</summary>
+        public static void Reset()
+        {
+            _serializer = null;
+            _deserializer = null;
+        }
+
+        public static string Serialize(BulletPattern pattern)
+        {
+            return Serializer.Serialize(pattern);
+        }
+
+        public static BulletPattern Deserialize(string yaml)
+        {
+            return Deserializer.Deserialize<BulletPattern>(yaml);
+        }
+
+        public static void SerializeToFile(BulletPattern pattern, string path)
+        {
+            File.WriteAllText(path, Serialize(pattern));
+        }
+
+        public static BulletPattern DeserializeFromFile(string path)
+        {
+            return Deserialize(File.ReadAllText(path));
+        }
+
+        // ─── Polymorphic TypeConverter for IEmitter ───
+
+        private class EmitterTypeConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type) => typeof(IEmitterData).IsAssignableFrom(type);
+
+            public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+            {
+                var props = ReadMapping(parser);
+
+                if (!props.TryGetValue("type", out var tagObj) || tagObj is not string tag)
+                    throw new YamlException("Emitter missing 'type' field");
+
+                var concreteType = TypeRegistry.Resolve(tag);
+                var instance = Activator.CreateInstance(concreteType);
+                ApplyProperties(instance, concreteType, props);
+                return instance;
+            }
+
+            public void WriteYaml(YamlEmitter emitter, object value, Type type, ObjectSerializer rootSerializer)
+            {
+                var concreteType = value.GetType();
+                var tag = TypeRegistry.GetTag(concreteType);
+
+                emitter.Emit(new MappingStart());
+                EmitScalar(emitter, "type");
+                EmitScalar(emitter, tag);
+                EmitObjectProperties(emitter, value, concreteType);
+                emitter.Emit(new MappingEnd());
+            }
+        }
+
+        // ─── Polymorphic TypeConverter for IModifier ───
+
+        private class ModifierTypeConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type) => typeof(IModifier).IsAssignableFrom(type);
+
+            public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+            {
+                var props = ReadMapping(parser);
+
+                if (!props.TryGetValue("type", out var tagObj) || tagObj is not string tag)
+                    throw new YamlException("Modifier missing 'type' field");
+
+                var concreteType = TypeRegistry.Resolve(tag);
+                var instance = Activator.CreateInstance(concreteType);
+                ApplyProperties(instance, concreteType, props);
+                return instance;
+            }
+
+            public void WriteYaml(YamlEmitter emitter, object value, Type type, ObjectSerializer rootSerializer)
+            {
+                var concreteType = value.GetType();
+                var tag = TypeRegistry.GetTag(concreteType);
+
+                emitter.Emit(new MappingStart());
+                EmitScalar(emitter, "type");
+                EmitScalar(emitter, tag);
+                EmitObjectProperties(emitter, value, concreteType);
+                emitter.Emit(new MappingEnd());
+            }
+        }
+
+        // ─── Vector3 TypeConverter ───
+
+        private class Vector3TypeConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type) => type == typeof(Vector3);
+
+            public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+            {
+                parser.Consume<MappingStart>();
+                float x = 0, y = 0, z = 0;
+                while (!parser.TryConsume<MappingEnd>(out _))
+                {
+                    var key = parser.Consume<Scalar>().Value;
+                    var val = ParseFloat(parser.Consume<Scalar>().Value);
+                    switch (key)
+                    {
+                        case "x": x = val; break;
+                        case "y": y = val; break;
+                        case "z": z = val; break;
+                    }
+                }
+                return new Vector3(x, y, z);
+            }
+
+            public void WriteYaml(YamlEmitter emitter, object value, Type type, ObjectSerializer rootSerializer)
+            {
+                var v = (Vector3)value;
+                emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(v.x));
+                EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(v.y));
+                EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(v.z));
+                emitter.Emit(new MappingEnd());
+            }
+        }
+
+        // ─── Color TypeConverter ───
+
+        private class ColorTypeConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type) => type == typeof(Color);
+
+            public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+            {
+                parser.Consume<MappingStart>();
+                float r = 1, g = 1, b = 1, a = 1;
+                while (!parser.TryConsume<MappingEnd>(out _))
+                {
+                    var key = parser.Consume<Scalar>().Value;
+                    var val = ParseFloat(parser.Consume<Scalar>().Value);
+                    switch (key)
+                    {
+                        case "r": r = val; break;
+                        case "g": g = val; break;
+                        case "b": b = val; break;
+                        case "a": a = val; break;
+                    }
+                }
+                return new Color(r, g, b, a);
+            }
+
+            public void WriteYaml(YamlEmitter emitter, object value, Type type, ObjectSerializer rootSerializer)
+            {
+                var c = (Color)value;
+                emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                EmitScalar(emitter, "r"); EmitScalar(emitter, Fmt(c.r));
+                EmitScalar(emitter, "g"); EmitScalar(emitter, Fmt(c.g));
+                EmitScalar(emitter, "b"); EmitScalar(emitter, Fmt(c.b));
+                EmitScalar(emitter, "a"); EmitScalar(emitter, Fmt(c.a));
+                emitter.Emit(new MappingEnd());
+            }
+        }
+
+        // ─── SerializableCurve TypeConverter ───
+
+        private class SerializableCurveTypeConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type) => type == typeof(SerializableCurve);
+
+            public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+            {
+                var curve = new SerializableCurve();
+                parser.Consume<MappingStart>();
+
+                while (!parser.TryConsume<MappingEnd>(out _))
+                {
+                    var key = parser.Consume<Scalar>().Value;
+                    if (key == "keyframes")
+                    {
+                        parser.Consume<SequenceStart>();
+                        while (!parser.TryConsume<SequenceEnd>(out _))
+                        {
+                            parser.Consume<MappingStart>();
+                            var kf = new CurveKeyframe();
+                            while (!parser.TryConsume<MappingEnd>(out _))
+                            {
+                                var kfKey = parser.Consume<Scalar>().Value;
+                                var kfVal = ParseFloat(parser.Consume<Scalar>().Value);
+                                switch (kfKey)
+                                {
+                                    case "time": kf.Time = kfVal; break;
+                                    case "value": kf.Value = kfVal; break;
+                                    case "in_tangent": kf.InTangent = kfVal; break;
+                                    case "out_tangent": kf.OutTangent = kfVal; break;
+                                }
+                            }
+                            curve.Keyframes.Add(kf);
+                        }
+                    }
+                    else
+                    {
+                        // Skip unknown keys
+                        SkipValue(parser);
+                    }
+                }
+
+                return curve;
+            }
+
+            public void WriteYaml(YamlEmitter emitter, object value, Type type, ObjectSerializer rootSerializer)
+            {
+                var curve = (SerializableCurve)value;
+                emitter.Emit(new MappingStart());
+                EmitScalar(emitter, "keyframes");
+                emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Block));
+
+                foreach (var kf in curve.Keyframes)
+                {
+                    emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                    EmitScalar(emitter, "time"); EmitScalar(emitter, Fmt(kf.Time));
+                    EmitScalar(emitter, "value"); EmitScalar(emitter, Fmt(kf.Value));
+                    if (kf.InTangent != 0f)
+                    {
+                        EmitScalar(emitter, "in_tangent"); EmitScalar(emitter, Fmt(kf.InTangent));
+                    }
+                    if (kf.OutTangent != 0f)
+                    {
+                        EmitScalar(emitter, "out_tangent"); EmitScalar(emitter, Fmt(kf.OutTangent));
+                    }
+                    emitter.Emit(new MappingEnd());
+                }
+
+                emitter.Emit(new SequenceEnd());
+                emitter.Emit(new MappingEnd());
+            }
+        }
+
+        // ─── Shared Helpers ───
+
+        /// <summary>
+        /// Read a YAML mapping into a Dictionary. Values can be:
+        /// string (scalar), Vector3 (mapping with x/y/z), SerializableCurve (mapping with keyframes),
+        /// or List of IModifier (sequence).
+        /// Handles nested structures by detecting the next parser event type.
+        /// </summary>
+        private static Dictionary<string, object> ReadMapping(IParser parser)
+        {
+            parser.Consume<MappingStart>();
+            var result = new Dictionary<string, object>();
+
+            while (!parser.TryConsume<MappingEnd>(out _))
+            {
+                var key = parser.Consume<Scalar>().Value;
+                result[key] = ReadValue(parser);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Read a single YAML value, dispatching by event type.
+        /// </summary>
+        private static object ReadValue(IParser parser)
+        {
+            if (parser.Accept<Scalar>(out _))
+            {
+                return parser.Consume<Scalar>().Value;
+            }
+
+            if (parser.Accept<MappingStart>(out _))
+            {
+                // Could be Vector3, SerializableCurve, or generic mapping
+                return ReadMapping(parser);
+            }
+
+            if (parser.Accept<SequenceStart>(out _))
+            {
+                return ReadSequence(parser);
+            }
+
+            // Skip anything else
+            SkipValue(parser);
+            return null;
+        }
+
+        private static List<object> ReadSequence(IParser parser)
+        {
+            parser.Consume<SequenceStart>();
+            var list = new List<object>();
+            while (!parser.TryConsume<SequenceEnd>(out _))
+            {
+                list.Add(ReadValue(parser));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Apply parsed properties to an object instance via reflection.
+        /// Handles scalar types, Vector3 (from nested dict), SerializableCurve (from nested dict).
+        /// </summary>
+        private static void ApplyProperties(object instance, Type type,
+            Dictionary<string, object> properties)
+        {
+            foreach (var kvp in properties)
+            {
+                if (kvp.Key == "type") continue; // Already consumed
+
+                var propName = SnakeToPascal(kvp.Key);
+                var prop = type.GetProperty(propName);
+                if (prop == null) continue;
+
+                prop.SetValue(instance, ConvertToType(kvp.Value, prop.PropertyType));
+            }
+        }
+
+        /// <summary>
+        /// Convert a parsed YAML value to the target C# type.
+        /// </summary>
+        private static object ConvertToType(object value, Type targetType)
+        {
+            if (value == null) return null;
+
+            // String scalar → primitive conversion
+            if (value is string s)
+            {
+                if (targetType == typeof(int)) return int.Parse(s, Inv);
+                if (targetType == typeof(float)) return float.Parse(s, Inv);
+                if (targetType == typeof(string)) return s;
+                if (targetType == typeof(bool)) return bool.Parse(s);
+                if (targetType.IsEnum) return Enum.Parse(targetType, s, true);
+                return s;
+            }
+
+            // Nested mapping → Vector3 or SerializableCurve
+            if (value is Dictionary<string, object> dict)
+            {
+                if (targetType == typeof(Vector3))
+                {
+                    return new Vector3(
+                        dict.TryGetValue("x", out var xv) ? ParseFloat(xv) : 0f,
+                        dict.TryGetValue("y", out var yv) ? ParseFloat(yv) : 0f,
+                        dict.TryGetValue("z", out var zv) ? ParseFloat(zv) : 0f
+                    );
+                }
+
+                if (targetType == typeof(Color))
+                {
+                    return new Color(
+                        dict.TryGetValue("r", out var rv) ? ParseFloat(rv) : 1f,
+                        dict.TryGetValue("g", out var gv) ? ParseFloat(gv) : 1f,
+                        dict.TryGetValue("b", out var bv) ? ParseFloat(bv) : 1f,
+                        dict.TryGetValue("a", out var av) ? ParseFloat(av) : 1f
+                    );
+                }
+
+                if (targetType == typeof(SerializableCurve))
+                {
+                    return ConvertToCurve(dict);
+                }
+            }
+
+            return value;
+        }
+
+        private static SerializableCurve ConvertToCurve(Dictionary<string, object> dict)
+        {
+            var curve = new SerializableCurve();
+            if (dict.TryGetValue("keyframes", out var kfObj) && kfObj is List<object> kfList)
+            {
+                foreach (var item in kfList)
+                {
+                    if (item is Dictionary<string, object> kfDict)
+                    {
+                        var kf = new CurveKeyframe();
+                        if (kfDict.TryGetValue("time", out var t)) kf.Time = ParseFloat(t);
+                        if (kfDict.TryGetValue("value", out var v)) kf.Value = ParseFloat(v);
+                        if (kfDict.TryGetValue("in_tangent", out var it)) kf.InTangent = ParseFloat(it);
+                        if (kfDict.TryGetValue("out_tangent", out var ot)) kf.OutTangent = ParseFloat(ot);
+                        curve.Keyframes.Add(kf);
+                    }
+                }
+            }
+            return curve;
+        }
+
+        /// <summary>Emit all public properties of an object, skipping TypeName and RequiresSimulation.</summary>
+        private static void EmitObjectProperties(YamlEmitter emitter, object value, Type type)
+        {
+            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (prop.Name == "TypeName" || prop.Name == "RequiresSimulation") continue;
+                if (!prop.CanRead) continue;
+
+                var val = prop.GetValue(value);
+                if (val == null) continue;
+
+                EmitScalar(emitter, PascalToSnake(prop.Name));
+                EmitValue(emitter, val);
+            }
+        }
+
+        /// <summary>Emit a value, dispatching by runtime type.</summary>
+        private static void EmitValue(YamlEmitter emitter, object val)
+        {
+            switch (val)
+            {
+                case Vector3 v3:
+                    emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                    EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(v3.x));
+                    EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(v3.y));
+                    EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(v3.z));
+                    emitter.Emit(new MappingEnd());
+                    break;
+
+                case Color c:
+                    emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                    EmitScalar(emitter, "r"); EmitScalar(emitter, Fmt(c.r));
+                    EmitScalar(emitter, "g"); EmitScalar(emitter, Fmt(c.g));
+                    EmitScalar(emitter, "b"); EmitScalar(emitter, Fmt(c.b));
+                    EmitScalar(emitter, "a"); EmitScalar(emitter, Fmt(c.a));
+                    emitter.Emit(new MappingEnd());
+                    break;
+
+                case SerializableCurve curve:
+                    emitter.Emit(new MappingStart());
+                    EmitScalar(emitter, "keyframes");
+                    emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Block));
+                    foreach (var kf in curve.Keyframes)
+                    {
+                        emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                        EmitScalar(emitter, "time"); EmitScalar(emitter, Fmt(kf.Time));
+                        EmitScalar(emitter, "value"); EmitScalar(emitter, Fmt(kf.Value));
+                        if (kf.InTangent != 0f)
+                        {
+                            EmitScalar(emitter, "in_tangent"); EmitScalar(emitter, Fmt(kf.InTangent));
+                        }
+                        if (kf.OutTangent != 0f)
+                        {
+                            EmitScalar(emitter, "out_tangent"); EmitScalar(emitter, Fmt(kf.OutTangent));
+                        }
+                        emitter.Emit(new MappingEnd());
+                    }
+                    emitter.Emit(new SequenceEnd());
+                    emitter.Emit(new MappingEnd());
+                    break;
+
+                default:
+                    EmitScalar(emitter, FmtValue(val));
+                    break;
+            }
+        }
+
+        /// <summary>Skip a YAML value (scalar, mapping, or sequence) without consuming it into data.</summary>
+        private static void SkipValue(IParser parser)
+        {
+            parser.SkipThisAndNestedEvents();
+        }
+
+        private static void EmitScalar(YamlEmitter emitter, string value)
+        {
+            emitter.Emit(new Scalar(value));
+        }
+
+        private static readonly System.Globalization.CultureInfo Inv =
+            System.Globalization.CultureInfo.InvariantCulture;
+
+        private static string Fmt(float v) => v.ToString("G", Inv);
+
+        private static float ParseFloat(string s) => float.Parse(s, Inv);
+
+        private static float ParseFloat(object o)
+        {
+            if (o is string s) return float.Parse(s, Inv);
+            if (o is float f) return f;
+            if (o is double d) return (float)d;
+            if (o is int i) return i;
+            return 0f;
+        }
+
+        private static string FmtValue(object val)
+        {
+            if (val is float f) return Fmt(f);
+            if (val is int i) return i.ToString();
+            return val.ToString();
+        }
+
+        /// <summary>Convert snake_case to PascalCase.</summary>
+        private static string SnakeToPascal(string snake)
+        {
+            var parts = snake.Split('_');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i].Length > 0)
+                    parts[i] = char.ToUpper(parts[i][0]) + parts[i].Substring(1);
+            }
+            return string.Join("", parts);
+        }
+
+        /// <summary>Convert PascalCase to snake_case.</summary>
+        private static string PascalToSnake(string pascal)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < pascal.Length; i++)
+            {
+                if (char.IsUpper(pascal[i]))
+                {
+                    if (i > 0) sb.Append('_');
+                    sb.Append(char.ToLower(pascal[i]));
+                }
+                else
+                {
+                    sb.Append(pascal[i]);
+                }
+            }
+            return sb.ToString();
+        }
+    }
+}
