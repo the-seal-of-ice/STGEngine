@@ -9,7 +9,8 @@ namespace STGEngine.Runtime.Preview
     /// <summary>
     /// Sandbox previewer MonoBehaviour. Owns no time logic — delegates entirely
     /// to PlaybackController (validation #10). Evaluates bullet states via
-    /// BulletEvaluator and renders via BulletRenderer with alpha interpolation.
+    /// BulletEvaluator (formula path) or SimulationEvaluator (simulation path)
+    /// and renders via BulletRenderer with alpha interpolation.
     /// </summary>
     [AddComponentMenu("STGEngine/Pattern Previewer")]
     public class PatternPreviewer : MonoBehaviour
@@ -29,16 +30,34 @@ namespace STGEngine.Runtime.Preview
             {
                 _pattern = value;
                 if (_pattern != null)
+                {
                     Playback.Duration = _pattern.Duration;
+                    // Determine evaluation path
+                    _useSimulation = SimulationEvaluator.RequiresSimulation(_pattern);
+                    if (_useSimulation)
+                        _simEvaluator = new SimulationEvaluator(_pattern);
+                    else
+                        _simEvaluator = null;
+                }
+                else
+                {
+                    _useSimulation = false;
+                    _simEvaluator = null;
+                }
             }
         }
 
         private BulletPattern _pattern;
         private BulletRenderer _renderer;
+        private bool _useSimulation;
+        private SimulationEvaluator _simEvaluator;
 
         // Two-frame state for render interpolation
         private List<BulletState> _prevStates;
         private List<BulletState> _currStates;
+
+        /// <summary>Current bullet states for external consumers (e.g. CollisionVisualizer).</summary>
+        public List<BulletState> CurrentStates => _currStates;
 
         private void Awake()
         {
@@ -85,7 +104,27 @@ namespace STGEngine.Runtime.Preview
         public void ForceRefresh()
         {
             if (_pattern == null) return;
-            _currStates = BulletEvaluator.EvaluateAll(_pattern, Playback.CurrentTime);
+
+            if (_useSimulation)
+            {
+                // For simulation path, reset and re-simulate to current time
+                _simEvaluator.Reset();
+                float dt = 1f / 60f;
+                float target = Playback.CurrentTime;
+                while (target > dt)
+                {
+                    _simEvaluator.Step(dt);
+                    target -= dt;
+                }
+                if (target > 0f)
+                    _simEvaluator.Step(target);
+
+                _currStates = _simEvaluator.GetStates();
+            }
+            else
+            {
+                _currStates = BulletEvaluator.EvaluateAll(_pattern, Playback.CurrentTime);
+            }
             _prevStates = _currStates; // No interpolation gap
         }
 
@@ -94,9 +133,20 @@ namespace STGEngine.Runtime.Preview
         {
             if (_pattern == null) return;
 
-            // Shift current → previous for interpolation
             _prevStates = _currStates;
-            _currStates = BulletEvaluator.EvaluateAll(_pattern, t);
+
+            if (_useSimulation)
+            {
+                // SimulationEvaluator is stepped by the fixed-timestep loop,
+                // so each OnTimeChanged corresponds to one logic tick.
+                float dt = 1f / 60f;
+                _simEvaluator.Step(dt);
+                _currStates = _simEvaluator.GetStates();
+            }
+            else
+            {
+                _currStates = BulletEvaluator.EvaluateAll(_pattern, t);
+            }
         }
 
         /// <summary>Render with alpha interpolation between prev and curr states.</summary>

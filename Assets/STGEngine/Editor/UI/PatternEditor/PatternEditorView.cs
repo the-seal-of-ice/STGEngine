@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
@@ -45,6 +46,8 @@ namespace STGEngine.Editor.UI
         private FloatField _bulletScaleField;
         private ColorField _bulletColorField;
         private FloatField _durationField;
+        private DropdownField _meshTypeDropdown;
+        private VisualElement _collisionContainer;
 
         // Playback
         private Slider _timeSlider;
@@ -58,6 +61,9 @@ namespace STGEngine.Editor.UI
         {
             { "point", () => new PointEmitter() },
             { "ring", () => new RingEmitter() },
+            { "sphere", () => new SphereEmitter() },
+            { "line", () => new LineEmitter() },
+            { "cone", () => new ConeEmitter() },
         };
 
         private static readonly Dictionary<string, Func<IModifier>> ModifierFactories = new()
@@ -65,6 +71,9 @@ namespace STGEngine.Editor.UI
             { "speed_curve", () => new SpeedCurveModifier() },
             { "wave", () => new WaveModifier() },
             { "wave_independent", () => new IndependentWaveModifier() },
+            { "homing", () => new HomingModifier() },
+            { "bounce", () => new BounceModifier() },
+            { "split", () => new SplitModifier() },
         };
 
         public VisualElement Root => _outerContainer;
@@ -154,16 +163,39 @@ namespace STGEngine.Editor.UI
         // ── "Pattern" 区段 ──
         private void BuildPatternSection()
         {
-            _root.Add(MakeHeader("Pattern"));  // 区段标题 "Pattern"（蓝色，带下划线）
+            _root.Add(MakeHeader("Pattern"));
 
-            _bulletScaleField = new FloatField("Scale");    // 弹幕缩放 FloatField，label="Scale"
+            _bulletScaleField = new FloatField("Scale");
             _root.Add(_bulletScaleField);
 
-            _bulletColorField = new ColorField("Color");    // 弹幕颜色 自定义 RGBA 编辑器，label="Color"
+            _bulletColorField = new ColorField("Color");
             _root.Add(_bulletColorField);
 
-            _durationField = new FloatField("Duration");    // 弹幕持续时间 FloatField，label="Duration"
+            _durationField = new FloatField("Duration");
             _root.Add(_durationField);
+
+            // MeshType dropdown
+            var meshTypes = new List<string> { "Sphere", "Diamond", "Arrow", "Rice" };
+            _meshTypeDropdown = new DropdownField("MeshType", meshTypes, 0);
+            _meshTypeDropdown.RegisterValueChangedCallback(evt =>
+            {
+                if (_pattern == null) return;
+                if (Enum.TryParse<MeshType>(evt.newValue, out var mt))
+                {
+                    var cmd = new PropertyChangeCommand<MeshType>(
+                        $"Change MeshType to {evt.newValue}",
+                        () => _pattern.MeshType,
+                        v => _pattern.MeshType = v,
+                        mt);
+                    _commandStack.Execute(cmd);
+                }
+            });
+            _root.Add(_meshTypeDropdown);
+
+            // Collision shape section
+            _root.Add(MakeHeader("Collision"));
+            _collisionContainer = new VisualElement();
+            _root.Add(_collisionContainer);
         }
 
         // ── "Emitter" 区段 ──
@@ -342,8 +374,10 @@ namespace STGEngine.Editor.UI
 
             var emitterTag = _pattern.Emitter?.TypeName ?? "point";
             _emitterTypeDropdown.SetValueWithoutNotify(emitterTag);
+            _meshTypeDropdown.SetValueWithoutNotify(_pattern.MeshType.ToString());
             RebuildEmitterParams();
             RebuildModifierList();
+            RebuildCollisionEditor();
 
             _previewer.SetDefaultPattern(_pattern);
             UpdateTimeSliderRange();
@@ -423,17 +457,57 @@ namespace STGEngine.Editor.UI
                     break;
 
                 case RingEmitter ring:
-                    var radiusField = new FloatField("Radius");  // RingEmitter 的半径 FloatField
+                    var radiusField = new FloatField("Radius");
                     _emitterBinder.Bind(radiusField, ring,
                         nameof(RingEmitter.Radius), _commandStack);
                     _emitterParamsContainer.Add(radiusField);
 
-                    var ringSpeedField = new FloatField("Speed");  // RingEmitter 的速度 FloatField
+                    var ringSpeedField = new FloatField("Speed");
                     _emitterBinder.Bind(ringSpeedField, ring,
                         nameof(RingEmitter.Speed), _commandStack);
                     _emitterParamsContainer.Add(ringSpeedField);
-                    // ★ 这是 Emitter 区段的最后一个字段，如果和 "Modifiers" 标题重叠，
-                    //   可给 _emitterParamsContainer 加 marginBottom，或增大 MakeHeader 的 marginTop
+                    break;
+
+                case SphereEmitter sphere:
+                    var sphRadiusField = new FloatField("Radius");
+                    _emitterBinder.Bind(sphRadiusField, sphere,
+                        nameof(SphereEmitter.Radius), _commandStack);
+                    _emitterParamsContainer.Add(sphRadiusField);
+
+                    var sphSpeedField = new FloatField("Speed");
+                    _emitterBinder.Bind(sphSpeedField, sphere,
+                        nameof(SphereEmitter.Speed), _commandStack);
+                    _emitterParamsContainer.Add(sphSpeedField);
+                    break;
+
+                case LineEmitter line:
+                    var lineSpeedField = new FloatField("Speed");
+                    _emitterBinder.Bind(lineSpeedField, line,
+                        nameof(LineEmitter.Speed), _commandStack);
+                    _emitterParamsContainer.Add(lineSpeedField);
+
+                    // StartPoint / EndPoint as 3 float fields each
+                    _emitterParamsContainer.Add(MakeVector3Editor("Start", line,
+                        nameof(LineEmitter.StartPoint), _emitterBinder));
+                    _emitterParamsContainer.Add(MakeVector3Editor("End", line,
+                        nameof(LineEmitter.EndPoint), _emitterBinder));
+                    break;
+
+                case ConeEmitter cone:
+                    var coneSpeedField = new FloatField("Speed");
+                    _emitterBinder.Bind(coneSpeedField, cone,
+                        nameof(ConeEmitter.Speed), _commandStack);
+                    _emitterParamsContainer.Add(coneSpeedField);
+
+                    var angleField = new FloatField("Angle");
+                    _emitterBinder.Bind(angleField, cone,
+                        nameof(ConeEmitter.Angle), _commandStack);
+                    _emitterParamsContainer.Add(angleField);
+
+                    var coneRadiusField = new FloatField("Radius");
+                    _emitterBinder.Bind(coneRadiusField, cone,
+                        nameof(ConeEmitter.Radius), _commandStack);
+                    _emitterParamsContainer.Add(coneRadiusField);
                     break;
             }
 
@@ -541,6 +615,50 @@ namespace STGEngine.Editor.UI
                             nameof(IndependentWaveModifier.Axis), _commandStack);
                         container.Add(iwAxisDropdown);
                         break;
+
+                    case HomingModifier hm:
+                        container.Add(MakeVector3Editor("Target", hm,
+                            nameof(HomingModifier.TargetPosition), binder));
+
+                        var turnSpeedField = new FloatField("TurnSpeed");
+                        binder.Bind(turnSpeedField, hm,
+                            nameof(HomingModifier.TurnSpeed), _commandStack);
+                        container.Add(turnSpeedField);
+
+                        var delayField = new FloatField("Delay");
+                        binder.Bind(delayField, hm,
+                            nameof(HomingModifier.Delay), _commandStack);
+                        container.Add(delayField);
+                        break;
+
+                    case BounceModifier bm:
+                        var boundaryField = new FloatField("BoundaryRadius");
+                        binder.Bind(boundaryField, bm,
+                            nameof(BounceModifier.BoundaryRadius), _commandStack);
+                        container.Add(boundaryField);
+
+                        var maxBouncesField = new IntegerField("MaxBounces");
+                        binder.Bind(maxBouncesField, bm,
+                            nameof(BounceModifier.MaxBounces), _commandStack);
+                        container.Add(maxBouncesField);
+                        break;
+
+                    case SplitModifier sm:
+                        var splitTimeField = new FloatField("SplitTime");
+                        binder.Bind(splitTimeField, sm,
+                            nameof(SplitModifier.SplitTime), _commandStack);
+                        container.Add(splitTimeField);
+
+                        var splitCountField = new IntegerField("SplitCount");
+                        binder.Bind(splitCountField, sm,
+                            nameof(SplitModifier.SplitCount), _commandStack);
+                        container.Add(splitCountField);
+
+                        var spreadAngleField = new FloatField("SpreadAngle");
+                        binder.Bind(spreadAngleField, sm,
+                            nameof(SplitModifier.SpreadAngle), _commandStack);
+                        container.Add(spreadAngleField);
+                        break;
                 }
 
                 _modifierListContainer.Add(container);
@@ -628,8 +746,12 @@ namespace STGEngine.Editor.UI
                 RebuildEmitterParams();
             }
 
+            // Sync MeshType dropdown
+            _meshTypeDropdown.SetValueWithoutNotify(_pattern.MeshType.ToString());
+
             // Rebuild modifier list (undo add/remove)
             RebuildModifierList();
+            RebuildCollisionEditor();
 
             _previewer.ForceRefresh();
         }
@@ -645,6 +767,170 @@ namespace STGEngine.Editor.UI
         {
             foreach (var b in _modifierBinders) b.Dispose();
             _modifierBinders.Clear();
+        }
+
+        /// <summary>
+        /// Rebuild collision shape editor UI.
+        /// </summary>
+        private void RebuildCollisionEditor()
+        {
+            _collisionContainer.Clear();
+
+            var collision = _pattern.Collision;
+            bool hasCollision = collision != null;
+
+            var enableToggle = new Toggle("Enable") { value = hasCollision };
+            enableToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (evt.newValue && _pattern.Collision == null)
+                    _pattern.Collision = new CollisionShape();
+                else if (!evt.newValue)
+                    _pattern.Collision = null;
+                RebuildCollisionEditor();
+                _previewer.ForceRefresh();
+            });
+            _collisionContainer.Add(enableToggle);
+
+            if (!hasCollision) return;
+
+            var shapeTypes = new List<string> { "Sphere", "Capsule", "Box" };
+            var shapeDropdown = new DropdownField("Shape", shapeTypes,
+                (int)collision.ShapeType);
+            shapeDropdown.RegisterValueChangedCallback(evt =>
+            {
+                if (Enum.TryParse<CollisionShapeType>(evt.newValue, out var st))
+                {
+                    collision.ShapeType = st;
+                    RebuildCollisionEditor();
+                    _previewer.ForceRefresh();
+                }
+            });
+            _collisionContainer.Add(shapeDropdown);
+
+            switch (collision.ShapeType)
+            {
+                case CollisionShapeType.Sphere:
+                    var radiusField = new FloatField("Radius") { value = collision.Radius };
+                    radiusField.RegisterValueChangedCallback(evt =>
+                    {
+                        collision.Radius = evt.newValue;
+                        _previewer.ForceRefresh();
+                    });
+                    _collisionContainer.Add(radiusField);
+                    break;
+
+                case CollisionShapeType.Capsule:
+                    var capRadiusField = new FloatField("Radius") { value = collision.Radius };
+                    capRadiusField.RegisterValueChangedCallback(evt =>
+                    {
+                        collision.Radius = evt.newValue;
+                        _previewer.ForceRefresh();
+                    });
+                    _collisionContainer.Add(capRadiusField);
+
+                    var heightField = new FloatField("Height") { value = collision.Height };
+                    heightField.RegisterValueChangedCallback(evt =>
+                    {
+                        collision.Height = evt.newValue;
+                        _previewer.ForceRefresh();
+                    });
+                    _collisionContainer.Add(heightField);
+                    break;
+
+                case CollisionShapeType.Box:
+                    // Simple X/Y/Z half-extent fields
+                    var hx = new FloatField("HalfX") { value = collision.HalfExtents.x };
+                    var hy = new FloatField("HalfY") { value = collision.HalfExtents.y };
+                    var hz = new FloatField("HalfZ") { value = collision.HalfExtents.z };
+                    hx.RegisterValueChangedCallback(evt =>
+                    {
+                        var he = collision.HalfExtents;
+                        he.x = evt.newValue;
+                        collision.HalfExtents = he;
+                        _previewer.ForceRefresh();
+                    });
+                    hy.RegisterValueChangedCallback(evt =>
+                    {
+                        var he = collision.HalfExtents;
+                        he.y = evt.newValue;
+                        collision.HalfExtents = he;
+                        _previewer.ForceRefresh();
+                    });
+                    hz.RegisterValueChangedCallback(evt =>
+                    {
+                        var he = collision.HalfExtents;
+                        he.z = evt.newValue;
+                        collision.HalfExtents = he;
+                        _previewer.ForceRefresh();
+                    });
+                    _collisionContainer.Add(hx);
+                    _collisionContainer.Add(hy);
+                    _collisionContainer.Add(hz);
+                    break;
+            }
+
+            ApplyLightTextTheme(_collisionContainer);
+        }
+
+        /// <summary>
+        /// Create a Vector3 editor (3 float fields in a row) bound to a property.
+        /// </summary>
+        private VisualElement MakeVector3Editor(string label, object target,
+            string propertyName, DataBinder binder)
+        {
+            var prop = target.GetType().GetProperty(propertyName);
+            var vec = (Vector3)prop.GetValue(target);
+
+            var container = new VisualElement();
+            container.style.marginBottom = 2;
+
+            var headerLabel = new Label(label);
+            headerLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+            headerLabel.style.fontSize = 11;
+            container.Add(headerLabel);
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.flexWrap = Wrap.Wrap;
+
+            var xField = new FloatField("X") { value = vec.x };
+            var yField = new FloatField("Y") { value = vec.y };
+            var zField = new FloatField("Z") { value = vec.z };
+
+            foreach (var f in new[] { xField, yField, zField })
+            {
+                f.style.flexGrow = 1;
+                f.style.minWidth = 60;
+                f.AddToClassList("compact-field");
+                f.labelElement.style.minWidth = 14;
+                f.labelElement.style.maxWidth = 14;
+            }
+
+            void OnChanged(int axis, float val)
+            {
+                var current = (Vector3)prop.GetValue(target);
+                var newVec = current;
+                switch (axis)
+                {
+                    case 0: newVec.x = val; break;
+                    case 1: newVec.y = val; break;
+                    case 2: newVec.z = val; break;
+                }
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    $"Change {propertyName}",
+                    () => (Vector3)prop.GetValue(target),
+                    v => prop.SetValue(target, v),
+                    newVec);
+                _commandStack.Execute(cmd);
+            }
+
+            xField.RegisterValueChangedCallback(evt => OnChanged(0, evt.newValue));
+            yField.RegisterValueChangedCallback(evt => OnChanged(1, evt.newValue));
+            zField.RegisterValueChangedCallback(evt => OnChanged(2, evt.newValue));
+
+            row.Add(xField); row.Add(yField); row.Add(zField);
+            container.Add(row);
+            return container;
         }
 
         /// <summary>

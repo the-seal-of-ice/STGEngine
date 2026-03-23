@@ -1,0 +1,19 @@
+# Demo pattern: sphere emitter with homing modifier
+# Showcases Phase 2 simulation modifier with delay-based homing.
+
+id: demo_sphere_homing
+name: Sphere Homing Demo
+emitter:
+  type: sphere
+  count: 16
+  radius: 0.3
+  speed: 3
+modifiers:
+- type: homing
+  target_position: {x: 0, y: 0, z: 5}
+  turn_speed: 120
+  delay: 0.8
+bullet_scale: 0.12
+bullet_color: {r: 0.3, g: 0.8, b: 1, a: 1}
+duration: 5
+mesh_type: Diamond

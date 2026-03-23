@@ -117,11 +117,25 @@ namespace STGEngine.Runtime.Bullet
                     pos += dir * (spawn.Speed * t);
                 }
 
+                // Compute color: base color modulated by ColorCurve if present
+                Color color = pattern.BulletColor;
+                if (pattern.ColorCurve != null && pattern.Duration > 0f)
+                {
+                    float normalizedT = Mathf.Clamp01(t / pattern.Duration);
+                    float curveVal = pattern.ColorCurve.Evaluate(normalizedT);
+                    color = new Color(
+                        color.r * curveVal,
+                        color.g * curveVal,
+                        color.b * curveVal,
+                        color.a
+                    );
+                }
+
                 results.Add(new BulletState
                 {
                     Position = pos,
                     Scale = pattern.BulletScale,
-                    Color = pattern.BulletColor
+                    Color = color
                 });
             }
 

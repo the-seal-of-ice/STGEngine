@@ -1,8 +1,10 @@
 using UnityEngine;
 using UnityEngine.UIElements;
+using STGEngine.Core.DataModel;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.UI;
 using STGEngine.Runtime.Preview;
+using STGEngine.Runtime.Rendering;
 
 namespace STGEngine.Editor.Scene
 {
@@ -73,12 +75,15 @@ namespace STGEngine.Editor.Scene
 
         private void EnsureBulletVisuals()
         {
-            if (_bulletMesh == null)
-            {
-                var tmp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                _bulletMesh = tmp.GetComponent<MeshFilter>().sharedMesh;
-                Destroy(tmp);
-            }
+            EnsureBulletVisuals(MeshType.Sphere);
+        }
+
+        /// <summary>
+        /// Create or update bullet visuals for the given mesh type.
+        /// </summary>
+        public void EnsureBulletVisuals(MeshType meshType)
+        {
+            _bulletMesh = BulletMeshFactory.Create(meshType);
 
             if (_bulletMaterial == null)
             {
