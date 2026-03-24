@@ -189,7 +189,7 @@ namespace STGEngine.Runtime.Preview
                     color = curr.Color;
                 }
 
-                _renderer.Submit(_bulletMesh, _bulletMaterial, pos, scale, color);
+                _renderer.Submit(_bulletMesh, _bulletMaterial, transform.position + pos, scale, color);
             }
 
             _renderer.Flush();

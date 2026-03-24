@@ -1,0 +1,18 @@
+# STGEngine Asset Catalog — auto-generated, do not edit manually
+patterns:
+  - id: demo_cone_bounce
+    name: "Cone Bounce Demo"
+    file: Patterns/demo_cone_bounce.yaml
+  - id: demo_ring_split
+    name: "Ring Split Demo"
+    file: Patterns/demo_ring_split.yaml
+  - id: demo_ring_wave
+    name: "Ring Wave Demo"
+    file: Patterns/demo_ring_wave.yaml
+  - id: demo_sphere_homing
+    name: "Sphere Homing Demo"
+    file: Patterns/demo_sphere_homing.yaml
+stages:
+  - id: demo_stage
+    name: "Demo Stage"
+    file: Stages/demo_stage.yaml

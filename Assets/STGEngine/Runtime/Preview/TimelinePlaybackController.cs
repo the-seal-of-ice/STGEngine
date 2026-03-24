@@ -24,7 +24,20 @@ namespace STGEngine.Runtime.Preview
     {
         public float CurrentTime { get; private set; }
         public float Duration { get; set; }
-        public float PlaybackSpeed { get; set; } = 1f;
+
+        private float _playbackSpeed = 1f;
+        public float PlaybackSpeed
+        {
+            get => _playbackSpeed;
+            set
+            {
+                _playbackSpeed = value;
+                // Sync speed to all active previewers
+                foreach (var active in _activeEvents)
+                    active.Previewer.Playback.PlaybackSpeed = value;
+            }
+        }
+
         public bool IsPlaying { get; private set; }
         public bool Loop { get; set; } = true;
 
@@ -84,12 +97,18 @@ namespace STGEngine.Runtime.Preview
         public void Play()
         {
             IsPlaying = true;
+            // Resume all active previewers
+            foreach (var active in _activeEvents)
+                active.Previewer.Playback.Play();
             OnPlayStateChanged?.Invoke(true);
         }
 
         public void Pause()
         {
             IsPlaying = false;
+            // Pause all active previewers
+            foreach (var active in _activeEvents)
+                active.Previewer.Playback.Pause();
             OnPlayStateChanged?.Invoke(false);
         }
 
@@ -226,9 +245,14 @@ namespace STGEngine.Runtime.Preview
             float localTime = CurrentTime - spawnEvt.StartTime;
             previewer.Playback.Duration = spawnEvt.Duration;
             previewer.Playback.Loop = false;
+            previewer.Playback.PlaybackSpeed = PlaybackSpeed;
             previewer.Playback.Seek(Mathf.Max(localTime, 0f));
             previewer.ForceRefresh();
-            previewer.Playback.Play();
+
+            // Only auto-play the previewer if the timeline itself is playing.
+            // When paused (e.g. initial load, seek), just show the frozen frame.
+            if (IsPlaying)
+                previewer.Playback.Play();
 
             _activeEvents.Add(new ActiveEvent
             {

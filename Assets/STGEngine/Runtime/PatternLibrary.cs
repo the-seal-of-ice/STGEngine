@@ -6,7 +6,8 @@ using STGEngine.Core.Serialization;
 namespace STGEngine.Runtime
 {
     /// <summary>
-    /// Loads and caches BulletPattern files from Resources/DefaultPatterns/.
+    /// Loads and caches BulletPattern files from Resources/STGData/Patterns/
+    /// and legacy Resources/DefaultPatterns/.
     /// Used by the timeline system to resolve pattern references by ID.
     /// </summary>
     public class PatternLibrary
@@ -76,13 +77,24 @@ namespace STGEngine.Runtime
             if (_scanned) return;
             _scanned = true;
 
-            var assets = Resources.LoadAll<TextAsset>("DefaultPatterns");
+            // Scan new STGData/Patterns/ directory (primary)
+            ScanResourceFolder("STGData/Patterns");
+
+            // Scan legacy DefaultPatterns/ directory (backward compat)
+            ScanResourceFolder("DefaultPatterns");
+
+            Debug.Log($"[PatternLibrary] Loaded {_cache.Count} patterns.");
+        }
+
+        private void ScanResourceFolder(string resourcePath)
+        {
+            var assets = Resources.LoadAll<TextAsset>(resourcePath);
             foreach (var asset in assets)
             {
                 try
                 {
                     var pattern = YamlSerializer.Deserialize(asset.text);
-                    if (!string.IsNullOrEmpty(pattern.Id))
+                    if (!string.IsNullOrEmpty(pattern.Id) && !_cache.ContainsKey(pattern.Id))
                         _cache[pattern.Id] = pattern;
                 }
                 catch (System.Exception e)
@@ -90,8 +102,6 @@ namespace STGEngine.Runtime
                     Debug.LogWarning($"[PatternLibrary] Failed to load pattern '{asset.name}': {e.Message}");
                 }
             }
-
-            Debug.Log($"[PatternLibrary] Loaded {_cache.Count} patterns.");
         }
     }
 }

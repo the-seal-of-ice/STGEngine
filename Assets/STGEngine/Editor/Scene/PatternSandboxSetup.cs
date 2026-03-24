@@ -1,23 +1,37 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.UI;
+using STGEngine.Editor.UI.Timeline;
+using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
 using STGEngine.Runtime.Rendering;
 
 namespace STGEngine.Editor.Scene
 {
     /// <summary>
-    /// Bootstraps the PatternSandbox scene: creates bullet visuals,
-    /// wires PatternPreviewer + UIDocument + PatternEditorView,
-    /// configures camera and boundary, and loads a default pattern.
-    /// Attach to an empty GameObject in PatternSandbox.unity.
+    /// Editor mode: single pattern editing or timeline editing.
+    /// </summary>
+    public enum EditorMode
+    {
+        PatternEdit,
+        TimelineEdit
+    }
+
+    /// <summary>
+    /// Bootstraps the PatternSandbox scene. Supports two modes:
+    /// - PatternEdit: single pattern preview + editor (Phase 1/2 behavior)
+    /// - TimelineEdit: multi-pattern timeline editing (Phase 3)
     /// </summary>
     [AddComponentMenu("STGEngine/Pattern Sandbox Setup")]
     public class PatternSandboxSetup : MonoBehaviour
     {
+        [Header("Editor Mode")]
+        [SerializeField] private EditorMode _editorMode = EditorMode.PatternEdit;
+
         [Header("References (auto-created if null)")]
         [SerializeField] private PatternPreviewer _previewer;
         [SerializeField] private UIDocument _uiDocument;
@@ -38,7 +52,23 @@ namespace STGEngine.Editor.Scene
         [Tooltip("Default demo pattern to load.")]
         [SerializeField] private string _defaultDemoPattern = "demo_sphere_homing";
 
+        // Pattern Edit mode
         private PatternEditorView _editorView;
+
+        // Timeline Edit mode
+        private TimelineEditorView _timelineView;
+        private TimelinePlaybackController _timelinePlayback;
+        private PreviewerPool _previewerPool;
+        private PatternLibrary _patternLibrary;
+
+        /// <summary>Current editor mode.</summary>
+        public EditorMode CurrentMode => _editorMode;
+
+        /// <summary>
+        /// Static override: survives scene reload so mode switch actually works.
+        /// Null means "use the serialized _editorMode value".
+        /// </summary>
+        private static EditorMode? _pendingModeOverride;
 
         /// <summary>All available demo pattern names in Resources/DefaultPatterns.</summary>
         private static readonly string[] DemoPatterns = new[]
@@ -51,28 +81,81 @@ namespace STGEngine.Editor.Scene
 
         private void Awake()
         {
+            // Apply pending mode override from previous scene load
+            if (_pendingModeOverride.HasValue)
+            {
+                _editorMode = _pendingModeOverride.Value;
+                _pendingModeOverride = null;
+            }
+
             EnsureBulletVisuals();
-            EnsurePreviewer();
             EnsureUIDocument();
             EnsureCamera();
             EnsureBoundary();
+
+            if (_editorMode == EditorMode.PatternEdit)
+            {
+                EnsurePreviewer();
+            }
+            else
+            {
+                // Timeline mode: create previewer pool + playback controller
+                EnsurePreviewer(); // Keep one for property panel editing
+                _patternLibrary = new PatternLibrary();
+                _previewerPool = new PreviewerPool(transform, _bulletMesh, _bulletMaterial, 6);
+                _timelinePlayback = new TimelinePlaybackController();
+                _timelinePlayback.Initialize(_previewerPool, _patternLibrary);
+            }
         }
 
         private void Start()
         {
-            // Build editor view and attach to UIDocument
-            _editorView = new PatternEditorView(_previewer);
+            var root = _uiDocument.rootVisualElement;
+            // TemplateContainer has no intrinsic height by default, which breaks
+            // percentage-based child positioning (top/height %).
+            root.style.width  = Length.Percent(100);
+            root.style.height = Length.Percent(100);
 
-            // Wire MeshType change to update bullet visuals
+            if (_editorMode == EditorMode.PatternEdit)
+            {
+                StartPatternEditMode(root);
+            }
+            else
+            {
+                StartTimelineEditMode(root);
+            }
+        }
+
+        private void Update()
+        {
+            if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
+            {
+                _timelinePlayback.Tick(Time.deltaTime);
+            }
+        }
+
+        private void OnDestroy()
+        {
+            _editorView?.Dispose();
+            _timelineView?.Dispose();
+            _previewerPool?.Dispose();
+        }
+
+        // ─── Pattern Edit Mode ───
+
+        private void StartPatternEditMode(VisualElement root)
+        {
+            _editorView = new PatternEditorView(_previewer);
             _editorView.OnMeshTypeChanged += mt =>
             {
                 EnsureBulletVisuals(mt);
                 _previewer.SetBulletVisuals(_bulletMesh, _bulletMaterial);
             };
 
-            var root = _uiDocument.rootVisualElement;
+            // Mode switch button at top-left
+            BuildModeSwitch(root);
 
-            // Demo pattern selector at the top
+            // Demo pattern selector
             BuildDemoSelector(root);
 
             // Editor panel on the right side
@@ -83,14 +166,98 @@ namespace STGEngine.Editor.Scene
             panel.style.bottom = 0;
             root.Add(panel);
 
-            // Load default pattern
             if (_loadDemoYaml)
                 LoadDemoPattern();
         }
 
-        private void OnDestroy()
+        // ─── Timeline Edit Mode ───
+
+        private void StartTimelineEditMode(VisualElement root)
         {
-            _editorView?.Dispose();
+            _timelineView = new TimelineEditorView(_timelinePlayback, _patternLibrary, _previewer);
+            _timelineView.OnMeshTypeChanged += mt =>
+            {
+                EnsureBulletVisuals(mt);
+                _previewer.SetBulletVisuals(_bulletMesh, _bulletMaterial);
+                _previewerPool?.UpdateVisuals(_bulletMesh, _bulletMaterial);
+            };
+
+            // In Timeline mode the single previewer is only used as a data-binding
+            // target for the property panel's PatternEditorView. Disable it so its
+            // Update() loop doesn't run and it doesn't render bullets independently
+            // — all bullet rendering is handled by the PreviewerPool.
+            _previewer.enabled = false;
+
+            // Mode switch button at top-left
+            BuildModeSwitch(root);
+
+            // Timeline editor as bottom panel (top half remains 3D viewport).
+            // Use top=50% + bottom=0 instead of height=50%, because percentage
+            // heights don't resolve correctly when the parent (TemplateContainer)
+            // has auto height.
+            var panel = _timelineView.Root;
+            panel.style.position = Position.Absolute;
+            panel.style.left = 0;
+            panel.style.right = 0;
+            panel.style.top = Length.Percent(50);
+            panel.style.bottom = 0;
+            root.Add(panel);
+
+            // Force theme override after Unity Runtime Theme has been applied
+            StartCoroutine(ForceTimelineTheme());
+        }
+
+        private IEnumerator ForceTimelineTheme()
+        {
+            // Unity Runtime Theme applies over multiple frames; keep overriding
+            yield return null;                     // frame 1
+            _timelineView.ForceApplyTheme();
+            yield return null;                     // frame 2
+            _timelineView.ForceApplyTheme();
+            yield return new WaitForSeconds(0.1f); // 100ms
+            _timelineView.ForceApplyTheme();
+            yield return new WaitForSeconds(0.3f); // 300ms
+            _timelineView.ForceApplyTheme();
+            yield return new WaitForSeconds(0.5f); // 500ms — final pass
+            _timelineView.ForceApplyTheme();
+        }
+
+        // ─── Mode Switch ───
+
+        private void BuildModeSwitch(VisualElement root)
+        {
+            var bar = new VisualElement();
+            bar.style.position = Position.Absolute;
+            bar.style.left = 10;
+            bar.style.top = 10;
+            bar.style.flexDirection = FlexDirection.Row;
+            bar.style.alignItems = Align.Center;
+
+            var modeLabel = new Label("Mode:");
+            modeLabel.style.color = Color.white;
+            modeLabel.style.marginRight = 6;
+            bar.Add(modeLabel);
+
+            var modes = new List<string> { "Pattern", "Timeline" };
+            var modeDropdown = new DropdownField(modes,
+                _editorMode == EditorMode.PatternEdit ? 0 : 1);
+            modeDropdown.style.width = 100;
+            modeDropdown.RegisterValueChangedCallback(evt =>
+            {
+                var newMode = evt.newValue == "Timeline"
+                    ? EditorMode.TimelineEdit
+                    : EditorMode.PatternEdit;
+                if (newMode != _editorMode)
+                {
+                    _pendingModeOverride = newMode;
+                    // Reload scene to switch mode
+                    UnityEngine.SceneManagement.SceneManager.LoadScene(
+                        UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+                }
+            });
+            bar.Add(modeDropdown);
+
+            root.Add(bar);
         }
 
         // ─── Setup Helpers ───
@@ -144,7 +311,6 @@ namespace STGEngine.Editor.Scene
 
             if (_uiDocument.panelSettings == null)
             {
-                // Try the serialized reference first, then fallback to Resources
                 if (_panelSettings != null)
                 {
                     _uiDocument.panelSettings = _panelSettings;
@@ -158,7 +324,6 @@ namespace STGEngine.Editor.Scene
                     }
                     else
                     {
-                        // Last resort: create at runtime (will lack theme)
                         var ps = ScriptableObject.CreateInstance<PanelSettings>();
                         ps.scaleMode = PanelScaleMode.ScaleWithScreenSize;
                         ps.referenceResolution = new Vector2Int(1920, 1080);
@@ -177,11 +342,9 @@ namespace STGEngine.Editor.Scene
             var cam = Camera.main;
             if (cam == null) return;
 
-            // Add orbit camera if not present
             if (cam.GetComponent<FreeCameraController>() == null)
                 cam.gameObject.AddComponent<FreeCameraController>();
 
-            // Position camera to see the origin
             cam.transform.position = new Vector3(0f, 8f, -15f);
             cam.transform.LookAt(Vector3.zero);
             cam.backgroundColor = new Color(0.05f, 0.05f, 0.1f);
@@ -190,7 +353,6 @@ namespace STGEngine.Editor.Scene
 
         private void EnsureBoundary()
         {
-            // Add boundary visualization if not present in scene
             if (FindAnyObjectByType<SandboxBoundary>() == null)
             {
                 var go = new GameObject("SandboxBoundary");
@@ -202,7 +364,7 @@ namespace STGEngine.Editor.Scene
         {
             var bar = new VisualElement();
             bar.style.position = Position.Absolute;
-            bar.style.left = 10;
+            bar.style.left = 170; // After mode switch
             bar.style.top = 10;
             bar.style.flexDirection = FlexDirection.Row;
             bar.style.alignItems = Align.Center;
@@ -241,7 +403,7 @@ namespace STGEngine.Editor.Scene
                 try
                 {
                     var pattern = YamlSerializer.Deserialize(yamlAsset.text);
-                    _editorView.SetPattern(pattern);
+                    _editorView?.SetPattern(pattern);
                     Debug.Log($"[SandboxSetup] Loaded demo pattern: {patternName}");
                     return;
                 }

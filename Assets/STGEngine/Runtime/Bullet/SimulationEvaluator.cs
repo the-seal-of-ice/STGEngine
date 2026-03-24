@@ -308,7 +308,7 @@ namespace STGEngine.Runtime.Bullet
             {
                 return new BounceModifier
                 {
-                    BoundaryRadius = bm.BoundaryRadius,
+                    BoundaryHalfExtents = bm.BoundaryHalfExtents,
                     MaxBounces = bm.MaxBounces
                 };
             }

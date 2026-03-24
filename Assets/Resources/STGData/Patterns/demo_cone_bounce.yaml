@@ -1,0 +1,19 @@
+# Demo pattern: cone emitter with bounce modifier
+# Showcases Phase 2 cone emitter + boundary bounce behavior.
+
+id: demo_cone_bounce
+name: Cone Bounce Demo
+emitter:
+  type: cone
+  count: 20
+  speed: 5
+  angle: 25
+  radius: 0
+modifiers:
+- type: bounce
+  boundary_radius: 12
+  max_bounces: 2
+bullet_scale: 0.1
+bullet_color: {r: 1, g: 0.6, b: 0.2, a: 1}
+duration: 6
+mesh_type: Arrow

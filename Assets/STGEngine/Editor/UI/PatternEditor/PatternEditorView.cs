@@ -9,6 +9,7 @@ using STGEngine.Core.Emitters;
 using STGEngine.Core.Modifiers;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.Commands;
+using STGEngine.Editor.UI.FileManager;
 using STGEngine.Runtime.Preview;
 
 namespace STGEngine.Editor.UI
@@ -318,6 +319,7 @@ namespace STGEngine.Editor.UI
 
             // Speed 数值输入框
             _speedField = new FloatField() { value = 1f };
+            _speedField.isDelayed = true;
             _speedField.style.flexGrow = 1;
             _speedField.style.flexShrink = 1;
             _speedField.AddToClassList("compact-field");
@@ -386,6 +388,9 @@ namespace STGEngine.Editor.UI
             RebuildEmitterParams();
             RebuildModifierList();
             RebuildCollisionEditor();
+
+            // Force theme refresh after rebuilding all dynamic UI
+            ForceApplyTheme(_root);
 
             // Notify mesh type change so scene setup can update bullet visuals
             OnMeshTypeChanged?.Invoke(_pattern.MeshType);
@@ -643,9 +648,9 @@ namespace STGEngine.Editor.UI
                         break;
 
                     case BounceModifier bm:
-                        var boundaryField = new FloatField("BoundaryRadius");
+                        var boundaryField = new Vector3Field("BoundaryHalfExtents");
                         binder.Bind(boundaryField, bm,
-                            nameof(BounceModifier.BoundaryRadius), _commandStack);
+                            nameof(BounceModifier.BoundaryHalfExtents), _commandStack);
                         container.Add(boundaryField);
 
                         var maxBouncesField = new IntegerField("MaxBounces");
@@ -687,43 +692,77 @@ namespace STGEngine.Editor.UI
 
         private void OnSave()
         {
-            var dir = Path.Combine(Application.persistentDataPath, "Patterns");
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-
-            var filename = string.IsNullOrEmpty(_pattern.Name)
-                ? "pattern" : _pattern.Name;
-            var path = Path.Combine(dir, $"{filename}.yaml");
-
-            YamlSerializer.SerializeToFile(_pattern, path);
-            Debug.Log($"[PatternEditor] Saved to: {path}");
+            var catalog = STGCatalog.Load();
+            var picker = new FilePickerPopup(
+                "Save Pattern",
+                FilePickerMode.Save,
+                catalog.Patterns,
+                onSelect: entry =>
+                {
+                    // Overwrite existing
+                    _pattern.Id = entry.Id;
+                    _pattern.Name = entry.Name;
+                    var path = Path.Combine(STGCatalog.BasePath, entry.File);
+                    YamlSerializer.SerializeToFile(_pattern, path);
+                    catalog.AddOrUpdatePattern(entry.Id, entry.Name);
+                    STGCatalog.Save(catalog);
+                    Debug.Log($"[PatternEditor] Saved (overwrite): {path}");
+                },
+                onCreateNew: name =>
+                {
+                    var id = STGCatalog.NameToId(name);
+                    id = catalog.EnsureUniquePatternId(id);
+                    _pattern.Id = id;
+                    _pattern.Name = name;
+                    catalog.AddOrUpdatePattern(id, name);
+                    var path = catalog.GetPatternPath(id);
+                    YamlSerializer.SerializeToFile(_pattern, path);
+                    STGCatalog.Save(catalog);
+                    Debug.Log($"[PatternEditor] Saved (new): {path}");
+                },
+                onDelete: entry =>
+                {
+                    catalog.RemovePattern(entry.Id);
+                    STGCatalog.Save(catalog);
+                    Debug.Log($"[PatternEditor] Deleted: {entry.Id}");
+                });
+            picker.Show(Root);
         }
 
         private void OnLoad()
         {
-            var dir = Path.Combine(Application.persistentDataPath, "Patterns");
-            if (!Directory.Exists(dir)) return;
-
-            var files = Directory.GetFiles(dir, "*.yaml");
-            if (files.Length == 0)
+            var catalog = STGCatalog.Load();
+            if (catalog.Patterns.Count == 0)
             {
-                Debug.Log("[PatternEditor] No YAML files found.");
+                Debug.Log("[PatternEditor] No pattern files found.");
                 return;
             }
 
-            // Load most recent
-            Array.Sort(files, (a, b) =>
-                File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a)));
-
-            try
-            {
-                var pattern = YamlSerializer.DeserializeFromFile(files[0]);
-                SetPattern(pattern);
-                Debug.Log($"[PatternEditor] Loaded: {files[0]}");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[PatternEditor] Load failed: {e.Message}");
-            }
+            var picker = new FilePickerPopup(
+                "Load Pattern",
+                FilePickerMode.Load,
+                catalog.Patterns,
+                onSelect: entry =>
+                {
+                    var path = Path.Combine(STGCatalog.BasePath, entry.File);
+                    try
+                    {
+                        var pattern = YamlSerializer.DeserializeFromFile(path);
+                        SetPattern(pattern);
+                        Debug.Log($"[PatternEditor] Loaded: {path}");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"[PatternEditor] Load failed: {e.Message}");
+                    }
+                },
+                onDelete: entry =>
+                {
+                    catalog.RemovePattern(entry.Id);
+                    STGCatalog.Save(catalog);
+                    Debug.Log($"[PatternEditor] Deleted: {entry.Id}");
+                });
+            picker.Show(Root);
         }
 
         // ─── Events ───
@@ -771,6 +810,9 @@ namespace STGEngine.Editor.UI
             // Rebuild modifier list (undo add/remove)
             RebuildModifierList();
             RebuildCollisionEditor();
+
+            // Force theme refresh on entire root to catch any newly created elements
+            ForceApplyTheme(_root);
 
             _previewer.ForceRefresh();
         }
@@ -838,6 +880,7 @@ namespace STGEngine.Editor.UI
             {
                 case CollisionShapeType.Sphere:
                     var radiusField = new FloatField("Radius") { value = collision.Radius };
+                    radiusField.isDelayed = true;
                     radiusField.RegisterValueChangedCallback(evt =>
                     {
                         collision.Radius = evt.newValue;
@@ -848,6 +891,7 @@ namespace STGEngine.Editor.UI
 
                 case CollisionShapeType.Capsule:
                     var capRadiusField = new FloatField("Radius") { value = collision.Radius };
+                    capRadiusField.isDelayed = true;
                     capRadiusField.RegisterValueChangedCallback(evt =>
                     {
                         collision.Radius = evt.newValue;
@@ -856,6 +900,7 @@ namespace STGEngine.Editor.UI
                     _collisionContainer.Add(capRadiusField);
 
                     var heightField = new FloatField("Height") { value = collision.Height };
+                    heightField.isDelayed = true;
                     heightField.RegisterValueChangedCallback(evt =>
                     {
                         collision.Height = evt.newValue;
@@ -869,6 +914,9 @@ namespace STGEngine.Editor.UI
                     var hx = new FloatField("HalfX") { value = collision.HalfExtents.x };
                     var hy = new FloatField("HalfY") { value = collision.HalfExtents.y };
                     var hz = new FloatField("HalfZ") { value = collision.HalfExtents.z };
+                    hx.isDelayed = true;
+                    hy.isDelayed = true;
+                    hz.isDelayed = true;
                     hx.RegisterValueChangedCallback(evt =>
                     {
                         var he = collision.HalfExtents;
@@ -926,6 +974,7 @@ namespace STGEngine.Editor.UI
 
             foreach (var f in new[] { xField, yField, zField })
             {
+                f.isDelayed = true;
                 f.style.flexGrow = 1;
                 f.style.minWidth = 60;
                 f.AddToClassList("compact-field");
@@ -1000,6 +1049,7 @@ namespace STGEngine.Editor.UI
                     // T 值 FloatField（紧凑型，label 固定 14px）
                     // ★ minWidth=70 控制换行阈值，如果窄面板下数值被截断可适当减小
                     var timeField = new FloatField("T") { value = kf.Time };
+                    timeField.isDelayed = true;
                     timeField.style.flexGrow = 1;
                     timeField.style.minWidth = 70;
                     timeField.AddToClassList("compact-field");  // 标记为紧凑型，跳过全局 label 宽度规则
@@ -1020,6 +1070,7 @@ namespace STGEngine.Editor.UI
                     // V 值 FloatField（紧凑型，label 固定 14px）
                     // ★ minWidth=70 控制换行阈值
                     var valField = new FloatField("V") { value = kf.Value };
+                    valField.isDelayed = true;
                     valField.style.flexGrow = 1;
                     valField.style.minWidth = 70;
                     valField.AddToClassList("compact-field");  // 紧凑型
@@ -1081,7 +1132,6 @@ namespace STGEngine.Editor.UI
 
         /// <summary>
         /// 强制将子树中所有文字设为浅色（适配深色背景），并统一 BaseField 的 label 宽度。
-        /// 使用 schedule.Execute 延迟应用，以覆盖 Unity Runtime Theme USS 的默认样式。
         ///
         /// ★ 调参指南：
         ///   - lightText: 所有文字颜色（Label, TextElement, Button 等）
@@ -1095,95 +1145,99 @@ namespace STGEngine.Editor.UI
         /// </summary>
         private static void ApplyLightTextTheme(VisualElement root)
         {
-            var lightText = new Color(0.85f, 0.85f, 0.85f);  // 浅灰文字色
-            var inputBg = new Color(0.22f, 0.22f, 0.22f);    // 输入框深灰背景
-            var labelWidth = new Length(38, LengthUnit.Percent); // ★ 全局 label 宽度占父容器 38%
+            // 立即同步应用一次（覆盖新创建的元素）
+            ForceApplyTheme(root);
 
-            void Apply()
+            // 延迟应用作为兜底（覆盖 Unity Runtime Theme USS 的默认样式）
+            root.schedule.Execute(() => ForceApplyTheme(root)).ExecuteLater(50);
+            root.schedule.Execute(() => ForceApplyTheme(root)).ExecuteLater(200);
+        }
+
+        /// <summary>
+        /// 实际的主题应用逻辑，可被直接调用。
+        /// </summary>
+        private static void ForceApplyTheme(VisualElement root)
+        {
+            var lightText = new Color(0.85f, 0.85f, 0.85f);
+            var inputBg = new Color(0.22f, 0.22f, 0.22f);
+            var labelWidth = new Length(38, LengthUnit.Percent);
+
+            // 所有 Label 和 TextElement 设为浅色
+            root.Query<Label>().ForEach(l => l.style.color = lightText);
+            root.Query<TextElement>().ForEach(t => t.style.color = lightText);
+            // 输入框：浅色文字 + 深灰背景
+            root.Query(className: "unity-base-field__input").ForEach(e =>
             {
-                // 所有 Label 和 TextElement 设为浅色
-                root.Query<Label>().ForEach(l => l.style.color = lightText);
-                root.Query<TextElement>().ForEach(t => t.style.color = lightText);
-                // 输入框：浅色文字 + 深灰背景
-                root.Query(className: "unity-base-field__input").ForEach(e =>
-                {
-                    e.style.color = lightText;
-                    e.style.backgroundColor = inputBg;
-                });
-                root.Query(className: "unity-text-element").ForEach(e =>
-                {
-                    e.style.color = lightText;
-                });
-                // 按钮：浅色文字 + 稍亮灰色背景
-                root.Query<Button>().ForEach(b =>
-                {
-                    b.style.color = lightText;
-                    b.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
-                });
-
-                // ── 统一 label 宽度（跳过 compact-field） ──
-                // FloatField: Scale, Duration, Speed, Radius, Amplitude, Frequency 等
-                root.Query<FloatField>().ForEach(f =>
-                {
-                    if (f.ClassListContains("compact-field"))
-                    {
-                        // 紧凑型字段（R/G/B/A, T/V）：限制高度 + label 与 input 垂直居中
-                        f.style.height = 24;
-                        f.style.alignItems = Align.Center;
-                        f.labelElement.style.height = 20;
-                        f.labelElement.style.unityTextAlign = TextAnchor.MiddleLeft;
-                        f.labelElement.style.paddingTop = 0;
-                        f.labelElement.style.paddingBottom = 0;
-                        f.labelElement.style.marginTop = 0;
-                        f.labelElement.style.marginBottom = 0;
-                        f.Query(className: "unity-base-field__input").ForEach(inp =>
-                        {
-                            inp.style.height = 20;
-                            inp.style.paddingTop = 2;
-                            inp.style.paddingBottom = 2;
-                            inp.style.marginTop = 0;
-                            inp.style.marginBottom = 0;
-                        });
-                        return;
-                    }
-                    f.labelElement.style.minWidth = labelWidth;
-                    f.labelElement.style.maxWidth = labelWidth;
-                });
-                // IntegerField: Count
-                root.Query<IntegerField>().ForEach(f =>
-                {
-                    f.labelElement.style.minWidth = labelWidth;
-                    f.labelElement.style.maxWidth = labelWidth;
-                });
-                // DropdownField: Type, Axis
-                root.Query<DropdownField>().ForEach(f =>
-                {
-                    f.labelElement.style.minWidth = labelWidth;
-                    f.labelElement.style.maxWidth = labelWidth;
-                });
-                // Slider: Time, Speed — 使用固定像素宽度避免 label 被截断
-                root.Query<Slider>().ForEach(f =>
-                {
-                    f.labelElement.style.minWidth = 50;
-                    f.labelElement.style.maxWidth = 50;
-                });
-                // Toggle: Loop
-                root.Query<Toggle>().ForEach(f =>
-                {
-                    f.labelElement.style.minWidth = labelWidth;
-                    f.labelElement.style.maxWidth = labelWidth;
-                });
-            }
-
-            // 延迟应用：50ms 和 200ms 各执行一次，确保覆盖 USS Theme 默认样式
-            root.RegisterCallback<AttachToPanelEvent>(_ =>
+                e.style.color = lightText;
+                e.style.backgroundColor = inputBg;
+            });
+            root.Query(className: "unity-text-element").ForEach(e =>
             {
-                root.schedule.Execute(Apply).ExecuteLater(50);
-                root.schedule.Execute(Apply).ExecuteLater(200);
+                e.style.color = lightText;
+            });
+            // 按钮：浅色文字 + 稍亮灰色背景
+            root.Query<Button>().ForEach(b =>
+            {
+                b.style.color = lightText;
+                b.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
             });
 
-            // 几何变化时也重新应用（处理动态添加的元素）
-            root.RegisterCallback<GeometryChangedEvent>(_ => Apply());
+            // ── 统一 label 宽度（跳过 compact-field） ──
+            root.Query<FloatField>().ForEach(f =>
+            {
+                if (f.ClassListContains("compact-field"))
+                {
+                    f.style.height = 24;
+                    f.style.alignItems = Align.Center;
+                    f.labelElement.style.height = 20;
+                    f.labelElement.style.unityTextAlign = TextAnchor.MiddleLeft;
+                    f.labelElement.style.paddingTop = 0;
+                    f.labelElement.style.paddingBottom = 0;
+                    f.labelElement.style.marginTop = 0;
+                    f.labelElement.style.marginBottom = 0;
+                    f.Query(className: "unity-base-field__input").ForEach(inp =>
+                    {
+                        inp.style.height = 20;
+                        inp.style.paddingTop = 2;
+                        inp.style.paddingBottom = 2;
+                        inp.style.marginTop = 0;
+                        inp.style.marginBottom = 0;
+                    });
+                    return;
+                }
+                f.labelElement.style.minWidth = labelWidth;
+                f.labelElement.style.maxWidth = labelWidth;
+            });
+            // IntegerField
+            root.Query<IntegerField>().ForEach(f =>
+            {
+                f.labelElement.style.minWidth = labelWidth;
+                f.labelElement.style.maxWidth = labelWidth;
+            });
+            // DropdownField
+            root.Query<DropdownField>().ForEach(f =>
+            {
+                f.labelElement.style.minWidth = labelWidth;
+                f.labelElement.style.maxWidth = labelWidth;
+            });
+            // Slider
+            root.Query<Slider>().ForEach(f =>
+            {
+                f.labelElement.style.minWidth = 50;
+                f.labelElement.style.maxWidth = 50;
+            });
+            // Toggle
+            root.Query<Toggle>().ForEach(f =>
+            {
+                f.labelElement.style.minWidth = labelWidth;
+                f.labelElement.style.maxWidth = labelWidth;
+            });
+            // Vector3Field
+            root.Query<Vector3Field>().ForEach(f =>
+            {
+                f.labelElement.style.minWidth = labelWidth;
+                f.labelElement.style.maxWidth = labelWidth;
+            });
         }
 
         /// <summary>
@@ -1272,6 +1326,7 @@ namespace STGEngine.Editor.UI
         private FloatField MakeChannel(string name, int index)
         {
             var field = new FloatField(name);
+            field.isDelayed = true;
             field.style.flexGrow = 1;
             field.style.minWidth = 40;   // ★ 单个通道最小宽度，影响换行阈值
             field.AddToClassList("compact-field");  // 紧凑型，跳过全局 label 宽度规则

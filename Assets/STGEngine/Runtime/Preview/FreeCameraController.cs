@@ -23,9 +23,14 @@ namespace STGEngine.Runtime.Preview
 
         private UIDocument _uiDocument;
 
+        /// <summary>
+        /// Tracks whether the mouse-down that started a drag was over UI.
+        /// Prevents camera from responding when user drags from UI into 3D area.
+        /// </summary>
+        private bool _dragStartedOverUI;
+
         private void Start()
         {
-            // Initialize from current transform
             _distance = Vector3.Distance(transform.position, _pivot);
             if (_distance < 0.1f) _distance = 15f;
             ApplyOrbit();
@@ -37,8 +42,20 @@ namespace STGEngine.Runtime.Preview
         {
             bool overUI = IsPointerOverUI();
 
+            // Lock drag origin: if any mouse button was pressed this frame while
+            // over UI, mark the entire drag as "UI drag" until all buttons release.
+            bool anyDown = Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2);
+            bool anyHeld = Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2);
+
+            if (anyDown && overUI)
+                _dragStartedOverUI = true;
+            if (!anyHeld)
+                _dragStartedOverUI = false;
+
+            bool blocked = overUI || _dragStartedOverUI;
+
             // Right mouse: orbit
-            if (Input.GetMouseButton(1) && !overUI)
+            if (Input.GetMouseButton(1) && !blocked)
             {
                 _yaw += Input.GetAxis("Mouse X") * _orbitSpeed;
                 _pitch -= Input.GetAxis("Mouse Y") * _orbitSpeed;
@@ -46,7 +63,7 @@ namespace STGEngine.Runtime.Preview
             }
 
             // Middle mouse: pan
-            if (Input.GetMouseButton(2) && !overUI)
+            if (Input.GetMouseButton(2) && !blocked)
             {
                 float dx = -Input.GetAxis("Mouse X") * _panSpeed * _distance;
                 float dy = -Input.GetAxis("Mouse Y") * _panSpeed * _distance;
@@ -55,7 +72,7 @@ namespace STGEngine.Runtime.Preview
 
             // Scroll: zoom
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (Mathf.Abs(scroll) > 0.001f && !overUI)
+            if (Mathf.Abs(scroll) > 0.001f && !blocked)
             {
                 _distance -= scroll * _zoomSpeed;
                 _distance = Mathf.Clamp(_distance, _minDistance, _maxDistance);
@@ -65,8 +82,12 @@ namespace STGEngine.Runtime.Preview
         }
 
         /// <summary>
-        /// 检测鼠标是否悬停在 UI Toolkit 面板上。
-        /// 通过 panel.Pick 判断鼠标位置下是否有 VisualElement。
+        /// Detect whether the mouse is over any UI Toolkit element.
+        ///
+        /// Input.mousePosition uses screen coordinates (origin bottom-left, Y up),
+        /// while UI Toolkit panel coordinates have origin top-left, Y down.
+        /// RuntimePanelUtils.ScreenToPanel handles scaling but NOT the Y-flip,
+        /// so we flip Y manually before calling it.
         /// </summary>
         private bool IsPointerOverUI()
         {
@@ -74,12 +95,12 @@ namespace STGEngine.Runtime.Preview
             var root = _uiDocument.rootVisualElement;
             if (root == null || root.panel == null) return false;
 
-            // 将屏幕坐标转换为 UI Toolkit 面板坐标（Y 轴翻转）
+            // Flip Y: Input.mousePosition is bottom-left origin,
+            // ScreenToPanel expects top-left origin.
             Vector2 mousePos = Input.mousePosition;
-            Vector2 panelPos = new Vector2(mousePos.x, Screen.height - mousePos.y);
+            mousePos.y = Screen.height - mousePos.y;
 
-            // 考虑 PanelSettings 的缩放
-            panelPos = RuntimePanelUtils.ScreenToPanel(root.panel, mousePos);
+            Vector2 panelPos = RuntimePanelUtils.ScreenToPanel(root.panel, mousePos);
 
             var picked = root.panel.Pick(panelPos);
             return picked != null && picked != root;

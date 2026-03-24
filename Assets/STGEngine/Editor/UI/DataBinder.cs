@@ -30,6 +30,14 @@ namespace STGEngine.Editor.UI
             // Initial sync: model → UI
             field.SetValueWithoutNotify((T)prop.GetValue(target));
 
+            // Delay value commit until Enter / focus-lost.
+            // isDelayed lives on TextInputBaseField<T> which FloatField/IntegerField
+            // inherit from, but the generic Bind signature only sees BaseField<T>.
+            // Use reflection to set it when available.
+            var delayedProp = field.GetType().GetProperty("isDelayed",
+                BindingFlags.Public | BindingFlags.Instance);
+            delayedProp?.SetValue(field, true);
+
             // UI → model (via Command if stack provided)
             EventCallback<ChangeEvent<T>> callback = evt =>
             {

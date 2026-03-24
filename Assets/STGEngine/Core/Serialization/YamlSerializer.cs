@@ -9,6 +9,7 @@ using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Modifiers;
+using STGEngine.Core.Timeline;
 // Alias to avoid conflict with YamlDotNet.Core.IEmitter
 using IEmitterData = STGEngine.Core.Emitters.IEmitter;
 using YamlEmitter = YamlDotNet.Core.IEmitter;
@@ -306,6 +307,225 @@ namespace STGEngine.Core.Serialization
                 emitter.Emit(new SequenceEnd());
                 emitter.Emit(new MappingEnd());
             }
+        }
+
+        // ─── Stage Serialization ───
+
+        public static string SerializeStage(Stage stage)
+        {
+            using var sw = new StringWriter();
+            var emitter = new YamlDotNet.Core.Emitter(sw);
+
+            emitter.Emit(new StreamStart());
+            emitter.Emit(new DocumentStart());
+            emitter.Emit(new MappingStart());
+
+            EmitScalar(emitter, "id");
+            EmitScalar(emitter, stage.Id);
+            EmitScalar(emitter, "name");
+            EmitScalar(emitter, stage.Name);
+
+            EmitScalar(emitter, "segments");
+            emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Block));
+
+            if (stage.Segments != null)
+            {
+                foreach (var seg in stage.Segments)
+                {
+                    emitter.Emit(new MappingStart());
+
+                    EmitScalar(emitter, "id");
+                    EmitScalar(emitter, seg.Id);
+                    EmitScalar(emitter, "name");
+                    EmitScalar(emitter, seg.Name);
+                    EmitScalar(emitter, "type");
+                    EmitScalar(emitter, PascalToSnake(seg.Type.ToString()));
+                    EmitScalar(emitter, "duration");
+                    EmitScalar(emitter, Fmt(seg.Duration));
+
+                    if (seg.EntryTrigger != null)
+                    {
+                        EmitScalar(emitter, "entry_trigger");
+                        emitter.Emit(new MappingStart());
+                        EmitScalar(emitter, "type");
+                        EmitScalar(emitter, PascalToSnake(seg.EntryTrigger.Type.ToString()));
+                        if (seg.EntryTrigger.Params != null && seg.EntryTrigger.Params.Count > 0)
+                        {
+                            EmitScalar(emitter, "params");
+                            emitter.Emit(new MappingStart());
+                            foreach (var kvp in seg.EntryTrigger.Params)
+                            {
+                                EmitScalar(emitter, kvp.Key);
+                                EmitScalar(emitter, FmtValue(kvp.Value));
+                            }
+                            emitter.Emit(new MappingEnd());
+                        }
+                        emitter.Emit(new MappingEnd());
+                    }
+
+                    EmitScalar(emitter, "events");
+                    emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Block));
+
+                    if (seg.Events != null)
+                    {
+                        foreach (var evt in seg.Events)
+                        {
+                            emitter.Emit(new MappingStart());
+
+                            var tag = TypeRegistry.GetTag(evt.GetType());
+                            EmitScalar(emitter, "type");
+                            EmitScalar(emitter, tag);
+                            EmitScalar(emitter, "id");
+                            EmitScalar(emitter, evt.Id);
+                            EmitScalar(emitter, "start_time");
+                            EmitScalar(emitter, Fmt(evt.StartTime));
+                            EmitScalar(emitter, "duration");
+                            EmitScalar(emitter, Fmt(evt.Duration));
+
+                            if (evt is SpawnPatternEvent sp)
+                            {
+                                EmitScalar(emitter, "pattern_id");
+                                EmitScalar(emitter, sp.PatternId);
+                                EmitScalar(emitter, "spawn_position");
+                                emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                                EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(sp.SpawnPosition.x));
+                                EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(sp.SpawnPosition.y));
+                                EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(sp.SpawnPosition.z));
+                                emitter.Emit(new MappingEnd());
+                            }
+
+                            emitter.Emit(new MappingEnd());
+                        }
+                    }
+
+                    emitter.Emit(new SequenceEnd());
+                    emitter.Emit(new MappingEnd());
+                }
+            }
+
+            emitter.Emit(new SequenceEnd());
+            emitter.Emit(new MappingEnd());
+            emitter.Emit(new DocumentEnd(true));
+            emitter.Emit(new StreamEnd());
+
+            return sw.ToString();
+        }
+
+        public static Stage DeserializeStage(string yaml)
+        {
+            var deserializer = new DeserializerBuilder().Build();
+            var raw = deserializer.Deserialize<Dictionary<object, object>>(yaml);
+            return MapStage(ToStringDict(raw));
+        }
+
+        public static void SerializeStageToFile(Stage stage, string path)
+        {
+            File.WriteAllText(path, SerializeStage(stage));
+        }
+
+        public static Stage DeserializeStageFromFile(string path)
+        {
+            return DeserializeStage(File.ReadAllText(path));
+        }
+
+        private static Dictionary<string, object> ToStringDict(object obj)
+        {
+            if (obj is Dictionary<object, object> raw)
+            {
+                var result = new Dictionary<string, object>();
+                foreach (var kvp in raw)
+                    result[kvp.Key.ToString()] = kvp.Value;
+                return result;
+            }
+            if (obj is Dictionary<string, object> already)
+                return already;
+            return new Dictionary<string, object>();
+        }
+
+        private static Stage MapStage(Dictionary<string, object> dict)
+        {
+            var stage = new Stage();
+            if (dict.TryGetValue("id", out var id)) stage.Id = id.ToString();
+            if (dict.TryGetValue("name", out var name)) stage.Name = name.ToString();
+
+            if (dict.TryGetValue("segments", out var segsObj) && segsObj is List<object> segsList)
+            {
+                stage.Segments = new List<TimelineSegment>();
+                foreach (var item in segsList)
+                    stage.Segments.Add(MapSegment(ToStringDict(item)));
+            }
+
+            return stage;
+        }
+
+        private static TimelineSegment MapSegment(Dictionary<string, object> dict)
+        {
+            var seg = new TimelineSegment();
+            if (dict.TryGetValue("id", out var id)) seg.Id = id.ToString();
+            if (dict.TryGetValue("name", out var name)) seg.Name = name.ToString();
+            if (dict.TryGetValue("type", out var typeVal))
+                seg.Type = (SegmentType)Enum.Parse(typeof(SegmentType), SnakeToPascal(typeVal.ToString()), true);
+            if (dict.TryGetValue("duration", out var dur)) seg.Duration = ParseFloat(dur);
+
+            if (dict.TryGetValue("entry_trigger", out var trigObj))
+                seg.EntryTrigger = MapTriggerCondition(ToStringDict(trigObj));
+
+            if (dict.TryGetValue("events", out var evtsObj) && evtsObj is List<object> evtsList)
+            {
+                seg.Events = new List<TimelineEvent>();
+                foreach (var item in evtsList)
+                    seg.Events.Add(MapTimelineEvent(ToStringDict(item)));
+            }
+
+            return seg;
+        }
+
+        private static TimelineEvent MapTimelineEvent(Dictionary<string, object> dict)
+        {
+            if (!dict.TryGetValue("type", out var typeVal))
+                throw new YamlException("TimelineEvent missing 'type' field");
+
+            var tag = typeVal.ToString();
+
+            switch (tag)
+            {
+                case "spawn_pattern":
+                    var sp = new SpawnPatternEvent();
+                    if (dict.TryGetValue("id", out var id)) sp.Id = id.ToString();
+                    if (dict.TryGetValue("start_time", out var st)) sp.StartTime = ParseFloat(st);
+                    if (dict.TryGetValue("duration", out var dur)) sp.Duration = ParseFloat(dur);
+                    if (dict.TryGetValue("pattern_id", out var pid)) sp.PatternId = pid.ToString();
+                    if (dict.TryGetValue("spawn_position", out var posObj))
+                    {
+                        var posDict = ToStringDict(posObj);
+                        sp.SpawnPosition = new Vector3(
+                            posDict.TryGetValue("x", out var xv) ? ParseFloat(xv) : 0f,
+                            posDict.TryGetValue("y", out var yv) ? ParseFloat(yv) : 0f,
+                            posDict.TryGetValue("z", out var zv) ? ParseFloat(zv) : 0f
+                        );
+                    }
+                    return sp;
+
+                default:
+                    throw new YamlException($"Unknown TimelineEvent type: '{tag}'");
+            }
+        }
+
+        private static TriggerCondition MapTriggerCondition(Dictionary<string, object> dict)
+        {
+            var trigger = new TriggerCondition();
+            if (dict.TryGetValue("type", out var typeVal))
+                trigger.Type = (TriggerType)Enum.Parse(typeof(TriggerType), SnakeToPascal(typeVal.ToString()), true);
+
+            if (dict.TryGetValue("params", out var paramsObj))
+            {
+                trigger.Params = new Dictionary<string, object>();
+                var paramsDict = ToStringDict(paramsObj);
+                foreach (var kvp in paramsDict)
+                    trigger.Params[kvp.Key] = kvp.Value;
+            }
+
+            return trigger;
         }
 
         // ─── Shared Helpers ───

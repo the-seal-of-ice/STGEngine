@@ -1,0 +1,19 @@
+# Demo pattern: ring emitter with split modifier
+# Showcases Phase 2 split behavior: bullets split after 1 second.
+
+id: demo_ring_split
+name: Ring Split Demo
+emitter:
+  type: ring
+  count: 8
+  radius: 0.3
+  speed: 3
+modifiers:
+- type: split
+  split_time: 1
+  split_count: 3
+  spread_angle: 45
+bullet_scale: 0.12
+bullet_color: {r: 0.8, g: 0.3, b: 1, a: 1}
+duration: 5
+mesh_type: Rice
