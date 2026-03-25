@@ -1869,3 +1869,70 @@ URP Forward Lit pass，支持 GPU Instancing：
 
 > 文档确认时间：2026-03
 > 所有决策经互动式确认，最终决策权归设计者
+
+---
+
+### 9.7 Phase 4+：确定性伪随机种子系统（已完成）
+
+> 为弹幕轨迹可预测性和回放确定性，新增 PRNG 种子管理系统。
+> 此功能不在原始 Phase 规划中，作为基础设施提前落地。
+
+#### 9.7.1 设计决策
+
+| 决策项 | 结论 |
+|--------|------|
+| 种子层级 | 双层：Stage.Seed（整关级）+ BulletPattern.Seed（单 pattern 级） |
+| PRNG 算法 | 自实现 Xoshiro256**，跨平台一致，不依赖 System.Random |
+| UI 控件 | Pattern Editor 和 Timeline 面包屑栏均有 Seed 字段 + Randomize 按钮 |
+| 种子确定时机 | 种子是数据（存在 YAML 里），不是运行时产物。编辑器创建时给默认值 0，设计师可手动改或点 Randomize |
+
+#### 9.7.2 新增文件
+
+| 文件 | 职责 |
+|------|------|
+| `Core/Random/DeterministicRng.cs` | Xoshiro256** PRNG，支持 CaptureState/RestoreState 快照 |
+| `Core/Random/SeedManager.cs` | 从主种子按序派生子种子，支持 Reset |
+
+#### 9.7.3 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `Core/DataModel/BulletPattern.cs` | 新增 `Seed` 属性 |
+| `Core/DataModel/Stage.cs` | 新增 `Seed` 属性 |
+| `Core/Modifiers/HomingModifier.cs` | 新增 `Rng` 属性，`Random.onUnitSphere` 替换为 `Rng.OnUnitSphere()` |
+| `Runtime/Bullet/SimulationEvaluator.cs` | 构造时接收 seed，每颗子弹分配独立 DeterministicRng |
+| `Core/Serialization/YamlSerializer.cs` | Stage.Seed 序列化/反序列化，Rng 属性排除序列化 |
+| `Editor/UI/PatternEditor/PatternEditorView.cs` | Seed IntegerField + Randomize 按钮 |
+| `Editor/UI/Timeline/TimelineEditorView.cs` | Stage Seed 控件（面包屑栏右侧） |
+
+#### 9.7.4 注意事项
+
+- 命名空间 `STGEngine.Core.Random` 与 `UnityEngine.Random` 冲突，HomingModifier 中需用 `UnityEngine.Random.onUnitSphere` 完整限定名
+- 当前仅 HomingModifier（AntiParallel=Random 模式）使用随机数，未来新增随机行为的 modifier 应通过 `Rng` 属性注入
+
+---
+
+### 9.8 Phase 4+：Timeline UI 布局重构（已完成）
+
+> Properties 面板从 Timeline 底部移至 3D 视口右侧浮动面板，
+> Timeline 新增拖拽调整高度功能。
+
+#### 9.8.1 Properties 面板重构
+
+- 从 Timeline Root 内部底部（固定 200px）移出为独立浮动面板
+- 定位在 3D 视口右侧（`Position.Absolute, right=0, top=0, bottom=timelineTop%`）
+- 新增收起/展开按钮（◀/▶），收起时仅显示按钮（32px 宽）
+- 面板宽度：18% / min 280px / max 400px（与 PatternEditorView 一致）
+
+#### 9.8.2 Timeline 拖拽调整高度
+
+- 6px 拖拽手柄（hover 蓝色高亮）
+- 拖拽范围：15% ~ (100% - toolbar 高度)
+- 拖到底时自动 `SetMinimized(true)`：隐藏面包屑和主内容区，只保留 toolbar
+- Properties 面板 bottom 与 Timeline top 同步更新
+
+#### 9.8.3 Timeline 内嵌 Pattern 编辑实时刷新
+
+- 修复：编辑 pattern 参数后 Timeline 预览不更新的问题
+- 根因：PatternEditorView.CommandStack 变化只刷新了 _singlePreviewer，pooled previewer 未通知
+- 方案：TimelinePlaybackController.RefreshEvent() + 事件桥接
