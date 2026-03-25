@@ -26,6 +26,13 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>Callback for MeshType changes (scene setup hooks this).</summary>
         public Action<MeshType> OnMeshTypeChanged;
 
+        /// <summary>
+        /// Fired when entering/exiting spell card editing.
+        /// Non-null = entered editing (provides SpellCard data for Boss placeholder).
+        /// Null = exited editing.
+        /// </summary>
+        public Action<SpellCard> OnSpellCardEditingChanged;
+
         private readonly TimelinePlaybackController _playback;
         private readonly PatternLibrary _library;
         private readonly CommandStack _commandStack = new();
@@ -1000,6 +1007,7 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSpellCard.text = !string.IsNullOrEmpty(sc.Name) ? sc.Name : spellCardId;
 
             ShowSpellCardEditor(sc, spellCardId);
+            OnSpellCardEditingChanged?.Invoke(sc);
         }
 
         private void ExitSpellCardEditing()
@@ -1016,6 +1024,7 @@ namespace STGEngine.Editor.UI.Timeline
                 ShowBossFightSpellCards(_editingBossFightSegment);
 
             _editingBossFightSegment = null;
+            OnSpellCardEditingChanged?.Invoke(null);
         }
 
         private void SaveCurrentSpellCard()
@@ -1033,6 +1042,9 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 Debug.LogError($"[TimelineEditor] Failed to save spell card: {e.Message}");
             }
+
+            // Notify Boss placeholder of path changes
+            OnSpellCardEditingChanged?.Invoke(_editingSpellCard);
         }
 
         private void ShowSpellCardEditor(SpellCard sc, string scId)

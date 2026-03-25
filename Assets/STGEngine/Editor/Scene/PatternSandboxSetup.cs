@@ -77,6 +77,11 @@ namespace STGEngine.Editor.Scene
         private AssetLibraryPanel _assetLibrary;
         private STGCatalog _catalog;
 
+        // Boss placeholder
+        private BossPlaceholder _bossPlaceholder;
+        private SpellCard _activeBossSpellCard;
+        private float _bossPathTimer;
+
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
 
@@ -121,6 +126,10 @@ namespace STGEngine.Editor.Scene
                 _previewerPool = new PreviewerPool(transform, _bulletMesh, _bulletMaterial, 6);
                 _timelinePlayback = new TimelinePlaybackController();
                 _timelinePlayback.Initialize(_previewerPool, _patternLibrary);
+
+                // Boss placeholder (hidden until spell card editing)
+                var bossGo = new GameObject("BossPlaceholder");
+                _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();
             }
         }
 
@@ -147,6 +156,16 @@ namespace STGEngine.Editor.Scene
             if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
             {
                 _timelinePlayback.Tick(Time.deltaTime);
+            }
+
+            // Drive Boss placeholder along path
+            if (_bossPlaceholder != null && _bossPlaceholder.IsVisible && _activeBossSpellCard != null)
+            {
+                _bossPathTimer += Time.deltaTime;
+                float limit = _activeBossSpellCard.TimeLimit;
+                if (limit > 0f && _bossPathTimer > limit)
+                    _bossPathTimer -= limit; // Loop
+                _bossPlaceholder.SetTime(_bossPathTimer);
             }
         }
 
@@ -194,6 +213,7 @@ namespace STGEngine.Editor.Scene
 
             _timelineView = new TimelineEditorView(_timelinePlayback, _patternLibrary, _previewer);
             _timelineView.SetCatalog(_catalog);
+            _timelineView.OnSpellCardEditingChanged += OnSpellCardEditingChanged;
             _timelineView.OnMeshTypeChanged += mt =>
             {
                 EnsureBulletVisuals(mt);
@@ -543,6 +563,25 @@ namespace STGEngine.Editor.Scene
         public string[] GetDemoPatternNames() => DemoPatterns;
 
         // ─── Asset Library Callbacks ───
+
+        private void OnSpellCardEditingChanged(SpellCard sc)
+        {
+            if (_bossPlaceholder == null) return;
+
+            if (sc != null)
+            {
+                _activeBossSpellCard = sc;
+                _bossPathTimer = 0f;
+                _bossPlaceholder.SetPath(sc.BossPath);
+                _bossPlaceholder.SetTime(0f);
+                _bossPlaceholder.Show();
+            }
+            else
+            {
+                _activeBossSpellCard = null;
+                _bossPlaceholder.Hide();
+            }
+        }
 
         private void OnAssetSelected(AssetCategory category, string id)
         {
