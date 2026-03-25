@@ -42,9 +42,18 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly Label _breadcrumbStage;
         private readonly Label _breadcrumbSegment;
         private readonly VisualElement _toolbar;
+        private readonly VisualElement _mainSplit;
         private readonly VisualElement _propertyPanel;
         private readonly ScrollView _propertyContent;
         private readonly Label _propertyHeaderLabel;
+        private readonly Button _toggleBtn;
+        private bool _propertyCollapsed;
+
+        /// <summary>
+        /// Standalone floating property panel. Add this to the UIDocument root
+        /// (not inside Timeline Root) so it can float above the 3D viewport.
+        /// </summary>
+        public VisualElement PropertyPanel => _propertyPanel;
 
         // Playback UI
         private Button _playPauseBtn;
@@ -113,14 +122,14 @@ namespace STGEngine.Editor.UI.Timeline
             Root.Add(_toolbar);
 
             // ── Main split: Segment List + Track Area ──
-            var mainSplit = new VisualElement();
-            mainSplit.style.flexDirection = FlexDirection.Row;
-            mainSplit.style.flexGrow = 1;
+            _mainSplit = new VisualElement();
+            _mainSplit.style.flexDirection = FlexDirection.Row;
+            _mainSplit.style.flexGrow = 1;
 
             _segmentList = new SegmentListView(_commandStack);
             _segmentList.OnSegmentSelected += OnSegmentSelected;
             _segmentList.OnStageChanged += OnStageDataChanged;
-            mainSplit.Add(_segmentList.Root);
+            _mainSplit.Add(_segmentList.Root);
 
             _trackArea = new TrackAreaView(_commandStack);
             _trackArea.OnEventSelected += OnEventSelected;
@@ -128,29 +137,49 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.OnEventValuesChanged += OnEventValuesChanged;
             _trackArea.OnSeekRequested += OnSeekRequested;
             _trackArea.OnAddEventRequested += OnAddEventRequested;
-            mainSplit.Add(_trackArea.Root);
+            _mainSplit.Add(_trackArea.Root);
 
-            Root.Add(mainSplit);
+            Root.Add(_mainSplit);
 
-            // ── Property Panel (Bottom) ──
+            // ── Property Panel (floating right-side, managed externally) ──
             _propertyPanel = new VisualElement();
-            _propertyPanel.style.height = 200;
+            _propertyPanel.style.width = new Length(18, LengthUnit.Percent);
+            _propertyPanel.style.minWidth = 280;
+            _propertyPanel.style.maxWidth = 400;
+            _propertyPanel.style.flexGrow = 1;
             _propertyPanel.style.backgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.95f);
-            _propertyPanel.style.borderTopWidth = 1;
-            _propertyPanel.style.borderTopColor = new Color(0.3f, 0.3f, 0.3f);
+            _propertyPanel.style.borderLeftWidth = 1;
+            _propertyPanel.style.borderLeftColor = new Color(0.3f, 0.3f, 0.3f);
 
+            // Header bar with toggle button + title
             var propHeader = new VisualElement();
             propHeader.style.flexDirection = FlexDirection.Row;
             propHeader.style.alignItems = Align.Center;
-            propHeader.style.height = 24;
+            propHeader.style.height = 26;
             propHeader.style.backgroundColor = new Color(0.2f, 0.2f, 0.2f, 0.95f);
-            propHeader.style.paddingLeft = 8;
+            propHeader.style.paddingLeft = 4;
+            propHeader.style.paddingRight = 8;
             propHeader.style.borderBottomWidth = 1;
             propHeader.style.borderBottomColor = new Color(0.3f, 0.3f, 0.3f);
+
+            _toggleBtn = new Button(TogglePropertyPanel) { text = "\u25c0" }; // ◀
+            _toggleBtn.style.width = 24;
+            _toggleBtn.style.height = 20;
+            _toggleBtn.style.fontSize = 10;
+            _toggleBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            _toggleBtn.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
+            _toggleBtn.style.marginRight = 4;
+            _toggleBtn.style.borderTopWidth = _toggleBtn.style.borderBottomWidth =
+                _toggleBtn.style.borderLeftWidth = _toggleBtn.style.borderRightWidth = 1;
+            _toggleBtn.style.borderTopColor = _toggleBtn.style.borderBottomColor =
+                _toggleBtn.style.borderLeftColor = _toggleBtn.style.borderRightColor =
+                    new Color(0.35f, 0.35f, 0.35f);
+            propHeader.Add(_toggleBtn);
 
             _propertyHeaderLabel = new Label("Properties");
             _propertyHeaderLabel.style.color = new Color(0.85f, 0.85f, 0.85f);
             _propertyHeaderLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _propertyHeaderLabel.style.flexGrow = 1;
             propHeader.Add(_propertyHeaderLabel);
             _propertyPanel.Add(propHeader);
 
@@ -158,7 +187,10 @@ namespace STGEngine.Editor.UI.Timeline
             _propertyContent.style.flexGrow = 1;
             _propertyPanel.Add(_propertyContent);
 
-            Root.Add(_propertyPanel);
+            // NOTE: _propertyPanel is NOT added to Root here.
+            // PatternSandboxSetup will add it to the UIDocument root as a
+            // floating overlay positioned above the timeline area.
+            RegisterThemeOverride(_propertyPanel);
 
             // Subscribe to playback events
             _playback.OnTimeChanged += OnPlaybackTimeChanged;
@@ -851,6 +883,44 @@ namespace STGEngine.Editor.UI.Timeline
                 _propDurField.SetValueWithoutNotify(evt.Duration);
         }
 
+        // ─── Timeline Minimize ───
+
+        /// <summary>
+        /// When minimized, hide breadcrumb and main content, keeping only the toolbar visible.
+        /// </summary>
+        public void SetMinimized(bool minimized)
+        {
+            _breadcrumbBar.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex;
+            _mainSplit.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        // ─── Property Panel Toggle ───
+
+        private void TogglePropertyPanel()
+        {
+            _propertyCollapsed = !_propertyCollapsed;
+            if (_propertyCollapsed)
+            {
+                // Collapse: hide content, shrink to button-only width
+                _propertyContent.style.display = DisplayStyle.None;
+                _propertyHeaderLabel.style.display = DisplayStyle.None;
+                _propertyPanel.style.width = 32;
+                _propertyPanel.style.minWidth = 32;
+                _propertyPanel.style.maxWidth = 32;
+                _toggleBtn.text = "\u25b6"; // ▶
+            }
+            else
+            {
+                // Expand: restore full panel
+                _propertyContent.style.display = DisplayStyle.Flex;
+                _propertyHeaderLabel.style.display = DisplayStyle.Flex;
+                _propertyPanel.style.width = new Length(18, LengthUnit.Percent);
+                _propertyPanel.style.minWidth = 280;
+                _propertyPanel.style.maxWidth = 400;
+                _toggleBtn.text = "\u25c0"; // ◀
+            }
+        }
+
         // ─── Theme ───
 
         /// <summary>
@@ -860,6 +930,7 @@ namespace STGEngine.Editor.UI.Timeline
         public void ForceApplyTheme()
         {
             ApplyThemeToTree(Root);
+            ApplyThemeToTree(_propertyPanel);
         }
 
         private static readonly Color Lt = new(0.85f, 0.85f, 0.85f);

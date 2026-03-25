@@ -61,6 +61,16 @@ namespace STGEngine.Editor.Scene
         private PreviewerPool _previewerPool;
         private PatternLibrary _patternLibrary;
 
+        // Timeline layout
+        private float _timelineTopPercent;
+        private VisualElement _timelinePanel;
+        private VisualElement _propertyFloatPanel;
+        private VisualElement _uiRoot; // UIDocument root for height calculations
+        private bool _isDragging;
+        private const float HandleHeight = 6f;
+        private const float ToolbarHeight = 30f;
+        private const float MinTopPercent = 15f;
+
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
 
@@ -191,20 +201,102 @@ namespace STGEngine.Editor.Scene
             // Mode switch button at top-left
             BuildModeSwitch(root);
 
-            // Timeline editor as bottom panel (top half remains 3D viewport).
-            // Use top=50% + bottom=0 instead of height=50%, because percentage
-            // heights don't resolve correctly when the parent (TemplateContainer)
-            // has auto height.
+            _uiRoot = root;
+            _timelineTopPercent = 70f;
+
+            // ── Drag handle (resize bar) ──
+            var handle = new VisualElement();
+            handle.style.position = Position.Absolute;
+            handle.style.left = 0;
+            handle.style.right = 0;
+            handle.style.height = HandleHeight;
+            // Place handle just above the timeline panel
+            handle.style.top = Length.Percent(_timelineTopPercent);
+            handle.style.marginTop = -HandleHeight;
+            handle.style.backgroundColor = new Color(0.35f, 0.35f, 0.35f, 0.9f);
+            // Hover highlight
+            handle.RegisterCallback<MouseEnterEvent>(_ =>
+                handle.style.backgroundColor = new Color(0.5f, 0.7f, 1f, 0.8f));
+            handle.RegisterCallback<MouseLeaveEvent>(_ =>
+            {
+                if (!_isDragging)
+                    handle.style.backgroundColor = new Color(0.35f, 0.35f, 0.35f, 0.9f);
+            });
+
+            handle.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0) return;
+                _isDragging = true;
+                handle.CapturePointer(evt.pointerId);
+                handle.style.backgroundColor = new Color(0.5f, 0.7f, 1f, 0.8f);
+                evt.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!_isDragging) return;
+                var rootHeight = _uiRoot.resolvedStyle.height;
+                if (rootHeight <= 0f) return;
+
+                // Max top%: leave room for handle + toolbar
+                float maxTopPercent = ((rootHeight - HandleHeight - ToolbarHeight) / rootHeight) * 100f;
+                float newPercent = (evt.position.y / rootHeight) * 100f;
+                newPercent = Mathf.Clamp(newPercent, MinTopPercent, maxTopPercent);
+
+                ApplyTimelineTop(newPercent);
+                // Move handle itself
+                handle.style.top = Length.Percent(newPercent);
+                handle.style.marginTop = -HandleHeight;
+
+                evt.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (!_isDragging) return;
+                _isDragging = false;
+                handle.ReleasePointer(evt.pointerId);
+                handle.style.backgroundColor = new Color(0.35f, 0.35f, 0.35f, 0.9f);
+                evt.StopPropagation();
+            });
+            root.Add(handle);
+
+            // ── Timeline panel ──
             var panel = _timelineView.Root;
             panel.style.position = Position.Absolute;
             panel.style.left = 0;
             panel.style.right = 0;
-            panel.style.top = Length.Percent(50);
+            panel.style.top = Length.Percent(_timelineTopPercent);
             panel.style.bottom = 0;
             root.Add(panel);
 
+            // Property panel: floating right-side overlay above the timeline
+            var propPanel = _timelineView.PropertyPanel;
+            propPanel.style.position = Position.Absolute;
+            propPanel.style.right = 0;
+            propPanel.style.top = 0;
+            propPanel.style.bottom = Length.Percent(100f - _timelineTopPercent);
+            root.Add(propPanel);
+
+            _timelinePanel = panel;
+            _propertyFloatPanel = propPanel;
+
             // Force theme override after Unity Runtime Theme has been applied
             StartCoroutine(ForceTimelineTheme());
+        }
+
+        /// <summary>
+        /// Update timeline top position and sync property panel + minimize state.
+        /// </summary>
+        private void ApplyTimelineTop(float topPercent)
+        {
+            _timelineTopPercent = topPercent;
+            _timelinePanel.style.top = Length.Percent(topPercent);
+            _propertyFloatPanel.style.bottom = Length.Percent(100f - topPercent);
+
+            // When nearly collapsed (< 8% remaining), minimize to toolbar-only
+            float rootHeight = _uiRoot.resolvedStyle.height;
+            float remainingPx = rootHeight * (1f - topPercent / 100f);
+            bool minimized = remainingPx < HandleHeight + ToolbarHeight + 60f; // 60px threshold for breadcrumb+content
+            _timelineView.SetMinimized(minimized);
         }
 
         private IEnumerator ForceTimelineTheme()
