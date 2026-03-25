@@ -42,6 +42,14 @@ namespace STGEngine.Core.Timeline
         /// </summary>
         [YamlDotNet.Serialization.YamlIgnore]
         public BulletPattern ResolvedPattern { get; set; }
+
+        /// <summary>
+        /// Engine-computed effective duration: the time at which ~90% of bullets
+        /// have left the playable area and won't return. -1 means not yet computed.
+        /// Computed in Step 2; reserved field for now.
+        /// </summary>
+        [YamlDotNet.Serialization.YamlIgnore]
+        public float ComputedEffectiveDuration { get; set; } = -1f;
     }
 
     /// <summary>

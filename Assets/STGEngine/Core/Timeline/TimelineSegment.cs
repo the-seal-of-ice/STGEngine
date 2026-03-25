@@ -26,6 +26,13 @@ namespace STGEngine.Core.Timeline
         /// <summary>Local duration in seconds. For MidStage this is exact; for BossFight it's an estimate.</summary>
         public float Duration { get; set; } = 30f;
 
+        /// <summary>
+        /// Designer's estimated actual duration (seconds).
+        /// -1 means unset; defaults to Duration × 0.8 at display time.
+        /// Displayed as a green vertical line inside the block.
+        /// </summary>
+        public float DesignEstimate { get; set; } = -1f;
+
         /// <summary>Entry trigger from previous segment. Null for the first segment.</summary>
         public TriggerCondition EntryTrigger { get; set; }
 

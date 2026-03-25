@@ -30,6 +30,22 @@ namespace STGEngine.Core.DataModel
 
         /// <summary>Health pool. Spell card is "captured" when depleted.</summary>
         public float Health { get; set; } = 1000f;
+
+        // ── Duration semantics ──
+
+        /// <summary>
+        /// Designer's estimated actual duration (seconds).
+        /// -1 means unset; defaults to TimeLimit × 0.7 at display time.
+        /// Displayed as a green vertical line inside the block.
+        /// </summary>
+        public float DesignEstimate { get; set; } = -1f;
+
+        /// <summary>
+        /// Transition duration after this spell card ends (seconds).
+        /// Covers bullet-clear, boss reposition tween, etc.
+        /// Displayed as a special narrow block between spell cards.
+        /// </summary>
+        public float TransitionDuration { get; set; } = 1.5f;
     }
 
     /// <summary>

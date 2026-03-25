@@ -411,6 +411,12 @@ namespace STGEngine.Core.Serialization
                     EmitScalar(emitter, "duration");
                     EmitScalar(emitter, Fmt(seg.Duration));
 
+                    if (seg.DesignEstimate >= 0f)
+                    {
+                        EmitScalar(emitter, "design_estimate");
+                        EmitScalar(emitter, Fmt(seg.DesignEstimate));
+                    }
+
                     if (seg.EntryTrigger != null)
                     {
                         EmitScalar(emitter, "entry_trigger");
@@ -558,6 +564,7 @@ namespace STGEngine.Core.Serialization
             if (dict.TryGetValue("type", out var typeVal))
                 seg.Type = (SegmentType)Enum.Parse(typeof(SegmentType), SnakeToPascal(typeVal.ToString()), true);
             if (dict.TryGetValue("duration", out var dur)) seg.Duration = ParseFloat(dur);
+            if (dict.TryGetValue("design_estimate", out var de)) seg.DesignEstimate = ParseFloat(de);
 
             if (dict.TryGetValue("entry_trigger", out var trigObj))
                 seg.EntryTrigger = MapTriggerCondition(ToStringDict(trigObj));

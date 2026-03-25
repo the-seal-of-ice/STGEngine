@@ -564,6 +564,160 @@ STGData/
 2. 块内缩略图（高，自绘 + 性能优化）
 3. Modified 机制（高，数据架构变更，所有资源加载逻辑需改）
 
+---
+
+#### Step 1 确认设计（递归层级导航 + 双击进入）
+
+> 以下设计已与用户逐项确认，作为 Phase 5 Step 1 的实施依据。
+
+##### ITimelineLayer 接口
+
+统一的层级抽象，放在 Editor 程序集（`Editor/UI/Timeline/Layers/`）。
+
+```csharp
+public interface ITimelineLayer
+{
+    string LayerId { get; }
+    string DisplayName { get; }
+    int BlockCount { get; }
+    ITimelineBlock GetBlock(int index);
+    float TotalDuration { get; }
+    bool CanAddBlock { get; }
+    bool CanDoubleClickEnter(ITimelineBlock block);
+    ITimelineLayer CreateChildLayer(ITimelineBlock block);
+    IReadOnlyList<ContextMenuEntry> GetContextMenuEntries(float time);
+    void BuildPropertiesPanel(VisualElement container, ITimelineBlock block);
+    void LoadPreview(TimelinePlaybackController playback);
+}
+
+public interface ITimelineBlock
+{
+    string Id { get; }
+    string DisplayLabel { get; }
+    float StartTime { get; set; }
+    float Duration { get; set; }
+    Color BlockColor { get; }
+    bool CanMove { get; }       // false = 顺序队列模式（Segment/SpellCard）
+    object DataSource { get; }  // 底层数据对象
+}
+```
+
+6 个实现类：
+
+| 类名 | 层级 | 块类型 | 排列模式 |
+|------|------|--------|----------|
+| StageLayer | L0 | Segment → SegmentBlock | 顺序（拖拽重排序） |
+| MidStageLayer | L1a | TimelineEvent → EventBlock | 自由（可重叠） |
+| BossFightLayer | L1b | SpellCard → SpellCardBlock + TransitionBlock | 顺序 |
+| SpellCardDetailLayer | L2c | SpellCardPattern → PatternBlock | 自由 |
+| WaveLayer | L2b | EnemyInstance → EnemyBlock | 自由 |
+| PatternLayer | L2a | 无块（叶子层级，纯属性面板） | — |
+
+##### 面包屑导航栈
+
+```csharp
+public struct BreadcrumbEntry
+{
+    public ITimelineLayer Layer;
+    public string DisplayName;
+}
+
+// TimelineEditorView 中：
+private Stack<BreadcrumbEntry> _navigationStack;
+private ITimelineLayer _currentLayer;
+```
+
+- 双击进入：Push 当前层 → 切换到子层 → 重建面包屑 UI
+- 面包屑点击：Pop 到目标层 → 重建
+- 动态生成 N 个 Label + 分隔符，最后一个不可点击
+
+##### TrackAreaView 泛化
+
+适配器模式改造：
+
+- `SetSegment(TimelineSegment)` → `SetLayer(ITimelineLayer)`
+- `EventBlockInfo` 持有 `ITimelineBlock` 而非 `TimelineEvent`
+- 颜色/标签从 `ITimelineBlock.BlockColor` / `DisplayLabel` 获取
+- 右键菜单从 `ITimelineLayer.GetContextMenuEntries()` 动态生成
+- 新增双击回调 `OnBlockDoubleClicked`
+- 新增排列模式：自由模式 vs 顺序模式（`CanMove=false` 时首尾拼接，拖拽触发重排序）
+
+##### SegmentListView 废弃
+
+方案 B + B2：Segment 进入 TrackArea 作为块，拖拽触发重排序。
+
+- L0 不再是特例，所有层级统一用 TrackArea
+- Segment 增删 → 右键菜单 "Add MidStage Segment" / "Add BossFight Segment"
+- Segment 类型切换 → 选中块后 Properties 面板中切换
+- Segment 排序 → 拖拽块到目标位置，释放后重新计算所有 StartTime
+- SegmentListView.cs 保留但标记废弃
+
+##### 三种时长语义
+
+时间轴中块的宽度和视觉提示遵循三种时长语义：
+
+| 概念 | 含义 | 决定者 | 适用块类型 |
+|------|------|--------|-----------|
+| HardLimit | 绝对不超过的时长 | 数据定义 | 所有块（块的总宽度） |
+| DesignEstimate | 设计者预估的实际持续时长 | 设计者手填 | SpellCard, Segment |
+| ComputedEstimate | 引擎自动算出的有效影响时长 | 算法求解 | SpawnPatternEvent（Step 2 实现） |
+
+视觉规则：
+
+```
+SpellCard 块（HardLimit=50s, DesignEstimate=35s, TransitionDuration=1.5s）:
+┌─────────────────────────────────────────┐ ┌──┐
+│█████████████████████████│░░░░░░░░░░░░░░│ │//│ ← 过渡窄条
+│  实色 (0~35s)           │ 半透明(35~50s)│ │//│
+│                         ▼ 绿线          │ └──┘
+└─────────────────────────────────────────┘
+
+Pattern 块（HardLimit=5s, ComputedEstimate=3.2s）:
+┌─────────────────────────────────────────┐
+│████████████████████│▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒│
+│  实色 (0~3.2s)     │ 渐变淡出 (3.2~5s) │
+│                    ╰─ 无显式线标记       │
+└─────────────────────────────────────────┘
+```
+
+- DesignEstimate：绿色竖线 + 右侧降低透明度，绿线可拖拽调整
+- ComputedEstimate：渐变淡出（无显式线，边界本身模糊）
+- TransitionDuration：符卡间特殊样式窄条（斜线填充/虚线边框），可拖拽调整时长
+
+##### 数据模型预留
+
+```csharp
+// SpellCard.cs 新增
+public float DesignEstimate { get; set; } = -1f;       // -1=未设置，默认 TimeLimit × 0.7
+public float TransitionDuration { get; set; } = 1.5f;  // 符卡结束后过渡时长
+
+// TimelineSegment.cs 新增
+public float DesignEstimate { get; set; } = -1f;       // -1=未设置，默认 Duration × 0.8
+
+// SpawnPatternEvent 新增
+[YamlIgnore]
+public float ComputedEffectiveDuration { get; set; } = -1f; // Step 2 实现
+```
+
+背景：BossFight 中符卡的排列本质上是"顺序队列"而非"自由时间轴"。符卡的实际时长由运行时击破逻辑决定（玩家击破 → 消弹 + 归位补间 → 衔接下一符卡），TimeLimit 只是上限。编辑器中接受"预览 ≠ 实际"的差异。
+
+ComputedEstimate（Pattern 的 90% 弹幕离场时刻）的计算涉及弹幕速度/轨迹、可操控区域边界（可变）、回旋弹幕折返等因素，在 Step 2 阶段实现。
+
+##### 实施顺序
+
+| 子步骤 | 内容 | 新增/修改文件 |
+|--------|------|--------------|
+| 1a | 数据模型预留 + 接口定义 | Core 层 3 文件 + Editor/Layers/ 3 新文件 |
+| 1b | MidStageLayer 实现 | Editor/Layers/MidStageLayer.cs |
+| 1c | TrackAreaView 泛化 | TrackAreaView.cs 改造 |
+| 1d | TimelineEditorView 导航重构 | TimelineEditorView.cs 改造 |
+| 1e | BossFightLayer + SpellCardDetailLayer | 2 新文件 |
+| 1f | StageLayer + 废弃 SegmentListView | 1 新文件 + 引用清理 |
+| 1g | WaveLayer + PatternLayer | 2 新文件 |
+| 1h | 回归测试 + 清理 | 全面验证 |
+
+每个子步骤完成后：编译验证 → Play 模式验证 → git commit + push。
+
 #### 发射位置偏移修饰器（SpawnOffsetModifier）
 
 > 目的：让弹幕发射位置相对 Boss 有空间散布，而非精确点发射。
