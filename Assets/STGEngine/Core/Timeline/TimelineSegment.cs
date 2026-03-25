@@ -29,7 +29,14 @@ namespace STGEngine.Core.Timeline
         /// <summary>Entry trigger from previous segment. Null for the first segment.</summary>
         public TriggerCondition EntryTrigger { get; set; }
 
-        /// <summary>Events within this segment's local timeline.</summary>
+        /// <summary>Events within this segment's local timeline (used by MidStage segments).</summary>
         public List<TimelineEvent> Events { get; set; } = new();
+
+        /// <summary>
+        /// Spell card IDs for BossFight segments. Each references an independent SpellCard YAML file.
+        /// Spell cards execute sequentially; each ends when health is depleted or time runs out.
+        /// Ignored for MidStage segments.
+        /// </summary>
+        public List<string> SpellCardIds { get; set; } = new();
     }
 }

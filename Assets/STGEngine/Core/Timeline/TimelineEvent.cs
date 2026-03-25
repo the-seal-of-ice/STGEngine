@@ -43,4 +43,26 @@ namespace STGEngine.Core.Timeline
         [YamlDotNet.Serialization.YamlIgnore]
         public BulletPattern ResolvedPattern { get; set; }
     }
+
+    /// <summary>
+    /// Spawns a wave of enemies at a given offset.
+    /// Wave is referenced by ID and resolved at load time.
+    /// </summary>
+    [TypeTag("spawn_wave")]
+    public class SpawnWaveEvent : TimelineEvent
+    {
+        public override float Duration { get; set; } = 10f;
+
+        /// <summary>Reference to a Wave file by its ID.</summary>
+        public string WaveId { get; set; } = "";
+
+        /// <summary>World-space offset applied to all enemy positions in the wave.</summary>
+        public Vector3 SpawnOffset { get; set; }
+
+        /// <summary>
+        /// Resolved at runtime after loading. Not serialized.
+        /// </summary>
+        [YamlDotNet.Serialization.YamlIgnore]
+        public Wave ResolvedWave { get; set; }
+    }
 }
