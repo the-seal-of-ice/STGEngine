@@ -965,12 +965,15 @@ namespace STGEngine.Editor.UI.Timeline
 
             tempSegment.Duration = timeOffset > 0f ? timeOffset : segment.Duration;
 
-            _trackArea.SetSegment(tempSegment);
+            // Show spell card blocks in TrackArea (not pattern preview blocks)
+            if (_currentLayer is BossFightLayer)
+                _trackArea.SetLayer(_currentLayer);
+            else
+                _trackArea.SetSegment(tempSegment);
+
+            // Load combined preview for playback (弹幕 rendering in scene)
             _playback.LoadSegment(tempSegment);
 
-            // Override the layer so right-click menu shows BossFight options, not MidStage
-            if (_currentLayer is BossFightLayer)
-                _trackArea.OverrideLayerReference(_currentLayer);
             if (combinedBossPath.Count > 0)
             {
                 var combinedSc = new SpellCard
