@@ -485,6 +485,85 @@ namespace STGEngine.Core.Timeline
 
 ### 待实现设计想法（不属于特定 Phase，可随时插入）
 
+#### 递归 Timeline 层级架构（FL Studio 风格）
+
+> 将编辑器改造为统一的递归 Timeline 层级结构。
+> 每一层都是同一个抽象：时间轴上排列"块"，双击进入下一层。
+> 块内显示子层级内容的缩略图快照（按比例缩放到块的宽高内）。
+
+**层级树：**
+
+```
+L0 Stage
+│  时间轴上的块: Segment
+│  块内缩略图: 该 Segment 内所有事件/符卡的缩略排列
+│  双击 → 进入 L1
+│
+├─ L1a MidStage Segment
+│  │  时间轴上的块: SpawnPatternEvent / SpawnWaveEvent
+│  │  块内缩略图: 弹幕轨迹缩略 / 小怪出场时序
+│  │  双击 → 进入 L2a (Pattern) 或 L2b (Wave)
+│  │
+│  ├─ L2a Pattern
+│  │    属性面板: Emitter + Modifier[] + 视觉参数 + Seed
+│  │    未来: PatternTimeline（发射节奏关键帧）
+│  │
+│  └─ L2b Wave
+│       时间轴上的块: EnemyInstance（按 SpawnDelay 排列）
+│       块内缩略图: 小怪路径缩略
+│       双击 → 进入 L3 (EnemyType)
+│
+└─ L1b BossFight Segment
+   │  时间轴上的块: SpellCard（按顺序排列）
+   │  块内缩略图: 该符卡内所有 Pattern 的缩略排列
+   │  Boss 占位符 + 拼接路径
+   │  双击 → 进入 L2c (SpellCard)
+   │
+   └─ L2c SpellCard
+        时间轴上的块: SpellCardPattern（按 Delay 排列）
+        块内缩略图: 弹幕轨迹缩略
+        双击 → 进入 L2a (Pattern)
+```
+
+**块内缩略图渲染规则：**
+
+- 子层级的视觉内容按比例缩放到父层级块的宽度和高度内
+- 颜色保持但降低饱和度/透明度，目的是"一眼看出里面大概有什么"
+- 使用 `generateVisualContent` 自绘，需注意性能（几十个块同时绘制）
+- 最简版：颜色条表示子块分布；进阶版：实际弹幕轨迹线
+
+**Modified/Override 机制：**
+
+在某层级的 Timeline 上修改了引用的资源时：
+1. 不修改原始 YAML 文件（模板保持不变）
+2. 自动在 `Modified/` 子目录下创建完整副本
+3. 面包屑和块上显示 `[M]` 标记
+4. 可以"还原为原始"或"另存为新模板"
+
+```
+存储结构:
+STGData/
+├── Patterns/           ← 原始模板（只读引用）
+├── SpellCards/         ← 原始模板
+└── Modified/           ← 局部覆盖
+    └── spell_01/       ← 按所属上下文分组
+        └── ring_wave.yaml  ← spell_01 中对 ring_wave 的修改版
+```
+
+引用链变为：ID → 检查有无 Override → 有则加载覆盖版 → 无则加载原始
+
+**需要的抽象：**
+
+- `ITimelineLayer`：统一的层级接口，替代现有硬编码的 TrackAreaView
+- 面包屑泛化为无限深度
+- 资源引用从"ID 直引用"变为"ID + 可选 Override 路径"
+
+**实现分步建议：**
+
+1. 递归层级导航 + 双击进入（中等，不改数据模型）
+2. 块内缩略图（高，自绘 + 性能优化）
+3. Modified 机制（高，数据架构变更，所有资源加载逻辑需改）
+
 #### 发射位置偏移修饰器（SpawnOffsetModifier）
 
 > 目的：让弹幕发射位置相对 Boss 有空间散布，而非精确点发射。
