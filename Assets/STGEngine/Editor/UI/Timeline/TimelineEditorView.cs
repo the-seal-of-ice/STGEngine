@@ -9,6 +9,7 @@ using STGEngine.Core.Serialization;
 using STGEngine.Editor.Commands;
 using STGEngine.Editor.UI;
 using STGEngine.Editor.UI.FileManager;
+using STGEngine.Editor.UI.Timeline.Layers;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
 
@@ -88,6 +89,16 @@ namespace STGEngine.Editor.UI.Timeline
         private string _editingSpellCardId;
         private TimelineSegment _editingBossFightSegment;
 
+        // ── Recursive navigation stack ──
+        private readonly Stack<BreadcrumbEntry> _navigationStack = new();
+        private ITimelineLayer _currentLayer;
+
+        public struct BreadcrumbEntry
+        {
+            public ITimelineLayer Layer;
+            public string DisplayName;
+        }
+
         public TimelineEditorView(TimelinePlaybackController playback, PatternLibrary library,
             PatternPreviewer singlePreviewer)
         {
@@ -140,11 +151,13 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSpellCard.style.display = DisplayStyle.None;
             _breadcrumbBar.Add(_breadcrumbSpellCard);
 
-            // Make segment label clickable to navigate back from spell card editing
+            // Make segment label clickable to navigate back
             _breadcrumbSegment.RegisterCallback<ClickEvent>(_ =>
             {
                 if (_editingSpellCard != null)
                     ExitSpellCardEditing();
+                else if (_navigationStack.Count > 1)
+                    NavigateToDepth(1);
             });
 
             // Spacer to push seed controls to the right
@@ -786,16 +799,30 @@ namespace STGEngine.Editor.UI.Timeline
                 OnSpellCardEditingChanged?.Invoke(null);
             }
 
+            // Reset navigation stack to root (Stage level)
+            _navigationStack.Clear();
+            _currentLayer = null;
+
             if (segment != null && segment.Type == SegmentType.BossFight)
             {
                 ShowBossFightSpellCards(segment);
                 LoadBossFightPreview(segment);
             }
-            else
+            else if (segment != null)
             {
+                // Create MidStageLayer and navigate to it
+                var midLayer = new MidStageLayer(segment);
+                _currentLayer = midLayer;
+                WireLayerToTrackArea(midLayer);
                 _trackArea.SetSegment(segment);
                 _playback.LoadSegment(segment);
                 // Hide boss placeholder when switching to MidStage
+                OnSpellCardEditingChanged?.Invoke(null);
+            }
+            else
+            {
+                _trackArea.SetSegment(null);
+                _playback.LoadSegment(null);
                 OnSpellCardEditingChanged?.Invoke(null);
             }
         }
@@ -1105,6 +1132,17 @@ namespace STGEngine.Editor.UI.Timeline
             _editingSpellCardId = spellCardId;
             _editingBossFightSegment = segment;
 
+            // Push current layer onto navigation stack
+            if (_currentLayer != null)
+            {
+                _navigationStack.Push(new BreadcrumbEntry
+                {
+                    Layer = _currentLayer,
+                    DisplayName = _currentLayer.DisplayName
+                });
+            }
+            _currentLayer = null; // SpellCard editing doesn't have a full ITimelineLayer yet (step 1e)
+
             // Update breadcrumb to layer 3
             _breadcrumbSep2.style.display = DisplayStyle.Flex;
             _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
@@ -1193,16 +1231,160 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSep2.style.display = DisplayStyle.None;
             _breadcrumbSpellCard.style.display = DisplayStyle.None;
 
-            // Stop spell card preview
-            _trackArea.SetSegment(null);
-            _playback.LoadSegment(null);
+            // Pop navigation stack to restore parent layer
+            if (_navigationStack.Count > 0)
+            {
+                var entry = _navigationStack.Pop();
+                _currentLayer = entry.Layer;
+            }
 
-            // Return to spell card list
+            // Return to spell card list and reload BossFight preview
             if (_editingBossFightSegment != null)
+            {
                 ShowBossFightSpellCards(_editingBossFightSegment);
+                LoadBossFightPreview(_editingBossFightSegment);
+                // LoadBossFightPreview already fires OnSpellCardEditingChanged with combined SC
+            }
+            else
+            {
+                _trackArea.SetSegment(null);
+                _playback.LoadSegment(null);
+                OnSpellCardEditingChanged?.Invoke(null);
+            }
 
             _editingBossFightSegment = null;
-            OnSpellCardEditingChanged?.Invoke(null);
+        }
+
+        // ─── Recursive Navigation ───
+
+        /// <summary>
+        /// Navigate into a child layer. Pushes current layer onto the stack,
+        /// sets the new layer as current, and rebuilds the breadcrumb + track area.
+        /// </summary>
+        public void NavigateTo(ITimelineLayer layer)
+        {
+            if (layer == null) return;
+
+            if (_currentLayer != null)
+            {
+                _navigationStack.Push(new BreadcrumbEntry
+                {
+                    Layer = _currentLayer,
+                    DisplayName = _currentLayer.DisplayName
+                });
+            }
+
+            _currentLayer = layer;
+            WireLayerToTrackArea(layer);
+            _trackArea.SetLayer(layer);
+            layer.LoadPreview(_playback);
+            RebuildBreadcrumb();
+        }
+
+        /// <summary>
+        /// Navigate back one level. Pops the stack and restores the parent layer.
+        /// </summary>
+        public void NavigateBack()
+        {
+            if (_navigationStack.Count == 0) return;
+
+            var entry = _navigationStack.Pop();
+            _currentLayer = entry.Layer;
+            WireLayerToTrackArea(_currentLayer);
+            _trackArea.SetLayer(_currentLayer);
+            _currentLayer.LoadPreview(_playback);
+            RebuildBreadcrumb();
+        }
+
+        /// <summary>
+        /// Navigate back to a specific depth in the stack.
+        /// depth=0 means go back to the root layer.
+        /// </summary>
+        public void NavigateToDepth(int depth)
+        {
+            while (_navigationStack.Count > depth && _navigationStack.Count > 0)
+            {
+                var entry = _navigationStack.Pop();
+                _currentLayer = entry.Layer;
+            }
+
+            if (_currentLayer != null)
+            {
+                WireLayerToTrackArea(_currentLayer);
+                _trackArea.SetLayer(_currentLayer);
+                _currentLayer.LoadPreview(_playback);
+            }
+            RebuildBreadcrumb();
+        }
+
+        /// <summary>
+        /// Wire a MidStageLayer's callbacks to the legacy event handlers.
+        /// For other layer types, this is a no-op for now (will be extended in 1e/1f).
+        /// </summary>
+        private void WireLayerToTrackArea(ITimelineLayer layer)
+        {
+            if (layer is MidStageLayer midLayer)
+            {
+                midLayer.OnAddPatternRequested = time => OnAddEventRequested(time);
+                midLayer.OnAddWaveRequested = time => OnAddWaveEventRequested(time);
+                midLayer.OnDeleteRequested = blk =>
+                {
+                    _trackArea.SelectBlock(blk);
+                    _trackArea.DeleteSelectedEvent();
+                };
+            }
+        }
+
+        /// <summary>
+        /// Rebuild the breadcrumb bar to reflect the current navigation stack.
+        /// Generates N clickable labels + separators, with the last one being non-clickable.
+        /// </summary>
+        private void RebuildBreadcrumb()
+        {
+            // Remove all children except the seed controls (which are after the spacer)
+            // Strategy: clear everything, then re-add seed controls
+            // But seed controls are complex — safer to just update the breadcrumb labels.
+
+            // For now, update the existing hardcoded labels to match the stack.
+            // Full dynamic breadcrumb will replace this once SegmentListView is removed (1f).
+
+            var layers = new List<BreadcrumbEntry>();
+            // Stack is LIFO, so we need to reverse to get root-first order
+            var stackArray = _navigationStack.ToArray();
+            for (int i = stackArray.Length - 1; i >= 0; i--)
+                layers.Add(stackArray[i]);
+
+            // Current layer is the last one
+            if (_currentLayer != null)
+                layers.Add(new BreadcrumbEntry { Layer = _currentLayer, DisplayName = _currentLayer.DisplayName });
+
+            // Update existing breadcrumb labels based on depth
+            if (layers.Count >= 1)
+                _breadcrumbStage.text = layers[0].DisplayName;
+
+            if (layers.Count >= 2)
+            {
+                _breadcrumbSegment.text = layers[1].DisplayName;
+                _breadcrumbSegment.style.color = layers.Count > 2
+                    ? new Color(0.5f, 0.8f, 1f) // clickable color
+                    : new Color(0.5f, 0.8f, 1f); // current level
+            }
+            else
+            {
+                _breadcrumbSegment.text = "\u2014";
+            }
+
+            if (layers.Count >= 3)
+            {
+                _breadcrumbSep2.style.display = DisplayStyle.Flex;
+                _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
+                _breadcrumbSpellCard.text = layers[2].DisplayName;
+            }
+            else
+            {
+                _breadcrumbSep2.style.display = DisplayStyle.None;
+                _breadcrumbSpellCard.style.display = DisplayStyle.None;
+            }
         }
 
         private void SaveCurrentSpellCard()
