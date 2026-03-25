@@ -143,13 +143,7 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         _currentLayer = _stageLayer;
                         _trackArea.SetLayer(_stageLayer);
-                        // Load an empty segment with correct duration so playhead/seek still works
-                        var dummySeg = new TimelineSegment
-                        {
-                            Id = "_stage_overview",
-                            Duration = _stageLayer.TotalDuration
-                        };
-                        _playback.LoadSegment(dummySeg);
+                        LoadStageOverviewPreview();
                         OnSpellCardEditingChanged?.Invoke(null);
                         RebuildBreadcrumb();
                     }
@@ -433,6 +427,7 @@ namespace STGEngine.Editor.UI.Timeline
             _stageLayer.OnStageStructureChanged = () =>
             {
                 _trackArea.SetLayer(_stageLayer);
+                LoadStageOverviewPreview();
                 OnStageDataChanged();
             };
             _stageLayer.OnDeleteSegmentRequested = blk =>
@@ -441,13 +436,105 @@ namespace STGEngine.Editor.UI.Timeline
             };
             _currentLayer = _stageLayer;
             _trackArea.SetLayer(_stageLayer);
-            // Provide a dummy segment so playhead/seek works at Stage level
-            var overviewSeg = new TimelineSegment
+            // Build a combined segment covering all segments so playback shows bullets at Stage level
+            LoadStageOverviewPreview();
+        }
+
+        /// <summary>
+        /// Build a combined temporary segment from all segments in the stage.
+        /// MidStage events are offset by segment start time.
+        /// BossFight spell card patterns are offset similarly.
+        /// This allows bullet preview at the Stage overview level.
+        /// </summary>
+        private void LoadStageOverviewPreview()
+        {
+            var tempSegment = new TimelineSegment
             {
                 Id = "_stage_overview",
-                Duration = _stageLayer.TotalDuration
+                Name = _stage.Name,
+                Type = SegmentType.MidStage,
+                Duration = _stageLayer?.TotalDuration ?? 30f
             };
-            _playback.LoadSegment(overviewSeg);
+
+            float segmentOffset = 0f;
+
+            foreach (var seg in _stage.Segments)
+            {
+                if (seg.Type == SegmentType.MidStage)
+                {
+                    // Copy events with time offset
+                    foreach (var evt in seg.Events)
+                    {
+                        if (evt is SpawnPatternEvent sp)
+                        {
+                            var pattern = _library?.Resolve(sp.PatternId);
+                            if (pattern == null) continue;
+
+                            tempSegment.Events.Add(new SpawnPatternEvent
+                            {
+                                Id = $"_so_{seg.Id}_{sp.Id}",
+                                StartTime = segmentOffset + sp.StartTime,
+                                Duration = sp.Duration,
+                                PatternId = sp.PatternId,
+                                SpawnPosition = sp.SpawnPosition,
+                                ResolvedPattern = pattern
+                            });
+                        }
+                        else if (evt is SpawnWaveEvent sw)
+                        {
+                            tempSegment.Events.Add(new SpawnWaveEvent
+                            {
+                                Id = $"_so_{seg.Id}_{sw.Id}",
+                                StartTime = segmentOffset + sw.StartTime,
+                                Duration = sw.Duration,
+                                WaveId = sw.WaveId,
+                                SpawnOffset = sw.SpawnOffset
+                            });
+                        }
+                    }
+                }
+                else if (seg.Type == SegmentType.BossFight && _catalog != null)
+                {
+                    // Flatten spell card patterns into the overview
+                    float scOffset = segmentOffset;
+                    foreach (var scId in seg.SpellCardIds)
+                    {
+                        var path = _catalog.GetSpellCardPath(scId);
+                        if (!System.IO.File.Exists(path)) continue;
+
+                        SpellCard sc;
+                        try
+                        {
+                            sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                        }
+                        catch { continue; }
+
+                        foreach (var scp in sc.Patterns)
+                        {
+                            var pattern = _library?.Resolve(scp.PatternId);
+                            if (pattern == null) continue;
+
+                            var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
+                            tempSegment.Events.Add(new SpawnPatternEvent
+                            {
+                                Id = $"_so_{scId}_{scp.PatternId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}",
+                                StartTime = scOffset + scp.Delay,
+                                Duration = scp.Duration,
+                                PatternId = scp.PatternId,
+                                SpawnPosition = bossPos + scp.Offset,
+                                ResolvedPattern = pattern
+                            });
+                        }
+
+                        scOffset += sc.TimeLimit;
+                    }
+                }
+
+                segmentOffset += seg.Duration;
+            }
+
+            tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
+            _playback.LoadSegment(tempSegment);
         }
 
         private void LoadDefaultStage()
