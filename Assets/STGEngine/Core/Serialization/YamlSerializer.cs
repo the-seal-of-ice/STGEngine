@@ -99,6 +99,72 @@ namespace STGEngine.Core.Serialization
             return Deserialize(File.ReadAllText(path));
         }
 
+        // ─── EnemyType Serialization ───
+
+        public static string SerializeEnemyType(EnemyType enemyType)
+        {
+            return Serializer.Serialize(enemyType);
+        }
+
+        public static EnemyType DeserializeEnemyType(string yaml)
+        {
+            return Deserializer.Deserialize<EnemyType>(yaml);
+        }
+
+        public static void SerializeEnemyTypeToFile(EnemyType enemyType, string path)
+        {
+            File.WriteAllText(path, SerializeEnemyType(enemyType));
+        }
+
+        public static EnemyType DeserializeEnemyTypeFromFile(string path)
+        {
+            return DeserializeEnemyType(File.ReadAllText(path));
+        }
+
+        // ─── Wave Serialization ───
+
+        public static string SerializeWave(Wave wave)
+        {
+            return Serializer.Serialize(wave);
+        }
+
+        public static Wave DeserializeWave(string yaml)
+        {
+            return Deserializer.Deserialize<Wave>(yaml);
+        }
+
+        public static void SerializeWaveToFile(Wave wave, string path)
+        {
+            File.WriteAllText(path, SerializeWave(wave));
+        }
+
+        public static Wave DeserializeWaveFromFile(string path)
+        {
+            return DeserializeWave(File.ReadAllText(path));
+        }
+
+        // ─── SpellCard Serialization ───
+
+        public static string SerializeSpellCard(SpellCard spellCard)
+        {
+            return Serializer.Serialize(spellCard);
+        }
+
+        public static SpellCard DeserializeSpellCard(string yaml)
+        {
+            return Deserializer.Deserialize<SpellCard>(yaml);
+        }
+
+        public static void SerializeSpellCardToFile(SpellCard spellCard, string path)
+        {
+            File.WriteAllText(path, SerializeSpellCard(spellCard));
+        }
+
+        public static SpellCard DeserializeSpellCardFromFile(string path)
+        {
+            return DeserializeSpellCard(File.ReadAllText(path));
+        }
+
         // ─── Polymorphic TypeConverter for IEmitter ───
 
         private class EmitterTypeConverter : IYamlTypeConverter
@@ -395,12 +461,34 @@ namespace STGEngine.Core.Serialization
                                 EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(sp.SpawnPosition.z));
                                 emitter.Emit(new MappingEnd());
                             }
+                            else if (evt is SpawnWaveEvent sw2)
+                            {
+                                EmitScalar(emitter, "wave_id");
+                                EmitScalar(emitter, sw2.WaveId);
+                                EmitScalar(emitter, "spawn_offset");
+                                emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                                EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(sw2.SpawnOffset.x));
+                                EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(sw2.SpawnOffset.y));
+                                EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(sw2.SpawnOffset.z));
+                                emitter.Emit(new MappingEnd());
+                            }
 
                             emitter.Emit(new MappingEnd());
                         }
                     }
 
                     emitter.Emit(new SequenceEnd());
+
+                    // Spell card IDs (BossFight segments)
+                    if (seg.SpellCardIds != null && seg.SpellCardIds.Count > 0)
+                    {
+                        EmitScalar(emitter, "spell_card_ids");
+                        emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Flow));
+                        foreach (var scId in seg.SpellCardIds)
+                            EmitScalar(emitter, scId);
+                        emitter.Emit(new SequenceEnd());
+                    }
+
                     emitter.Emit(new MappingEnd());
                 }
             }
@@ -481,6 +569,13 @@ namespace STGEngine.Core.Serialization
                     seg.Events.Add(MapTimelineEvent(ToStringDict(item)));
             }
 
+            if (dict.TryGetValue("spell_card_ids", out var scIdsObj) && scIdsObj is List<object> scIdsList)
+            {
+                seg.SpellCardIds = new List<string>();
+                foreach (var item in scIdsList)
+                    seg.SpellCardIds.Add(item.ToString());
+            }
+
             return seg;
         }
 
@@ -509,6 +604,23 @@ namespace STGEngine.Core.Serialization
                         );
                     }
                     return sp;
+
+                case "spawn_wave":
+                    var sw2 = new SpawnWaveEvent();
+                    if (dict.TryGetValue("id", out var wid)) sw2.Id = wid.ToString();
+                    if (dict.TryGetValue("start_time", out var wst)) sw2.StartTime = ParseFloat(wst);
+                    if (dict.TryGetValue("duration", out var wdur)) sw2.Duration = ParseFloat(wdur);
+                    if (dict.TryGetValue("wave_id", out var waveid)) sw2.WaveId = waveid.ToString();
+                    if (dict.TryGetValue("spawn_offset", out var offObj))
+                    {
+                        var offDict = ToStringDict(offObj);
+                        sw2.SpawnOffset = new Vector3(
+                            offDict.TryGetValue("x", out var ox) ? ParseFloat(ox) : 0f,
+                            offDict.TryGetValue("y", out var oy) ? ParseFloat(oy) : 0f,
+                            offDict.TryGetValue("z", out var oz) ? ParseFloat(oz) : 0f
+                        );
+                    }
+                    return sw2;
 
                 default:
                     throw new YamlException($"Unknown TimelineEvent type: '{tag}'");
