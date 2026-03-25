@@ -874,7 +874,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.SetSegment(tempSegment);
             _playback.LoadSegment(tempSegment);
 
-            // Show boss placeholder with combined path
+            // Show boss placeholder with combined path, or hide if no spell cards
             if (combinedBossPath.Count > 0)
             {
                 var combinedSc = new SpellCard
@@ -883,6 +883,10 @@ namespace STGEngine.Editor.UI.Timeline
                     TimeLimit = tempSegment.Duration
                 };
                 OnSpellCardEditingChanged?.Invoke(combinedSc);
+            }
+            else
+            {
+                OnSpellCardEditingChanged?.Invoke(null);
             }
         }
 
