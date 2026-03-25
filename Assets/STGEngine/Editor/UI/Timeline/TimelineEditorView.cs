@@ -820,13 +820,10 @@ namespace STGEngine.Editor.UI.Timeline
                 container.Add(row);
             }
 
-            // Add spell card button
+            // Add spell card button — opens picker
             var addBtn = new Button(() =>
             {
-                // Add a placeholder spell card ID
-                segment.SpellCardIds.Add("new_spell");
-                ShowBossFightSpellCards(segment);
-                OnStageDataChanged();
+                ShowSpellCardPicker(segment);
             })
             { text = "+ Add Spell Card" };
             addBtn.style.height = 24;
@@ -839,6 +836,73 @@ namespace STGEngine.Editor.UI.Timeline
 
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);
+        }
+
+        private void ShowSpellCardPicker(TimelineSegment segment)
+        {
+            if (_catalog == null)
+            {
+                Debug.LogWarning("[TimelineEditor] No catalog available for spell card selection.");
+                return;
+            }
+
+            var picker = new VisualElement();
+            picker.style.position = Position.Absolute;
+            picker.style.left = Length.Percent(30);
+            picker.style.top = Length.Percent(20);
+            picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
+            picker.style.borderTopWidth = picker.style.borderBottomWidth =
+                picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
+            picker.style.borderTopColor = picker.style.borderBottomColor =
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.5f, 0.3f, 0.6f);
+            picker.style.paddingTop = picker.style.paddingBottom = 8;
+            picker.style.paddingLeft = picker.style.paddingRight = 12;
+            picker.style.minWidth = 220;
+
+            var title = new Label("Select Spell Card");
+            title.style.color = new Color(0.9f, 0.3f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            picker.Add(title);
+
+            if (_catalog.SpellCards.Count == 0)
+            {
+                var emptyLabel = new Label("No spell cards in catalog.\nCreate one from the Assets panel first.");
+                emptyLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+                emptyLabel.style.marginBottom = 8;
+                picker.Add(emptyLabel);
+            }
+            else
+            {
+                foreach (var entry in _catalog.SpellCards)
+                {
+                    string label = !string.IsNullOrEmpty(entry.Name)
+                        ? $"{entry.Name}  ({entry.Id})"
+                        : entry.Id;
+
+                    var scId = entry.Id;
+                    var btn = new Button(() =>
+                    {
+                        picker.RemoveFromHierarchy();
+                        segment.SpellCardIds.Add(scId);
+                        ShowBossFightSpellCards(segment);
+                        OnStageDataChanged();
+                    })
+                    { text = label };
+                    btn.style.backgroundColor = new Color(0.25f, 0.2f, 0.3f);
+                    btn.style.color = new Color(0.9f, 0.9f, 0.9f);
+                    btn.style.marginBottom = 2;
+                    picker.Add(btn);
+                }
+            }
+
+            var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginTop = 4;
+            picker.Add(cancelBtn);
+
+            Root.panel.visualTree.Add(picker);
         }
 
         private void OnEventSelected(TimelineEvent evt)
