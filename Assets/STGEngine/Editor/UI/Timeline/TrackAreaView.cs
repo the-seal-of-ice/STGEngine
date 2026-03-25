@@ -495,6 +495,18 @@ namespace STGEngine.Editor.UI.Timeline
                 addBtn.style.borderLeftWidth = addBtn.style.borderRightWidth = 0;
             menu.Add(addBtn);
 
+            var addWaveBtn = new Button(() =>
+            {
+                CloseMenu();
+                AddWaveEventAtTime(atTime);
+            })
+            { text = "Add Wave Event" };
+            addWaveBtn.style.backgroundColor = Color.clear;
+            addWaveBtn.style.color = new Color(0.3f, 0.9f, 0.4f);
+            addWaveBtn.style.borderTopWidth = addWaveBtn.style.borderBottomWidth =
+                addWaveBtn.style.borderLeftWidth = addWaveBtn.style.borderRightWidth = 0;
+            menu.Add(addWaveBtn);
+
             if (_selectedEvent != null)
             {
                 var delBtn = new Button(() =>
@@ -516,10 +528,16 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         public event Action<float> OnAddEventRequested;
+        public event Action<float> OnAddWaveEventRequested;
 
         private void AddEventAtTime(float time)
         {
             OnAddEventRequested?.Invoke(Mathf.Max(0f, time));
+        }
+
+        private void AddWaveEventAtTime(float time)
+        {
+            OnAddWaveEventRequested?.Invoke(Mathf.Max(0f, time));
         }
 
         public void AddEvent(TimelineEvent evt)

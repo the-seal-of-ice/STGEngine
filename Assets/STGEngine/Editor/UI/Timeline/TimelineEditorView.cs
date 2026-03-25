@@ -29,6 +29,7 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly TimelinePlaybackController _playback;
         private readonly PatternLibrary _library;
         private readonly CommandStack _commandStack = new();
+        private STGCatalog _catalog;
 
         private Stage _stage;
         private PatternPreviewer _singlePreviewer; // For property panel pattern editing
@@ -179,6 +180,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.OnEventValuesChanged += OnEventValuesChanged;
             _trackArea.OnSeekRequested += OnSeekRequested;
             _trackArea.OnAddEventRequested += OnAddEventRequested;
+            _trackArea.OnAddWaveEventRequested += OnAddWaveEventRequested;
             _mainSplit.Add(_trackArea.Root);
 
             Root.Add(_mainSplit);
@@ -245,6 +247,38 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Load default stage
             LoadDefaultStage();
+        }
+
+        /// <summary>Set the catalog reference for wave/spell card lookups.</summary>
+        public void SetCatalog(STGCatalog catalog)
+        {
+            _catalog = catalog;
+        }
+
+        /// <summary>
+        /// Add a SpawnPatternEvent to the current MidStage segment at the playback time.
+        /// Called from AssetLibraryPanel via PatternSandboxSetup.
+        /// </summary>
+        public void AddPatternEventFromLibrary(string patternId)
+        {
+            if (_stage == null || _segmentList.SelectedSegment == null) return;
+            if (_segmentList.SelectedSegment.Type != SegmentType.MidStage) return;
+
+            float atTime = _playback.CurrentTime;
+            CreateEventWithPattern(patternId, atTime);
+        }
+
+        /// <summary>
+        /// Add a SpawnWaveEvent to the current MidStage segment at the playback time.
+        /// Called from AssetLibraryPanel via PatternSandboxSetup.
+        /// </summary>
+        public void AddWaveEventFromLibrary(string waveId)
+        {
+            if (_stage == null || _segmentList.SelectedSegment == null) return;
+            if (_segmentList.SelectedSegment.Type != SegmentType.MidStage) return;
+
+            float atTime = _playback.CurrentTime;
+            CreateEventWithWave(waveId, atTime);
         }
 
         public void Dispose()
@@ -1121,6 +1155,107 @@ namespace STGEngine.Editor.UI.Timeline
                 PatternId = patternId,
                 SpawnPosition = new Vector3(0, 5, 0),
                 ResolvedPattern = pattern
+            };
+
+            _trackArea.AddEvent(evt);
+        }
+
+        private void OnAddWaveEventRequested(float atTime)
+        {
+            if (_stage == null || _catalog == null) return;
+
+            var waveIds = new List<string>();
+            foreach (var entry in _catalog.Waves)
+                waveIds.Add(entry.Id);
+
+            if (waveIds.Count == 0)
+            {
+                Debug.LogWarning("[TimelineEditor] No waves available in catalog.");
+                return;
+            }
+
+            ShowWavePicker(waveIds, atTime);
+        }
+
+        private void ShowWavePicker(List<string> waveIds, float atTime)
+        {
+            var picker = new VisualElement();
+            picker.style.position = Position.Absolute;
+            picker.style.left = Length.Percent(30);
+            picker.style.top = Length.Percent(30);
+            picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
+            picker.style.borderTopWidth = picker.style.borderBottomWidth =
+                picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
+            picker.style.borderTopColor = picker.style.borderBottomColor =
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+            picker.style.paddingTop = picker.style.paddingBottom = 8;
+            picker.style.paddingLeft = picker.style.paddingRight = 12;
+            picker.style.minWidth = 200;
+
+            var title = new Label("Select Wave");
+            title.style.color = new Color(0.3f, 0.9f, 0.4f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            picker.Add(title);
+
+            foreach (var wid in waveIds)
+            {
+                // Show name from catalog if available
+                var entry = _catalog.FindWave(wid);
+                string label = entry != null && !string.IsNullOrEmpty(entry.Name)
+                    ? $"{entry.Name}  ({wid})"
+                    : wid;
+
+                var btn = new Button(() =>
+                {
+                    picker.RemoveFromHierarchy();
+                    CreateEventWithWave(wid, atTime);
+                })
+                { text = label };
+                btn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+                btn.style.color = new Color(0.9f, 0.9f, 0.9f);
+                btn.style.marginBottom = 2;
+                picker.Add(btn);
+            }
+
+            var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginTop = 4;
+            picker.Add(cancelBtn);
+
+            Root.panel.visualTree.Add(picker);
+        }
+
+        private void CreateEventWithWave(string waveId, float atTime)
+        {
+            // Try to load wave to get duration
+            float duration = 10f;
+            if (_catalog != null)
+            {
+                var wavePath = _catalog.GetWavePath(waveId);
+                if (System.IO.File.Exists(wavePath))
+                {
+                    try
+                    {
+                        var wave = YamlSerializer.DeserializeWave(
+                            System.IO.File.ReadAllText(wavePath));
+                        duration = wave.Duration;
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[TimelineEditor] Failed to load wave '{waveId}': {e.Message}");
+                    }
+                }
+            }
+
+            var evt = new SpawnWaveEvent
+            {
+                Id = $"wevt_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                StartTime = atTime,
+                Duration = duration,
+                WaveId = waveId,
+                SpawnOffset = Vector3.zero
             };
 
             _trackArea.AddEvent(evt);

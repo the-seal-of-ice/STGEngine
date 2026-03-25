@@ -190,7 +190,10 @@ namespace STGEngine.Editor.Scene
 
         private void StartTimelineEditMode(VisualElement root)
         {
+            _catalog = STGCatalog.Load();
+
             _timelineView = new TimelineEditorView(_timelinePlayback, _patternLibrary, _previewer);
+            _timelineView.SetCatalog(_catalog);
             _timelineView.OnMeshTypeChanged += mt =>
             {
                 EnsureBulletVisuals(mt);
@@ -286,7 +289,6 @@ namespace STGEngine.Editor.Scene
             _propertyFloatPanel = propPanel;
 
             // ── Asset Library Panel (left side, above timeline) ──
-            _catalog = STGCatalog.Load();
             _assetLibrary = new AssetLibraryPanel();
             _assetLibrary.Refresh(_catalog);
             _assetLibrary.OnAssetSelected += OnAssetSelected;
@@ -544,12 +546,25 @@ namespace STGEngine.Editor.Scene
 
         private void OnAssetSelected(AssetCategory category, string id)
         {
-            Debug.Log($"[AssetLibrary] Selected {category}: {id}");
+            // Selection is tracked in the panel; no action needed here yet
         }
 
         private void OnAssetAddToTimeline(AssetCategory category, string id)
         {
-            Debug.Log($"[AssetLibrary] Add to timeline: {category}: {id}");
+            if (_timelineView == null) return;
+
+            switch (category)
+            {
+                case AssetCategory.Patterns:
+                    _timelineView.AddPatternEventFromLibrary(id);
+                    break;
+                case AssetCategory.Waves:
+                    _timelineView.AddWaveEventFromLibrary(id);
+                    break;
+                default:
+                    Debug.Log($"[AssetLibrary] Cannot add {category} directly to timeline.");
+                    break;
+            }
         }
     }
 }

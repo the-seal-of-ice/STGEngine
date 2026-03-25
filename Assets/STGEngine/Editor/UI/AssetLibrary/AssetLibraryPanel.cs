@@ -234,6 +234,28 @@ namespace STGEngine.Editor.UI.AssetLibrary
             label.style.textOverflow = TextOverflow.Ellipsis;
             item.Add(label);
 
+            // "Add to Timeline" button (only for types that can be added directly)
+            if (category == AssetCategory.Patterns || category == AssetCategory.Waves)
+            {
+                var addToTimelineBtn = new Button(() =>
+                {
+                    OnAssetAddRequested?.Invoke(category, entry.Id);
+                })
+                { text = "\u25b6" };
+                addToTimelineBtn.style.width = 18;
+                addToTimelineBtn.style.height = 16;
+                addToTimelineBtn.style.fontSize = 9;
+                addToTimelineBtn.style.paddingLeft = addToTimelineBtn.style.paddingRight = 0;
+                addToTimelineBtn.style.paddingTop = addToTimelineBtn.style.paddingBottom = 0;
+                addToTimelineBtn.style.marginLeft = 2;
+                addToTimelineBtn.style.backgroundColor = new Color(0.2f, 0.35f, 0.2f);
+                addToTimelineBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                addToTimelineBtn.style.borderTopWidth = addToTimelineBtn.style.borderBottomWidth =
+                    addToTimelineBtn.style.borderLeftWidth = addToTimelineBtn.style.borderRightWidth = 0;
+                addToTimelineBtn.tooltip = "Add to Timeline";
+                item.Add(addToTimelineBtn);
+            }
+
             // Hover highlight
             item.RegisterCallback<MouseEnterEvent>(_ =>
             {
