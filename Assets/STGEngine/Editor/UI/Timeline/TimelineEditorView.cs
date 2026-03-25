@@ -143,7 +143,13 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         _currentLayer = _stageLayer;
                         _trackArea.SetLayer(_stageLayer);
-                        _playback.LoadSegment(null);
+                        // Load an empty segment with correct duration so playhead/seek still works
+                        var dummySeg = new TimelineSegment
+                        {
+                            Id = "_stage_overview",
+                            Duration = _stageLayer.TotalDuration
+                        };
+                        _playback.LoadSegment(dummySeg);
                         OnSpellCardEditingChanged?.Invoke(null);
                         RebuildBreadcrumb();
                     }
@@ -435,6 +441,13 @@ namespace STGEngine.Editor.UI.Timeline
             };
             _currentLayer = _stageLayer;
             _trackArea.SetLayer(_stageLayer);
+            // Provide a dummy segment so playhead/seek works at Stage level
+            var overviewSeg = new TimelineSegment
+            {
+                Id = "_stage_overview",
+                Duration = _stageLayer.TotalDuration
+            };
+            _playback.LoadSegment(overviewSeg);
         }
 
         private void LoadDefaultStage()
@@ -858,6 +871,7 @@ namespace STGEngine.Editor.UI.Timeline
                 // Create BossFightLayer for navigation tracking
                 var bfLayer = new BossFightLayer(segment, _catalog, _library);
                 _currentLayer = bfLayer;
+                WireLayerToTrackArea(bfLayer);
                 ShowBossFightSpellCards(segment);
                 LoadBossFightPreview(segment);
             }
@@ -954,7 +968,9 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.SetSegment(tempSegment);
             _playback.LoadSegment(tempSegment);
 
-            // Show boss placeholder with combined path, or hide if no spell cards
+            // Override the layer so right-click menu shows BossFight options, not MidStage
+            if (_currentLayer is BossFightLayer)
+                _trackArea.OverrideLayerReference(_currentLayer);
             if (combinedBossPath.Count > 0)
             {
                 var combinedSc = new SpellCard
@@ -1384,6 +1400,30 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     _trackArea.SelectBlock(blk);
                     _trackArea.DeleteSelectedEvent();
+                };
+            }
+            else if (layer is BossFightLayer bfLayer)
+            {
+                bfLayer.OnAddSpellCardRequested = () =>
+                {
+                    ShowSpellCardPicker(bfLayer.Segment);
+                };
+                bfLayer.OnDeleteSpellCardRequested = blk =>
+                {
+                    if (blk is SpellCardBlock scBlk)
+                    {
+                        var seg = bfLayer.Segment;
+                        int idx = seg.SpellCardIds.IndexOf(scBlk.SpellCardId);
+                        if (idx >= 0)
+                        {
+                            var cmd = ListCommand<string>.Remove(
+                                seg.SpellCardIds, idx, "Delete Spell Card");
+                            _commandStack.Execute(cmd);
+                            ShowBossFightSpellCards(seg);
+                            LoadBossFightPreview(seg);
+                            OnStageDataChanged();
+                        }
+                    }
                 };
             }
         }
@@ -2114,6 +2154,7 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     var bfLayer = new BossFightLayer(segment, _catalog, _library);
                     _currentLayer = bfLayer;
+                    WireLayerToTrackArea(bfLayer);
                     ShowBossFightSpellCards(segment);
                     LoadBossFightPreview(segment);
                 }

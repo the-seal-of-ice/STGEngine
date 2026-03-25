@@ -124,6 +124,16 @@ namespace STGEngine.Editor.UI.Timeline
             RebuildBlocks();
         }
 
+        /// <summary>
+        /// Override the layer reference without rebuilding blocks.
+        /// Used when blocks are already correct (e.g., from SetSegment) but the
+        /// context menu / interaction layer needs to be different.
+        /// </summary>
+        public void OverrideLayerReference(ITimelineLayer layer)
+        {
+            _layer = layer;
+        }
+
         /// <summary>Legacy bridge: wraps a segment in MidStageLayer.</summary>
         public void SetSegment(TimelineSegment segment)
         {
