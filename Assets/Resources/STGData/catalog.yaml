@@ -16,6 +16,9 @@ stages:
   - id: demo_stage
     name: "Demo Stage"
     file: Stages/demo_stage.yaml
+  - id: demo_stage_2
+    name: "DEMO_STAGE_2"
+    file: Stages/demo_stage_2.yaml
 enemy_types:
   - id: grunt_a
     name: "小兵A"
@@ -24,7 +27,16 @@ waves:
   - id: wave_01
     name: "第一波"
     file: Waves/wave_01.yaml
+  - id: new_wave
+    name: "New Wave"
+    file: Waves/new_wave.yaml
 spell_cards:
   - id: spell_01
     name: "星符「流星雨」"
     file: SpellCards/spell_01.yaml
+  - id: new_spell
+    name: "New SpellCard"
+    file: SpellCards/new_spell.yaml
+  - id: new_spell_2
+    name: "New SpellCard"
+    file: SpellCards/new_spell_2.yaml

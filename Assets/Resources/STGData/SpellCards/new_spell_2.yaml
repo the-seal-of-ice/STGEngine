@@ -1,0 +1,6 @@
+id: new_spell_2
+name: New SpellCard
+patterns: []
+boss_path: []
+time_limit: 30
+health: 1000

@@ -1,0 +1,46 @@
+id: demo_stage_2
+name: DEMO_STAGE_2
+seed: 0
+segments:
+- id: midstage_1
+  name: Opening Wave
+  type: mid_stage
+  duration: 15
+  events:
+  - type: spawn_pattern
+    id: evt_001
+    start_time: 0
+    duration: 5
+    pattern_id: demo_ring_wave
+    spawn_position: {x: 0, y: 5, z: 0}
+  - type: spawn_pattern
+    id: evt_002
+    start_time: 7.76826
+    duration: 8
+    pattern_id: demo_cone_bounce
+    spawn_position: {x: -2, y: 5, z: 0}
+  - type: spawn_pattern
+    id: evt_003
+    start_time: 3.249371
+    duration: 5
+    pattern_id: demo_sphere_homing
+    spawn_position: {x: 2, y: 5, z: 0}
+- id: boss_phase_1
+  name: Boss Phase 1
+  type: boss_fight
+  duration: 20
+  entry_trigger:
+    type: boss_defeated
+  events:
+  - type: spawn_pattern
+    id: evt_004
+    start_time: 0
+    duration: 10
+    pattern_id: demo_ring_wave
+    spawn_position: {x: 0, y: 8, z: 0}
+  - type: spawn_pattern
+    id: evt_005
+    start_time: 5
+    duration: 10
+    pattern_id: demo_ring_split
+    spawn_position: {x: 0, y: 8, z: 0}
