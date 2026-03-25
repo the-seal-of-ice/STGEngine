@@ -43,8 +43,9 @@ namespace STGEngine.Editor.UI.Timeline
         private PatternPreviewer _singlePreviewer; // For property panel pattern editing
 
         // Sub-views
-        private readonly SegmentListView _segmentList;
+        private SegmentListView _segmentList; // Kept but hidden — will be fully removed later
         private readonly TrackAreaView _trackArea;
+        private StageLayer _stageLayer;
 
         // UI elements
         private readonly VisualElement _breadcrumbBar;
@@ -124,6 +125,30 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbStage = new Label("Stage");
             _breadcrumbStage.style.color = new Color(0.85f, 0.85f, 0.85f);
             _breadcrumbStage.style.marginRight = 4;
+            // Click Stage breadcrumb to return to Stage layer
+            _breadcrumbStage.RegisterCallback<ClickEvent>(_ =>
+            {
+                if (_navigationStack.Count > 0)
+                {
+                    // Exit spell card editing if active
+                    if (_editingSpellCard != null)
+                    {
+                        _editingSpellCard = null;
+                        _editingSpellCardId = null;
+                        _editingBossFightSegment = null;
+                    }
+                    NavigateToDepth(0);
+                    // Restore StageLayer in TrackArea
+                    if (_stageLayer != null)
+                    {
+                        _currentLayer = _stageLayer;
+                        _trackArea.SetLayer(_stageLayer);
+                        _playback.LoadSegment(null);
+                        OnSpellCardEditingChanged?.Invoke(null);
+                        RebuildBreadcrumb();
+                    }
+                }
+            });
             _breadcrumbBar.Add(_breadcrumbStage);
 
             var sep = new Label(">");
@@ -220,6 +245,8 @@ namespace STGEngine.Editor.UI.Timeline
             _segmentList = new SegmentListView(_commandStack);
             _segmentList.OnSegmentSelected += OnSegmentSelected;
             _segmentList.OnStageChanged += OnStageDataChanged;
+            // SegmentListView is now hidden — StageLayer replaces it in TrackArea
+            _segmentList.Root.style.display = DisplayStyle.None;
             _mainSplit.Add(_segmentList.Root);
 
             _trackArea = new TrackAreaView(_commandStack);
@@ -229,6 +256,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.OnSeekRequested += OnSeekRequested;
             _trackArea.OnAddEventRequested += OnAddEventRequested;
             _trackArea.OnAddWaveEventRequested += OnAddWaveEventRequested;
+            _trackArea.OnBlockDoubleClicked += OnBlockDoubleClicked;
             _mainSplit.Add(_trackArea.Root);
 
             Root.Add(_mainSplit);
@@ -309,8 +337,9 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         public void AddPatternEventFromLibrary(string patternId)
         {
-            if (_stage == null || _segmentList.SelectedSegment == null) return;
-            if (_segmentList.SelectedSegment.Type != SegmentType.MidStage) return;
+            if (_stage == null) return;
+            // Only works when viewing a MidStage segment
+            if (_currentLayer is not MidStageLayer) return;
 
             float atTime = _playback.CurrentTime;
             CreateEventWithPattern(patternId, atTime);
@@ -322,8 +351,8 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         public void AddWaveEventFromLibrary(string waveId)
         {
-            if (_stage == null || _segmentList.SelectedSegment == null) return;
-            if (_segmentList.SelectedSegment.Type != SegmentType.MidStage) return;
+            if (_stage == null) return;
+            if (_currentLayer is not MidStageLayer) return;
 
             float atTime = _playback.CurrentTime;
             CreateEventWithWave(waveId, atTime);
@@ -335,7 +364,13 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         public void AddSpellCardToCurrentBossFight(string spellCardId)
         {
-            var seg = _segmentList.SelectedSegment;
+            // Find the BossFight segment from current layer
+            TimelineSegment seg = null;
+            if (_currentLayer is BossFightLayer bfl)
+                seg = bfl.Segment;
+            else if (_editingBossFightSegment != null)
+                seg = _editingBossFightSegment;
+
             if (seg == null || seg.Type != SegmentType.BossFight)
             {
                 Debug.LogWarning("[TimelineEditor] Select a BossFight segment first.");
@@ -385,6 +420,21 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             _segmentList.SetStage(stage);
+
+            // Create StageLayer and show it in TrackArea
+            _navigationStack.Clear();
+            _stageLayer = new StageLayer(stage, _catalog, _library, _commandStack);
+            _stageLayer.OnStageStructureChanged = () =>
+            {
+                _trackArea.SetLayer(_stageLayer);
+                OnStageDataChanged();
+            };
+            _stageLayer.OnDeleteSegmentRequested = blk =>
+            {
+                _stageLayer.DeleteSegment(blk);
+            };
+            _currentLayer = _stageLayer;
+            _trackArea.SetLayer(_stageLayer);
         }
 
         private void LoadDefaultStage()
@@ -2037,6 +2087,55 @@ namespace STGEngine.Editor.UI.Timeline
         private void OnSeekRequested(float time)
         {
             _playback.Seek(time);
+        }
+
+        private void OnBlockDoubleClicked(ITimelineBlock block)
+        {
+            if (_currentLayer == null || block == null) return;
+            if (!_currentLayer.CanDoubleClickEnter(block)) return;
+
+            var childLayer = _currentLayer.CreateChildLayer(block);
+            if (childLayer == null) return;
+
+            // Special handling: if entering a segment from StageLayer, use existing navigation
+            if (block.DataSource is TimelineSegment segment)
+            {
+                // Push StageLayer onto stack
+                _navigationStack.Push(new BreadcrumbEntry
+                {
+                    Layer = _currentLayer,
+                    DisplayName = _currentLayer.DisplayName
+                });
+
+                // Reuse existing OnSegmentSelected logic for MidStage/BossFight handling
+                _currentLayer = childLayer;
+
+                if (segment.Type == SegmentType.BossFight)
+                {
+                    var bfLayer = new BossFightLayer(segment, _catalog, _library);
+                    _currentLayer = bfLayer;
+                    ShowBossFightSpellCards(segment);
+                    LoadBossFightPreview(segment);
+                }
+                else
+                {
+                    var midLayer = childLayer as MidStageLayer;
+                    if (midLayer != null)
+                        WireLayerToTrackArea(midLayer);
+                    _trackArea.SetSegment(segment);
+                    _playback.LoadSegment(segment);
+                    OnSpellCardEditingChanged?.Invoke(null);
+                }
+
+                // Update breadcrumb
+                _breadcrumbSegment.text = segment.Name;
+                _breadcrumbStage.text = _stage.Name;
+                RebuildBreadcrumb();
+                return;
+            }
+
+            // Generic double-click: navigate into child layer
+            NavigateTo(childLayer);
         }
 
         private void OnAddEventRequested(float atTime)
