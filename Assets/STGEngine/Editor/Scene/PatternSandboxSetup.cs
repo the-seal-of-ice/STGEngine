@@ -5,6 +5,8 @@ using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.UI;
+using STGEngine.Editor.UI.AssetLibrary;
+using STGEngine.Editor.UI.FileManager;
 using STGEngine.Editor.UI.Timeline;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
@@ -70,6 +72,10 @@ namespace STGEngine.Editor.Scene
         private const float HandleHeight = 6f;
         private const float ToolbarHeight = 30f;
         private const float MinTopPercent = 15f;
+
+        // Asset library
+        private AssetLibraryPanel _assetLibrary;
+        private STGCatalog _catalog;
 
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
@@ -279,6 +285,20 @@ namespace STGEngine.Editor.Scene
             _timelinePanel = panel;
             _propertyFloatPanel = propPanel;
 
+            // ── Asset Library Panel (left side, above timeline) ──
+            _catalog = STGCatalog.Load();
+            _assetLibrary = new AssetLibraryPanel();
+            _assetLibrary.Refresh(_catalog);
+            _assetLibrary.OnAssetSelected += OnAssetSelected;
+            _assetLibrary.OnAssetAddRequested += OnAssetAddToTimeline;
+
+            var libraryPanel = _assetLibrary.Root;
+            libraryPanel.style.position = Position.Absolute;
+            libraryPanel.style.left = 0;
+            libraryPanel.style.top = 0;
+            libraryPanel.style.bottom = Length.Percent(100f - _timelineTopPercent);
+            root.Add(libraryPanel);
+
             // Force theme override after Unity Runtime Theme has been applied
             StartCoroutine(ForceTimelineTheme());
         }
@@ -292,6 +312,10 @@ namespace STGEngine.Editor.Scene
             _timelinePanel.style.top = Length.Percent(topPercent);
             _propertyFloatPanel.style.bottom = Length.Percent(100f - topPercent);
 
+            // Sync asset library panel bottom
+            if (_assetLibrary != null)
+                _assetLibrary.Root.style.bottom = Length.Percent(100f - topPercent);
+
             // When nearly collapsed (< 8% remaining), minimize to toolbar-only
             float rootHeight = _uiRoot.resolvedStyle.height;
             float remainingPx = rootHeight * (1f - topPercent / 100f);
@@ -304,14 +328,19 @@ namespace STGEngine.Editor.Scene
             // Unity Runtime Theme applies over multiple frames; keep overriding
             yield return null;                     // frame 1
             _timelineView.ForceApplyTheme();
+            _assetLibrary?.ForceApplyTheme();
             yield return null;                     // frame 2
             _timelineView.ForceApplyTheme();
+            _assetLibrary?.ForceApplyTheme();
             yield return new WaitForSeconds(0.1f); // 100ms
             _timelineView.ForceApplyTheme();
+            _assetLibrary?.ForceApplyTheme();
             yield return new WaitForSeconds(0.3f); // 300ms
             _timelineView.ForceApplyTheme();
+            _assetLibrary?.ForceApplyTheme();
             yield return new WaitForSeconds(0.5f); // 500ms — final pass
             _timelineView.ForceApplyTheme();
+            _assetLibrary?.ForceApplyTheme();
         }
 
         // ─── Mode Switch ───
@@ -510,5 +539,17 @@ namespace STGEngine.Editor.Scene
 
         /// <summary>Get available demo pattern names for UI.</summary>
         public string[] GetDemoPatternNames() => DemoPatterns;
+
+        // ─── Asset Library Callbacks ───
+
+        private void OnAssetSelected(AssetCategory category, string id)
+        {
+            Debug.Log($"[AssetLibrary] Selected {category}: {id}");
+        }
+
+        private void OnAssetAddToTimeline(AssetCategory category, string id)
+        {
+            Debug.Log($"[AssetLibrary] Add to timeline: {category}: {id}");
+        }
     }
 }
