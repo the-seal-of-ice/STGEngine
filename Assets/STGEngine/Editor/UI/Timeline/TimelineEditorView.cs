@@ -1008,6 +1008,77 @@ namespace STGEngine.Editor.UI.Timeline
 
             ShowSpellCardEditor(sc, spellCardId);
             OnSpellCardEditingChanged?.Invoke(sc);
+
+            // Build temporary segment from spell card patterns for preview
+            LoadSpellCardPreview(sc);
+        }
+
+        /// <summary>
+        /// Construct a temporary TimelineSegment from SpellCard.Patterns
+        /// and load it into the playback controller + track area for preview.
+        /// </summary>
+        private void LoadSpellCardPreview(SpellCard sc)
+        {
+            var tempSegment = new TimelineSegment
+            {
+                Id = $"_spellcard_{sc.Id}",
+                Name = sc.Name,
+                Type = SegmentType.MidStage, // Treat as MidStage for playback
+                Duration = sc.TimeLimit
+            };
+
+            foreach (var scp in sc.Patterns)
+            {
+                var pattern = _library?.Resolve(scp.PatternId);
+                if (pattern == null)
+                {
+                    Debug.LogWarning($"[SpellCardPreview] Pattern '{scp.PatternId}' not found, skipping.");
+                    continue;
+                }
+
+                // Boss path base position at the pattern's delay time
+                var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
+
+                var evt = new SpawnPatternEvent
+                {
+                    Id = $"_sc_evt_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                    StartTime = scp.Delay,
+                    Duration = scp.Duration,
+                    PatternId = scp.PatternId,
+                    SpawnPosition = bossPos + scp.Offset,
+                    ResolvedPattern = pattern
+                };
+                tempSegment.Events.Add(evt);
+            }
+
+            _trackArea.SetSegment(tempSegment);
+            _playback.LoadSegment(tempSegment);
+            _playback.Play();
+        }
+
+        /// <summary>
+        /// Linear interpolation along BossPath keyframes (same logic as BossPlaceholder).
+        /// </summary>
+        private static Vector3 EvaluateBossPath(List<PathKeyframe> path, float t)
+        {
+            if (path == null || path.Count == 0) return new Vector3(0, 6, 0);
+            if (path.Count == 1) return path[0].Position;
+            if (t <= path[0].Time) return path[0].Position;
+            if (t >= path[path.Count - 1].Time) return path[path.Count - 1].Position;
+
+            for (int i = 0; i < path.Count - 1; i++)
+            {
+                var a = path[i];
+                var b = path[i + 1];
+                if (t >= a.Time && t <= b.Time)
+                {
+                    float segLen = b.Time - a.Time;
+                    float frac = segLen > 0f ? (t - a.Time) / segLen : 0f;
+                    return Vector3.Lerp(a.Position, b.Position, frac);
+                }
+            }
+
+            return path[path.Count - 1].Position;
         }
 
         private void ExitSpellCardEditing()
@@ -1018,6 +1089,10 @@ namespace STGEngine.Editor.UI.Timeline
             // Hide breadcrumb layer 3
             _breadcrumbSep2.style.display = DisplayStyle.None;
             _breadcrumbSpellCard.style.display = DisplayStyle.None;
+
+            // Stop spell card preview
+            _trackArea.SetSegment(null);
+            _playback.LoadSegment(null);
 
             // Return to spell card list
             if (_editingBossFightSegment != null)
@@ -1045,6 +1120,9 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Notify Boss placeholder of path changes
             OnSpellCardEditingChanged?.Invoke(_editingSpellCard);
+
+            // Refresh spell card preview (patterns/timing may have changed)
+            LoadSpellCardPreview(_editingSpellCard);
         }
 
         private void ShowSpellCardEditor(SpellCard sc, string scId)
