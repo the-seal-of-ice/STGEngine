@@ -1,0 +1,28 @@
+id: spell_03
+name: 弾符「円錐反射陣」
+patterns:
+- pattern_id: demo_cone_bounce
+  delay: 0
+  duration: 15
+  offset: {x: 0, y: 0, z: 0}
+- pattern_id: demo_ring_split
+  delay: 3
+  duration: 12
+  offset: {x: 1, y: 0, z: 0}
+- pattern_id: demo_ring_split
+  delay: 3
+  duration: 12
+  offset: {x: -1, y: 0, z: 0}
+boss_path:
+- time: 0
+  position: {x: 0, y: 8, z: 0}
+- time: 5
+  position: {x: 3, y: 6, z: 2}
+- time: 10
+  position: {x: -3, y: 8, z: -2}
+- time: 15
+  position: {x: 0, y: 7, z: 0}
+- time: 20
+  position: {x: 0, y: 8, z: 0}
+time_limit: 35
+health: 2000

@@ -1,0 +1,26 @@
+id: spell_02
+name: 幻符「螺旋追踪弹」
+patterns:
+- pattern_id: demo_sphere_homing
+  delay: 0
+  duration: 12
+  offset: {x: 0, y: 0, z: 0}
+- pattern_id: demo_ring_wave
+  delay: 6
+  duration: 10
+  offset: {x: 0, y: -1, z: 0}
+boss_path:
+- time: 0
+  position: {x: 0, y: 7, z: 0}
+- time: 4
+  position: {x: -4, y: 6, z: 0}
+- time: 8
+  position: {x: 4, y: 8, z: 0}
+- time: 12
+  position: {x: -2, y: 7, z: 0}
+- time: 16
+  position: {x: 2, y: 6, z: 0}
+- time: 20
+  position: {x: 0, y: 7, z: 0}
+time_limit: 25
+health: 1500

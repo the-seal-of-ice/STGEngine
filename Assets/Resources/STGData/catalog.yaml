@@ -34,6 +34,15 @@ spell_cards:
   - id: spell_01
     name: "星符「流星雨」"
     file: SpellCards/spell_01.yaml
+  - id: spell_02
+    name: "幻符「螺旋追踪弾」"
+    file: SpellCards/spell_02.yaml
+  - id: spell_03
+    name: "弾符「円錐反射陣」"
+    file: SpellCards/spell_03.yaml
+  - id: spell_04
+    name: "終符「全方位弾幕結界」"
+    file: SpellCards/spell_04.yaml
   - id: new_spell
     name: "New SpellCard"
     file: SpellCards/new_spell.yaml
