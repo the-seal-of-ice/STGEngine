@@ -132,7 +132,16 @@ namespace STGEngine.Editor.UI.Timeline
                 SetLayer(null);
                 return;
             }
-            SetLayer(new MidStageLayer(segment));
+            var midLayer = new MidStageLayer(segment);
+            // Wire MidStageLayer callbacks to legacy events
+            midLayer.OnAddPatternRequested = time => OnAddEventRequested?.Invoke(time);
+            midLayer.OnAddWaveRequested = time => OnAddWaveEventRequested?.Invoke(time);
+            midLayer.OnDeleteRequested = blk =>
+            {
+                SelectBlock(blk);
+                DeleteSelectedEvent();
+            };
+            SetLayer(midLayer);
         }
 
         public void SetPlayTime(float time)
