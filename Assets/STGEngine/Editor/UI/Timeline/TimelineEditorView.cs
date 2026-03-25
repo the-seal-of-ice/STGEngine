@@ -774,17 +774,115 @@ namespace STGEngine.Editor.UI.Timeline
         {
             _breadcrumbSegment.text = segment?.Name ?? "\u2014";
 
+            // Exit spell card editing if active
+            if (_editingSpellCard != null)
+            {
+                _editingSpellCard = null;
+                _editingSpellCardId = null;
+                _breadcrumbSep2.style.display = DisplayStyle.None;
+                _breadcrumbSpellCard.style.display = DisplayStyle.None;
+                _editingBossFightSegment = null;
+                OnSpellCardEditingChanged?.Invoke(null);
+            }
+
             if (segment != null && segment.Type == SegmentType.BossFight)
             {
-                // BossFight: show spell card list in property panel
-                _trackArea.SetSegment(null); // Clear track area
-                _playback.LoadSegment(null);
                 ShowBossFightSpellCards(segment);
+                LoadBossFightPreview(segment);
             }
             else
             {
                 _trackArea.SetSegment(segment);
                 _playback.LoadSegment(segment);
+                // Hide boss placeholder when switching to MidStage
+                OnSpellCardEditingChanged?.Invoke(null);
+            }
+        }
+
+        /// <summary>
+        /// Build a combined temporary segment from all spell cards in a BossFight segment.
+        /// Spell cards are laid out sequentially: SC1 at t=0, SC2 at t=SC1.TimeLimit, etc.
+        /// Also builds a combined BossPath and notifies the placeholder.
+        /// </summary>
+        private void LoadBossFightPreview(TimelineSegment segment)
+        {
+            if (_catalog == null) return;
+
+            var tempSegment = new TimelineSegment
+            {
+                Id = "_bossfight_preview",
+                Name = segment.Name,
+                Type = SegmentType.MidStage,
+                Duration = 0f
+            };
+
+            var combinedBossPath = new List<PathKeyframe>();
+            float timeOffset = 0f;
+
+            foreach (var scId in segment.SpellCardIds)
+            {
+                var path = _catalog.GetSpellCardPath(scId);
+                if (!System.IO.File.Exists(path)) continue;
+
+                SpellCard sc;
+                try
+                {
+                    sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[BossFightPreview] Failed to load '{scId}': {e.Message}");
+                    continue;
+                }
+
+                // Add patterns with time offset
+                foreach (var scp in sc.Patterns)
+                {
+                    var pattern = _library?.Resolve(scp.PatternId);
+                    if (pattern == null) continue;
+
+                    var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
+
+                    var evt = new SpawnPatternEvent
+                    {
+                        Id = $"_bf_{scId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}",
+                        StartTime = timeOffset + scp.Delay,
+                        Duration = scp.Duration,
+                        PatternId = scp.PatternId,
+                        SpawnPosition = bossPos + scp.Offset,
+                        ResolvedPattern = pattern
+                    };
+                    tempSegment.Events.Add(evt);
+                }
+
+                // Append boss path keyframes with time offset
+                foreach (var kf in sc.BossPath)
+                {
+                    combinedBossPath.Add(new PathKeyframe
+                    {
+                        Time = timeOffset + kf.Time,
+                        Position = kf.Position
+                    });
+                }
+
+                timeOffset += sc.TimeLimit;
+            }
+
+            tempSegment.Duration = timeOffset > 0f ? timeOffset : segment.Duration;
+
+            _trackArea.SetSegment(tempSegment);
+            _playback.LoadSegment(tempSegment);
+            _playback.Play();
+
+            // Show boss placeholder with combined path
+            if (combinedBossPath.Count > 0)
+            {
+                var combinedSc = new SpellCard
+                {
+                    BossPath = combinedBossPath,
+                    TimeLimit = tempSegment.Duration
+                };
+                OnSpellCardEditingChanged?.Invoke(combinedSc);
             }
         }
 
