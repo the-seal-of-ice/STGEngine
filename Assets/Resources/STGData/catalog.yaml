@@ -16,3 +16,15 @@ stages:
   - id: demo_stage
     name: "Demo Stage"
     file: Stages/demo_stage.yaml
+enemy_types:
+  - id: grunt_a
+    name: "小兵A"
+    file: EnemyTypes/grunt_a.yaml
+waves:
+  - id: wave_01
+    name: "第一波"
+    file: Waves/wave_01.yaml
+spell_cards:
+  - id: spell_01
+    name: "星符「流星雨」"
+    file: SpellCards/spell_01.yaml

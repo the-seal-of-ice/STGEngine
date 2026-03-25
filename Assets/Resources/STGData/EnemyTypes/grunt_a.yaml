@@ -1,0 +1,10 @@
+id: grunt_a
+name: "小兵A"
+health: 10
+speed: 2
+scale: 1
+fire_delay: 0.5
+pattern_ids:
+- demo_ring_wave
+color: {r: 1, g: 0.5, b: 0.5, a: 1}
+mesh_type: Diamond
