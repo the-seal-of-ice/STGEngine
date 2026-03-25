@@ -805,6 +805,9 @@ namespace STGEngine.Editor.UI.Timeline
 
             if (segment != null && segment.Type == SegmentType.BossFight)
             {
+                // Create BossFightLayer for navigation tracking
+                var bfLayer = new BossFightLayer(segment, _catalog, _library);
+                _currentLayer = bfLayer;
                 ShowBossFightSpellCards(segment);
                 LoadBossFightPreview(segment);
             }
@@ -1141,7 +1144,7 @@ namespace STGEngine.Editor.UI.Timeline
                     DisplayName = _currentLayer.DisplayName
                 });
             }
-            _currentLayer = null; // SpellCard editing doesn't have a full ITimelineLayer yet (step 1e)
+            _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library);
 
             // Update breadcrumb to layer 3
             _breadcrumbSep2.style.display = DisplayStyle.Flex;
