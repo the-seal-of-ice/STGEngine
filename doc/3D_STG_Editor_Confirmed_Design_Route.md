@@ -1936,3 +1936,53 @@ URP Forward Lit pass，支持 GPU Instancing：
 - 修复：编辑 pattern 参数后 Timeline 预览不更新的问题
 - 根因：PatternEditorView.CommandStack 变化只刷新了 _singlePreviewer，pooled previewer 未通知
 - 方案：TimelinePlaybackController.RefreshEvent() + 事件桥接
+
+### 9.9 Phase 4a：符卡 + 小怪 + 波次 + 资源库面板（已完成）
+
+> 新增符卡、小怪类型模板、波次数据模型，扩展序列化和 catalog 系统，
+> 新增资源库面板 UI，支持 BossFight Segment 和 SpawnWaveEvent。
+
+#### 9.9.1 Core 数据模型
+
+- `PathKeyframe.cs`：共用路径关键帧（Time + Position），用于 Boss 路径和小怪路径
+- `SpellCard.cs`：符卡 = Patterns[] + BossPath[] + Health + TimeLimit
+  - `SpellCardPattern`：符卡内弹幕条目（PatternId + Delay + Duration + Offset）
+- `EnemyType.cs`：小怪类型模板 = Health/Speed/Scale/PatternIds/FireDelay/Color/MeshType
+- `Wave.cs`：波次 = EnemyInstance[]（每个实例引用 EnemyType + 独立路径）+ Duration
+- `SpawnWaveEvent`：新 TimelineEvent 子类 [TypeTag("spawn_wave")]，引用 Wave ID
+- `TimelineSegment.SpellCardIds`：BossFight Segment 通过 ID 列表引用独立符卡文件
+
+#### 9.9.2 序列化扩展
+
+- YamlSerializer 新增 EnemyType/Wave/SpellCard 的序列化/反序列化方法（YamlDotNet 自动）
+- Stage 手写序列化扩展：spell_card_ids 字段 + SpawnWaveEvent 的 wave_id/spawn_offset
+- MapTimelineEvent 新增 spawn_wave case
+
+#### 9.9.3 STGCatalog 扩展
+
+- 新增 EnemyTypes/Waves/SpellCards 列表 + 对应 CRUD 方法
+- 新增 EnemyTypesDir/WavesDir/SpellCardsDir 目录管理
+- catalog.yaml 新增 enemy_types/waves/spell_cards 三个分组
+- EnsureDirectories 创建所有 5 个子目录
+
+#### 9.9.4 示例 YAML 文件
+
+- `EnemyTypes/grunt_a.yaml`：小兵A（HP 10，携带 demo_ring_wave）
+- `Waves/wave_01.yaml`：第一波（2 个 grunt_a 交叉路径）
+- `SpellCards/spell_01.yaml`：星符「流星雨」（ring_wave + sphere_homing）
+
+#### 9.9.5 资源库面板 UI
+
+- `AssetLibraryPanel.cs`：左侧可折叠面板，4 类资源分组（Patterns/Waves/Enemies/SpellCards）
+- 颜色编码指示器：蓝/绿/橙/紫
+- 点击选择，"+" 按钮创建新资源（自动生成 YAML + 更新 catalog）
+- 折叠/展开按钮，与 Timeline 拖拽高度同步
+- 主题覆盖兼容 Runtime UI Toolkit
+
+#### 9.9.6 BossFight Segment 支持
+
+- TrackAreaView 泛化：EventBlockInfo/SelectEvent/OnEventSelected 接受 TimelineEvent
+- SpawnWaveEvent 块用绿色系 + 锚图标区分
+- BossFight Segment 选中时 Properties 面板显示符卡列表管理 UI
+- SegmentListView 右键菜单支持 MidStage/BossFight 类型切换
+- 符卡列表支持添加/删除操作
