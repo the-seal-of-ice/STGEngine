@@ -71,6 +71,7 @@ namespace STGEngine.Editor.UI.Timeline
         private FloatField _propStartField;
         private FloatField _propDurField;
         private SpawnPatternEvent _selectedEvent;
+        private TimelineEvent _selectedTimelineEvent;
 
         public TimelineEditorView(TimelinePlaybackController playback, PatternLibrary library,
             PatternPreviewer singlePreviewer)
@@ -685,11 +686,128 @@ namespace STGEngine.Editor.UI.Timeline
         private void OnSegmentSelected(TimelineSegment segment)
         {
             _breadcrumbSegment.text = segment?.Name ?? "\u2014";
-            _trackArea.SetSegment(segment);
-            _playback.LoadSegment(segment);
+
+            if (segment != null && segment.Type == SegmentType.BossFight)
+            {
+                // BossFight: show spell card list in property panel
+                _trackArea.SetSegment(null); // Clear track area
+                _playback.LoadSegment(null);
+                ShowBossFightSpellCards(segment);
+            }
+            else
+            {
+                _trackArea.SetSegment(segment);
+                _playback.LoadSegment(segment);
+            }
         }
 
-        private void OnEventSelected(SpawnPatternEvent evt)
+        private void ShowBossFightSpellCards(TimelineSegment segment)
+        {
+            _propertyContent.Clear();
+            _propertyHeaderLabel.text = "Spell Cards";
+
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            var infoLabel = new Label($"BossFight: {segment.Name}");
+            infoLabel.style.color = new Color(0.9f, 0.3f, 0.9f);
+            infoLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            infoLabel.style.marginBottom = 8;
+            container.Add(infoLabel);
+
+            // Duration
+            var durField = new FloatField("Duration") { value = segment.Duration };
+            durField.isDelayed = true;
+            durField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Duration",
+                    () => segment.Duration,
+                    v => segment.Duration = v,
+                    Mathf.Max(1f, e.newValue));
+                _commandStack.Execute(cmd);
+            });
+            container.Add(durField);
+
+            // Spell card list
+            var scHeader = new Label("Spell Cards:");
+            scHeader.style.color = new Color(0.85f, 0.85f, 0.85f);
+            scHeader.style.marginTop = 8;
+            scHeader.style.marginBottom = 4;
+            scHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            container.Add(scHeader);
+
+            for (int i = 0; i < segment.SpellCardIds.Count; i++)
+            {
+                int idx = i;
+                var scId = segment.SpellCardIds[i];
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems = Align.Center;
+                row.style.height = 24;
+                row.style.marginBottom = 2;
+
+                var indicator = new VisualElement();
+                indicator.style.width = 6;
+                indicator.style.height = 6;
+                indicator.style.borderTopLeftRadius = indicator.style.borderTopRightRadius =
+                    indicator.style.borderBottomLeftRadius = indicator.style.borderBottomRightRadius = 3;
+                indicator.style.marginRight = 6;
+                indicator.style.backgroundColor = new Color(0.9f, 0.3f, 0.9f);
+                row.Add(indicator);
+
+                var scLabel = new Label($"{i + 1}. {scId}");
+                scLabel.style.color = new Color(0.85f, 0.85f, 0.85f);
+                scLabel.style.flexGrow = 1;
+                row.Add(scLabel);
+
+                var removeBtn = new Button(() =>
+                {
+                    if (idx < segment.SpellCardIds.Count)
+                    {
+                        segment.SpellCardIds.RemoveAt(idx);
+                        ShowBossFightSpellCards(segment);
+                        OnStageDataChanged();
+                    }
+                })
+                { text = "\u2715" };
+                removeBtn.style.width = 20;
+                removeBtn.style.height = 18;
+                removeBtn.style.fontSize = 10;
+                removeBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
+                removeBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                removeBtn.style.borderTopWidth = removeBtn.style.borderBottomWidth =
+                    removeBtn.style.borderLeftWidth = removeBtn.style.borderRightWidth = 0;
+                row.Add(removeBtn);
+
+                container.Add(row);
+            }
+
+            // Add spell card button
+            var addBtn = new Button(() =>
+            {
+                // Add a placeholder spell card ID
+                segment.SpellCardIds.Add("new_spell");
+                ShowBossFightSpellCards(segment);
+                OnStageDataChanged();
+            })
+            { text = "+ Add Spell Card" };
+            addBtn.style.height = 24;
+            addBtn.style.marginTop = 4;
+            addBtn.style.backgroundColor = new Color(0.25f, 0.2f, 0.35f);
+            addBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            addBtn.style.borderTopWidth = addBtn.style.borderBottomWidth =
+                addBtn.style.borderLeftWidth = addBtn.style.borderRightWidth = 0;
+            container.Add(addBtn);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        private void OnEventSelected(TimelineEvent evt)
         {
             _propertyContent.Clear();
             if (_patternEditor != null)
@@ -700,7 +818,8 @@ namespace STGEngine.Editor.UI.Timeline
             _patternEditor = null;
             _propStartField = null;
             _propDurField = null;
-            _selectedEvent = evt;
+            _selectedEvent = evt as SpawnPatternEvent;
+            _selectedTimelineEvent = evt;
 
             if (evt == null)
             {
@@ -708,6 +827,99 @@ namespace STGEngine.Editor.UI.Timeline
                 return;
             }
 
+            if (evt is SpawnPatternEvent spEvt)
+            {
+                ShowSpawnPatternProperties(spEvt);
+            }
+            else if (evt is SpawnWaveEvent swEvt)
+            {
+                ShowSpawnWaveProperties(swEvt);
+            }
+        }
+
+        private void ShowSpawnWaveProperties(SpawnWaveEvent evt)
+        {
+            _propertyHeaderLabel.text = $"Wave: {evt.WaveId}";
+
+            var props = new VisualElement();
+            props.style.paddingTop = 4;
+            props.style.paddingLeft = 8;
+            props.style.paddingRight = 8;
+
+            // Start Time
+            var startField = new FloatField("Start Time") { value = evt.StartTime };
+            startField.isDelayed = true;
+            startField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Start Time",
+                    () => evt.StartTime,
+                    v => evt.StartTime = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
+            });
+            props.Add(startField);
+            _propStartField = startField;
+
+            // Duration
+            var durField = new FloatField("Duration") { value = evt.Duration };
+            durField.isDelayed = true;
+            durField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Duration",
+                    () => evt.Duration,
+                    v => evt.Duration = v,
+                    Mathf.Max(0.1f, e.newValue));
+                _commandStack.Execute(cmd);
+            });
+            props.Add(durField);
+            _propDurField = durField;
+
+            // Wave ID
+            var waveLabel = new Label($"Wave: {evt.WaveId}");
+            waveLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+            waveLabel.style.marginTop = 4;
+            props.Add(waveLabel);
+
+            // Spawn Offset
+            var offLabel = new Label("Spawn Offset");
+            offLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+            offLabel.style.marginTop = 8;
+            props.Add(offLabel);
+
+            var offX = new FloatField("X") { value = evt.SpawnOffset.x };
+            var offY = new FloatField("Y") { value = evt.SpawnOffset.y };
+            var offZ = new FloatField("Z") { value = evt.SpawnOffset.z };
+            offX.isDelayed = true;
+            offY.isDelayed = true;
+            offZ.isDelayed = true;
+
+            Action updateOff = () =>
+            {
+                var newOff = new Vector3(offX.value, offY.value, offZ.value);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change Spawn Offset",
+                    () => evt.SpawnOffset,
+                    v => evt.SpawnOffset = v,
+                    newOff);
+                _commandStack.Execute(cmd);
+            };
+
+            offX.RegisterValueChangedCallback(e => updateOff());
+            offY.RegisterValueChangedCallback(e => updateOff());
+            offZ.RegisterValueChangedCallback(e => updateOff());
+
+            props.Add(offX);
+            props.Add(offY);
+            props.Add(offZ);
+
+            _propertyContent.Add(props);
+            ApplyLightTextTheme(props);
+        }
+
+        private void ShowSpawnPatternProperties(SpawnPatternEvent evt)
+        {
             _propertyHeaderLabel.text = $"Event: {evt.PatternId}";
 
             // Show event properties
@@ -937,7 +1149,7 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>
         /// Called during drag to update property fields in real-time without rebuilding.
         /// </summary>
-        private void OnEventValuesChanged(SpawnPatternEvent evt)
+        private void OnEventValuesChanged(TimelineEvent evt)
         {
             if (evt == null) return;
             if (_propStartField != null)

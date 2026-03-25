@@ -133,7 +133,12 @@ namespace STGEngine.Editor.UI.Timeline
             item.Add(nameLabel);
 
             var typeStr = segment.Type == SegmentType.MidStage ? "MidStage" : "BossFight";
-            var infoLabel = new Label($"{typeStr} · {segment.Duration:F1}s · {segment.Events.Count} events");
+            string countInfo;
+            if (segment.Type == SegmentType.BossFight)
+                countInfo = $"{segment.SpellCardIds.Count} spells";
+            else
+                countInfo = $"{segment.Events.Count} events";
+            var infoLabel = new Label($"{typeStr} · {segment.Duration:F1}s · {countInfo}");
             infoLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
             infoLabel.style.fontSize = 10;
             item.Add(infoLabel);
@@ -195,13 +200,22 @@ namespace STGEngine.Editor.UI.Timeline
         private void OnAddSegment()
         {
             if (_stage == null) return;
+            AddSegmentOfType(SegmentType.MidStage);
+        }
+
+        /// <summary>Add a segment of the given type.</summary>
+        public void AddSegmentOfType(SegmentType type)
+        {
+            if (_stage == null) return;
 
             var segment = new TimelineSegment
             {
                 Id = $"segment_{_stage.Segments.Count + 1}",
-                Name = $"Segment {_stage.Segments.Count + 1}",
-                Type = SegmentType.MidStage,
-                Duration = 30f,
+                Name = type == SegmentType.BossFight
+                    ? $"Boss {_stage.Segments.Count + 1}"
+                    : $"Segment {_stage.Segments.Count + 1}",
+                Type = type,
+                Duration = type == SegmentType.BossFight ? 120f : 30f,
                 EntryTrigger = _stage.Segments.Count > 0
                     ? new TriggerCondition { Type = TriggerType.Immediate }
                     : null
@@ -261,6 +275,22 @@ namespace STGEngine.Editor.UI.Timeline
             deleteBtn.style.borderTopWidth = deleteBtn.style.borderBottomWidth =
                 deleteBtn.style.borderLeftWidth = deleteBtn.style.borderRightWidth = 0;
             menu.Add(deleteBtn);
+
+            // Toggle segment type
+            var toggleTypeLabel = segment.Type == SegmentType.MidStage
+                ? "Switch to BossFight"
+                : "Switch to MidStage";
+            var toggleTypeBtn = new Button(() =>
+            {
+                CloseMenu();
+                ToggleSegmentType(segment);
+            })
+            { text = toggleTypeLabel };
+            toggleTypeBtn.style.backgroundColor = Color.clear;
+            toggleTypeBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            toggleTypeBtn.style.borderTopWidth = toggleTypeBtn.style.borderBottomWidth =
+                toggleTypeBtn.style.borderLeftWidth = toggleTypeBtn.style.borderRightWidth = 0;
+            menu.Add(toggleTypeBtn);
 
             // Trigger condition submenu
             if (index > 0)
@@ -323,6 +353,25 @@ namespace STGEngine.Editor.UI.Timeline
 
             RebuildList();
             UpdateSelection();
+            OnStageChanged?.Invoke();
+        }
+
+        private void ToggleSegmentType(TimelineSegment segment)
+        {
+            var newType = segment.Type == SegmentType.MidStage
+                ? SegmentType.BossFight
+                : SegmentType.MidStage;
+
+            var cmd = new PropertyChangeCommand<SegmentType>(
+                "Toggle Segment Type",
+                () => segment.Type,
+                v => segment.Type = v,
+                newType);
+            _commandStack.Execute(cmd);
+
+            RebuildList();
+            UpdateSelection();
+            OnSegmentSelected?.Invoke(segment);
             OnStageChanged?.Invoke();
         }
     }

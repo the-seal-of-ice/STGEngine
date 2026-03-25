@@ -10,10 +10,10 @@ namespace STGEngine.Editor.UI.Timeline
     public class TrackAreaView : IDisposable
     {
         public VisualElement Root { get; }
-        public event Action<SpawnPatternEvent> OnEventSelected;
+        public event Action<TimelineEvent> OnEventSelected;
         public event Action OnEventsChanged;
         /// <summary>Fired during drag when StartTime/Duration changes in real-time.</summary>
-        public event Action<SpawnPatternEvent> OnEventValuesChanged;
+        public event Action<TimelineEvent> OnEventValuesChanged;
 
         private TimelineSegment _segment;
         private readonly CommandStack _commandStack;
@@ -29,7 +29,7 @@ namespace STGEngine.Editor.UI.Timeline
         private const float MaxPPS = 300f;
 
         private readonly List<EventBlockInfo> _blocks = new();
-        private SpawnPatternEvent _selectedEvent;
+        private TimelineEvent _selectedEvent;
 
         private enum DragMode { None, Move, Resize, Scrub }
         private DragMode _dragMode;
@@ -49,7 +49,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         private struct EventBlockInfo
         {
-            public SpawnPatternEvent Event;
+            public TimelineEvent Event;
             public VisualElement Block;
             public VisualElement ResizeHandle;
             public int Row;
@@ -120,7 +120,7 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         public float PixelsPerSecond => _pixelsPerSecond;
-        public SpawnPatternEvent SelectedEvent => _selectedEvent;
+        public TimelineEvent SelectedEvent => _selectedEvent;
 
         public void RebuildBlocks()
         {
@@ -141,11 +141,8 @@ namespace STGEngine.Editor.UI.Timeline
 
             foreach (var evt in _segment.Events)
             {
-                if (evt is SpawnPatternEvent spawnEvt)
-                {
-                    int row = rows.TryGetValue(evt, out var r) ? r : 0;
-                    CreateEventBlock(spawnEvt, row);
-                }
+                int row = rows.TryGetValue(evt, out var r) ? r : 0;
+                CreateEventBlock(evt, row);
             }
 
             // Restore visual selection highlight after rebuild
@@ -177,7 +174,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         // ─── Event Block Creation ───
 
-        private void CreateEventBlock(SpawnPatternEvent evt, int row)
+        private void CreateEventBlock(TimelineEvent evt, int row)
         {
             var block = new VisualElement();
             block.style.position = Position.Absolute;
@@ -193,7 +190,14 @@ namespace STGEngine.Editor.UI.Timeline
             block.style.paddingLeft = 4;
             block.style.justifyContent = Justify.Center;
 
-            var label = new Label(evt.PatternId);
+            string displayLabel = evt switch
+            {
+                SpawnPatternEvent sp => sp.PatternId,
+                SpawnWaveEvent sw => $"\u2693 {sw.WaveId}",
+                _ => evt.Id
+            };
+
+            var label = new Label(displayLabel);
             label.style.color = new Color(0.9f, 0.9f, 0.9f);
             label.style.fontSize = 10;
             label.style.overflow = Overflow.Hidden;
@@ -387,7 +391,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         // ─── Selection ───
 
-        public void SelectEvent(SpawnPatternEvent evt)
+        public void SelectEvent(TimelineEvent evt)
         {
             _selectedEvent = evt;
             foreach (var b in _blocks)
@@ -518,12 +522,13 @@ namespace STGEngine.Editor.UI.Timeline
             OnAddEventRequested?.Invoke(Mathf.Max(0f, time));
         }
 
-        public void AddEvent(SpawnPatternEvent evt)
+        public void AddEvent(TimelineEvent evt)
         {
             if (_segment == null) return;
 
+            string desc = evt is SpawnWaveEvent ? "Add Wave Event" : "Add Pattern Event";
             var cmd = ListCommand<TimelineEvent>.Add(
-                _segment.Events, evt, -1, "Add Pattern Event");
+                _segment.Events, evt, -1, desc);
             _commandStack.Execute(cmd);
 
             RebuildBlocks();
@@ -643,11 +648,24 @@ namespace STGEngine.Editor.UI.Timeline
             return result;
         }
 
-        private Color GetEventColor(SpawnPatternEvent evt)
+        private Color GetEventColor(TimelineEvent evt)
         {
-            int hash = evt.PatternId?.GetHashCode() ?? 0;
-            float hue = Mathf.Abs(hash % 360) / 360f;
-            return Color.HSVToRGB(hue, 0.5f, 0.6f);
+            if (evt is SpawnWaveEvent sw)
+            {
+                // Green-ish for wave events
+                int hash = sw.WaveId?.GetHashCode() ?? 0;
+                float hue = 0.3f + Mathf.Abs(hash % 60) / 360f; // Green range
+                return Color.HSVToRGB(hue, 0.5f, 0.55f);
+            }
+
+            if (evt is SpawnPatternEvent sp)
+            {
+                int hash = sp.PatternId?.GetHashCode() ?? 0;
+                float hue = Mathf.Abs(hash % 360) / 360f;
+                return Color.HSVToRGB(hue, 0.5f, 0.6f);
+            }
+
+            return new Color(0.4f, 0.4f, 0.4f);
         }
 
         // ─── Ruler Drawing ───
