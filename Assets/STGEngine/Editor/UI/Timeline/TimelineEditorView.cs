@@ -42,6 +42,8 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly VisualElement _breadcrumbBar;
         private readonly Label _breadcrumbStage;
         private readonly Label _breadcrumbSegment;
+        private readonly Label _breadcrumbSep2;
+        private readonly Label _breadcrumbSpellCard;
         private readonly VisualElement _toolbar;
         private readonly VisualElement _mainSplit;
         private readonly VisualElement _propertyPanel;
@@ -73,6 +75,11 @@ namespace STGEngine.Editor.UI.Timeline
         private FloatField _propDurField;
         private SpawnPatternEvent _selectedEvent;
         private TimelineEvent _selectedTimelineEvent;
+
+        // Spell card editing state
+        private SpellCard _editingSpellCard;
+        private string _editingSpellCardId;
+        private TimelineSegment _editingBossFightSegment;
 
         public TimelineEditorView(TimelinePlaybackController playback, PatternLibrary library,
             PatternPreviewer singlePreviewer)
@@ -111,6 +118,27 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSegment.style.color = new Color(0.5f, 0.8f, 1f);
             _breadcrumbSegment.style.unityFontStyleAndWeight = FontStyle.Bold;
             _breadcrumbBar.Add(_breadcrumbSegment);
+
+            // Third-level breadcrumb (SpellCard) — hidden by default
+            _breadcrumbSep2 = new Label(">");
+            _breadcrumbSep2.style.color = new Color(0.5f, 0.5f, 0.5f);
+            _breadcrumbSep2.style.marginLeft = 4;
+            _breadcrumbSep2.style.marginRight = 4;
+            _breadcrumbSep2.style.display = DisplayStyle.None;
+            _breadcrumbBar.Add(_breadcrumbSep2);
+
+            _breadcrumbSpellCard = new Label("");
+            _breadcrumbSpellCard.style.color = new Color(0.9f, 0.3f, 0.9f);
+            _breadcrumbSpellCard.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _breadcrumbSpellCard.style.display = DisplayStyle.None;
+            _breadcrumbBar.Add(_breadcrumbSpellCard);
+
+            // Make segment label clickable to navigate back from spell card editing
+            _breadcrumbSegment.RegisterCallback<ClickEvent>(_ =>
+            {
+                if (_editingSpellCard != null)
+                    ExitSpellCardEditing();
+            });
 
             // Spacer to push seed controls to the right
             var breadcrumbSpacer = new VisualElement();
@@ -816,6 +844,20 @@ namespace STGEngine.Editor.UI.Timeline
                 scLabel.style.flexGrow = 1;
                 row.Add(scLabel);
 
+                // Edit button
+                var editScId = scId;
+                var editBtn = new Button(() => EnterSpellCardEditing(segment, editScId))
+                { text = "\u270e" };
+                editBtn.style.width = 20;
+                editBtn.style.height = 18;
+                editBtn.style.fontSize = 11;
+                editBtn.style.backgroundColor = new Color(0.2f, 0.25f, 0.35f);
+                editBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                editBtn.style.borderTopWidth = editBtn.style.borderBottomWidth =
+                    editBtn.style.borderLeftWidth = editBtn.style.borderRightWidth = 0;
+                editBtn.style.marginRight = 2;
+                row.Add(editBtn);
+
                 var removeBtn = new Button(() =>
                 {
                     if (idx < segment.SpellCardIds.Count)
@@ -912,6 +954,408 @@ namespace STGEngine.Editor.UI.Timeline
                     btn.style.marginBottom = 2;
                     picker.Add(btn);
                 }
+            }
+
+            var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginTop = 4;
+            picker.Add(cancelBtn);
+
+            Root.panel.visualTree.Add(picker);
+        }
+
+        // ─── Spell Card Editing (Breadcrumb Layer 3) ───
+
+        private void EnterSpellCardEditing(TimelineSegment segment, string spellCardId)
+        {
+            if (_catalog == null) return;
+
+            // Load spell card from YAML
+            var path = _catalog.GetSpellCardPath(spellCardId);
+            if (!System.IO.File.Exists(path))
+            {
+                Debug.LogWarning($"[TimelineEditor] SpellCard file not found: {path}");
+                return;
+            }
+
+            SpellCard sc;
+            try
+            {
+                sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] Failed to load spell card '{spellCardId}': {e.Message}");
+                return;
+            }
+
+            _editingSpellCard = sc;
+            _editingSpellCardId = spellCardId;
+            _editingBossFightSegment = segment;
+
+            // Update breadcrumb to layer 3
+            _breadcrumbSep2.style.display = DisplayStyle.Flex;
+            _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
+            _breadcrumbSpellCard.text = !string.IsNullOrEmpty(sc.Name) ? sc.Name : spellCardId;
+
+            ShowSpellCardEditor(sc, spellCardId);
+        }
+
+        private void ExitSpellCardEditing()
+        {
+            _editingSpellCard = null;
+            _editingSpellCardId = null;
+
+            // Hide breadcrumb layer 3
+            _breadcrumbSep2.style.display = DisplayStyle.None;
+            _breadcrumbSpellCard.style.display = DisplayStyle.None;
+
+            // Return to spell card list
+            if (_editingBossFightSegment != null)
+                ShowBossFightSpellCards(_editingBossFightSegment);
+
+            _editingBossFightSegment = null;
+        }
+
+        private void SaveCurrentSpellCard()
+        {
+            if (_editingSpellCard == null || _editingSpellCardId == null || _catalog == null) return;
+
+            var path = _catalog.GetSpellCardPath(_editingSpellCardId);
+            try
+            {
+                YamlSerializer.SerializeSpellCardToFile(_editingSpellCard, path);
+                _catalog.AddOrUpdateSpellCard(_editingSpellCardId, _editingSpellCard.Name);
+                STGCatalog.Save(_catalog);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] Failed to save spell card: {e.Message}");
+            }
+        }
+
+        private void ShowSpellCardEditor(SpellCard sc, string scId)
+        {
+            _propertyContent.Clear();
+            _propertyHeaderLabel.text = $"SpellCard: {scId}";
+
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            // ── Back button ──
+            var backBtn = new Button(() => ExitSpellCardEditing())
+            { text = "\u25c0 Back to Spell Card List" };
+            backBtn.style.height = 22;
+            backBtn.style.marginBottom = 8;
+            backBtn.style.backgroundColor = new Color(0.25f, 0.25f, 0.3f);
+            backBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            backBtn.style.borderTopWidth = backBtn.style.borderBottomWidth =
+                backBtn.style.borderLeftWidth = backBtn.style.borderRightWidth = 0;
+            container.Add(backBtn);
+
+            // ── Name ──
+            var nameField = new TextField("Name") { value = sc.Name };
+            nameField.isDelayed = true;
+            nameField.RegisterValueChangedCallback(e =>
+            {
+                sc.Name = e.newValue;
+                _breadcrumbSpellCard.text = e.newValue;
+                SaveCurrentSpellCard();
+            });
+            container.Add(nameField);
+
+            // ── Health ──
+            var healthField = new FloatField("Health") { value = sc.Health };
+            healthField.isDelayed = true;
+            healthField.RegisterValueChangedCallback(e =>
+            {
+                sc.Health = Mathf.Max(1f, e.newValue);
+                SaveCurrentSpellCard();
+            });
+            container.Add(healthField);
+
+            // ── Time Limit ──
+            var timeLimitField = new FloatField("Time Limit") { value = sc.TimeLimit };
+            timeLimitField.isDelayed = true;
+            timeLimitField.RegisterValueChangedCallback(e =>
+            {
+                sc.TimeLimit = Mathf.Max(1f, e.newValue);
+                SaveCurrentSpellCard();
+            });
+            container.Add(timeLimitField);
+
+            // ── Boss Path ──
+            var pathHeader = new Label("Boss Path");
+            pathHeader.style.color = new Color(0.85f, 0.85f, 0.85f);
+            pathHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            pathHeader.style.marginTop = 10;
+            pathHeader.style.marginBottom = 4;
+            container.Add(pathHeader);
+
+            BuildPathKeyframeList(container, sc.BossPath, "boss-path");
+
+            // ── Patterns ──
+            var patternsHeader = new Label("Patterns");
+            patternsHeader.style.color = new Color(0.85f, 0.85f, 0.85f);
+            patternsHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            patternsHeader.style.marginTop = 10;
+            patternsHeader.style.marginBottom = 4;
+            container.Add(patternsHeader);
+
+            BuildSpellCardPatternList(container, sc);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        private void BuildPathKeyframeList(VisualElement parent, List<PathKeyframe> keyframes, string context)
+        {
+            for (int i = 0; i < keyframes.Count; i++)
+            {
+                int idx = i;
+                var kf = keyframes[i];
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems = Align.Center;
+                row.style.marginBottom = 2;
+
+                var timeField = new FloatField("T") { value = kf.Time };
+                timeField.isDelayed = true;
+                timeField.style.width = 60;
+                timeField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Time = Mathf.Max(0f, e.newValue);
+                    SaveCurrentSpellCard();
+                });
+                row.Add(timeField);
+
+                var xField = new FloatField("X") { value = kf.Position.x };
+                xField.isDelayed = true;
+                xField.style.width = 55;
+                var yField = new FloatField("Y") { value = kf.Position.y };
+                yField.isDelayed = true;
+                yField.style.width = 55;
+                var zField = new FloatField("Z") { value = kf.Position.z };
+                zField.isDelayed = true;
+                zField.style.width = 55;
+
+                Action updatePos = () =>
+                {
+                    kf.Position = new Vector3(xField.value, yField.value, zField.value);
+                    SaveCurrentSpellCard();
+                };
+                xField.RegisterValueChangedCallback(_ => updatePos());
+                yField.RegisterValueChangedCallback(_ => updatePos());
+                zField.RegisterValueChangedCallback(_ => updatePos());
+
+                row.Add(xField);
+                row.Add(yField);
+                row.Add(zField);
+
+                var delBtn = new Button(() =>
+                {
+                    keyframes.RemoveAt(idx);
+                    SaveCurrentSpellCard();
+                    ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
+                })
+                { text = "\u2715" };
+                delBtn.style.width = 18;
+                delBtn.style.height = 16;
+                delBtn.style.fontSize = 9;
+                delBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
+                delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
+                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
+                row.Add(delBtn);
+
+                parent.Add(row);
+            }
+
+            var addKfBtn = new Button(() =>
+            {
+                float lastTime = keyframes.Count > 0 ? keyframes[keyframes.Count - 1].Time + 5f : 0f;
+                keyframes.Add(new PathKeyframe { Time = lastTime, Position = new Vector3(0, 6, 0) });
+                SaveCurrentSpellCard();
+                ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
+            })
+            { text = "+ Add Keyframe" };
+            addKfBtn.style.height = 20;
+            addKfBtn.style.marginTop = 2;
+            addKfBtn.style.backgroundColor = new Color(0.2f, 0.25f, 0.35f);
+            addKfBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            addKfBtn.style.borderTopWidth = addKfBtn.style.borderBottomWidth =
+                addKfBtn.style.borderLeftWidth = addKfBtn.style.borderRightWidth = 0;
+            parent.Add(addKfBtn);
+        }
+
+        private void BuildSpellCardPatternList(VisualElement parent, SpellCard sc)
+        {
+            for (int i = 0; i < sc.Patterns.Count; i++)
+            {
+                int idx = i;
+                var scp = sc.Patterns[i];
+
+                var block = new VisualElement();
+                block.style.backgroundColor = new Color(0.18f, 0.18f, 0.22f);
+                block.style.borderTopLeftRadius = block.style.borderTopRightRadius =
+                    block.style.borderBottomLeftRadius = block.style.borderBottomRightRadius = 3;
+                block.style.paddingTop = 4;
+                block.style.paddingBottom = 4;
+                block.style.paddingLeft = 6;
+                block.style.paddingRight = 6;
+                block.style.marginBottom = 4;
+
+                // Header row: pattern ID + delete
+                var headerRow = new VisualElement();
+                headerRow.style.flexDirection = FlexDirection.Row;
+                headerRow.style.alignItems = Align.Center;
+                headerRow.style.marginBottom = 2;
+
+                var patLabel = new Label($"Pattern: {scp.PatternId}");
+                patLabel.style.color = new Color(0.5f, 0.8f, 1f);
+                patLabel.style.flexGrow = 1;
+                patLabel.style.fontSize = 11;
+                headerRow.Add(patLabel);
+
+                var delBtn = new Button(() =>
+                {
+                    sc.Patterns.RemoveAt(idx);
+                    SaveCurrentSpellCard();
+                    ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
+                })
+                { text = "\u2715" };
+                delBtn.style.width = 18;
+                delBtn.style.height = 16;
+                delBtn.style.fontSize = 9;
+                delBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
+                delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
+                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
+                headerRow.Add(delBtn);
+                block.Add(headerRow);
+
+                // Delay
+                var delayField = new FloatField("Delay") { value = scp.Delay };
+                delayField.isDelayed = true;
+                delayField.RegisterValueChangedCallback(e =>
+                {
+                    scp.Delay = Mathf.Max(0f, e.newValue);
+                    SaveCurrentSpellCard();
+                });
+                block.Add(delayField);
+
+                // Duration
+                var durField = new FloatField("Duration") { value = scp.Duration };
+                durField.isDelayed = true;
+                durField.RegisterValueChangedCallback(e =>
+                {
+                    scp.Duration = Mathf.Max(0.1f, e.newValue);
+                    SaveCurrentSpellCard();
+                });
+                block.Add(durField);
+
+                // Offset
+                var offRow = new VisualElement();
+                offRow.style.flexDirection = FlexDirection.Row;
+                offRow.style.alignItems = Align.Center;
+
+                var offLabel = new Label("Offset");
+                offLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+                offLabel.style.width = 45;
+                offLabel.style.fontSize = 11;
+                offRow.Add(offLabel);
+
+                var ox = new FloatField() { value = scp.Offset.x };
+                ox.isDelayed = true;
+                ox.style.width = 50;
+                var oy = new FloatField() { value = scp.Offset.y };
+                oy.isDelayed = true;
+                oy.style.width = 50;
+                var oz = new FloatField() { value = scp.Offset.z };
+                oz.isDelayed = true;
+                oz.style.width = 50;
+
+                Action updateOff = () =>
+                {
+                    scp.Offset = new Vector3(ox.value, oy.value, oz.value);
+                    SaveCurrentSpellCard();
+                };
+                ox.RegisterValueChangedCallback(_ => updateOff());
+                oy.RegisterValueChangedCallback(_ => updateOff());
+                oz.RegisterValueChangedCallback(_ => updateOff());
+
+                offRow.Add(ox);
+                offRow.Add(oy);
+                offRow.Add(oz);
+                block.Add(offRow);
+
+                parent.Add(block);
+            }
+
+            // Add pattern button — pick from catalog
+            var addPatBtn = new Button(() => ShowPatternPickerForSpellCard(sc))
+            { text = "+ Add Pattern" };
+            addPatBtn.style.height = 20;
+            addPatBtn.style.marginTop = 2;
+            addPatBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+            addPatBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            addPatBtn.style.borderTopWidth = addPatBtn.style.borderBottomWidth =
+                addPatBtn.style.borderLeftWidth = addPatBtn.style.borderRightWidth = 0;
+            parent.Add(addPatBtn);
+        }
+
+        private void ShowPatternPickerForSpellCard(SpellCard sc)
+        {
+            if (_catalog == null) return;
+
+            var picker = new VisualElement();
+            picker.style.position = Position.Absolute;
+            picker.style.left = Length.Percent(30);
+            picker.style.top = Length.Percent(20);
+            picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
+            picker.style.borderTopWidth = picker.style.borderBottomWidth =
+                picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
+            picker.style.borderTopColor = picker.style.borderBottomColor =
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.3f, 0.5f, 0.8f);
+            picker.style.paddingTop = picker.style.paddingBottom = 8;
+            picker.style.paddingLeft = picker.style.paddingRight = 12;
+            picker.style.minWidth = 220;
+
+            var title = new Label("Add Pattern to Spell Card");
+            title.style.color = new Color(0.5f, 0.8f, 1f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            picker.Add(title);
+
+            foreach (var entry in _catalog.Patterns)
+            {
+                string label = !string.IsNullOrEmpty(entry.Name)
+                    ? $"{entry.Name}  ({entry.Id})"
+                    : entry.Id;
+
+                var pid = entry.Id;
+                var btn = new Button(() =>
+                {
+                    picker.RemoveFromHierarchy();
+                    sc.Patterns.Add(new SpellCardPattern
+                    {
+                        PatternId = pid,
+                        Delay = 0f,
+                        Duration = 5f,
+                        Offset = Vector3.zero
+                    });
+                    SaveCurrentSpellCard();
+                    ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
+                })
+                { text = label };
+                btn.style.backgroundColor = new Color(0.2f, 0.25f, 0.3f);
+                btn.style.color = new Color(0.9f, 0.9f, 0.9f);
+                btn.style.marginBottom = 2;
+                picker.Add(btn);
             }
 
             var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
