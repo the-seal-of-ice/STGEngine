@@ -645,13 +645,28 @@ namespace STGEngine.Editor.UI
                         binder.Bind(delayField, hm,
                             nameof(HomingModifier.Delay), _commandStack);
                         container.Add(delayField);
+
+                        var apModes = new List<string> { "Random", "Fixed", "None" };
+                        var apDropdown = new DropdownField("AntiParallel", apModes,
+                            apModes.IndexOf(hm.AntiParallel.ToString()));
+                        apDropdown.RegisterValueChangedCallback(apEvt =>
+                        {
+                            if (Enum.TryParse<AntiParallelMode>(apEvt.newValue, out var mode))
+                            {
+                                var apCmd = new PropertyChangeCommand<AntiParallelMode>(
+                                    $"Change AntiParallel to {apEvt.newValue}",
+                                    () => hm.AntiParallel,
+                                    v => hm.AntiParallel = v,
+                                    mode);
+                                _commandStack.Execute(apCmd);
+                            }
+                        });
+                        container.Add(apDropdown);
                         break;
 
                     case BounceModifier bm:
-                        var boundaryField = new Vector3Field("BoundaryHalfExtents");
-                        binder.Bind(boundaryField, bm,
-                            nameof(BounceModifier.BoundaryHalfExtents), _commandStack);
-                        container.Add(boundaryField);
+                        container.Add(MakeVector3Editor("BoundaryHalfExtents", bm,
+                            nameof(BounceModifier.BoundaryHalfExtents), binder));
 
                         var maxBouncesField = new IntegerField("MaxBounces");
                         binder.Bind(maxBouncesField, bm,

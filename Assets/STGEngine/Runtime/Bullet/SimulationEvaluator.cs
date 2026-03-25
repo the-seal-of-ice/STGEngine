@@ -301,7 +301,8 @@ namespace STGEngine.Runtime.Bullet
                 {
                     TargetPosition = hm.TargetPosition,
                     TurnSpeed = hm.TurnSpeed,
-                    Delay = hm.Delay
+                    Delay = hm.Delay,
+                    AntiParallel = hm.AntiParallel
                 };
             }
             if (mod is BounceModifier bm)
