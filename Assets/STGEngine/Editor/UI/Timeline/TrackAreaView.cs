@@ -538,10 +538,7 @@ namespace STGEngine.Editor.UI.Timeline
             if (e.button != 1) return;
             if (_layer == null) return;
 
-            float time = ((e.localMousePosition.x + _scrollOffset) / _pixelsPerSecond);
-            time = Mathf.Max(0f, time);
-
-            ShowContextMenu(e.mousePosition, time);
+            ShowContextMenu(e.mousePosition, _currentPlayTime);
             e.StopPropagation();
             e.PreventDefault();
         }
