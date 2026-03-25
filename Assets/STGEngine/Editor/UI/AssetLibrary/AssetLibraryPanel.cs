@@ -50,7 +50,7 @@ namespace STGEngine.Editor.UI.AssetLibrary
         // Category foldouts
         private readonly Dictionary<AssetCategory, Foldout> _foldouts = new();
 
-        private const float PanelWidth = 180f;
+        private const float PanelWidth = 240f;
         private const float CollapsedWidth = 24f;
 
         public AssetLibraryPanel()
