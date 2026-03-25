@@ -1130,43 +1130,39 @@ namespace STGEngine.Editor.UI.Timeline
                 int idx = i;
                 var kf = keyframes[i];
 
-                var row = new VisualElement();
-                row.style.flexDirection = FlexDirection.Row;
-                row.style.alignItems = Align.Center;
-                row.style.marginBottom = 2;
+                var wrapper = new VisualElement();
+                wrapper.style.marginBottom = 3;
+                wrapper.style.backgroundColor = new Color(0.16f, 0.16f, 0.2f);
+                wrapper.style.borderTopLeftRadius = wrapper.style.borderTopRightRadius =
+                    wrapper.style.borderBottomLeftRadius = wrapper.style.borderBottomRightRadius = 3;
+                wrapper.style.paddingLeft = 6;
+                wrapper.style.paddingRight = 4;
+                wrapper.style.paddingTop = 2;
+                wrapper.style.paddingBottom = 2;
 
-                var timeField = new FloatField("T") { value = kf.Time };
-                timeField.isDelayed = true;
-                timeField.style.width = 60;
-                timeField.RegisterValueChangedCallback(e =>
-                {
-                    kf.Time = Mathf.Max(0f, e.newValue);
-                    SaveCurrentSpellCard();
-                });
-                row.Add(timeField);
+                // Detail panel (hidden by default)
+                var detail = new VisualElement();
+                detail.style.display = DisplayStyle.None;
+                detail.style.paddingTop = 4;
+                detail.style.paddingBottom = 2;
 
-                var xField = new FloatField("X") { value = kf.Position.x };
-                xField.isDelayed = true;
-                xField.style.width = 55;
-                var yField = new FloatField("Y") { value = kf.Position.y };
-                yField.isDelayed = true;
-                yField.style.width = 55;
-                var zField = new FloatField("Z") { value = kf.Position.z };
-                zField.isDelayed = true;
-                zField.style.width = 55;
+                // Summary row: clickable button showing T + position
+                var summaryRow = new VisualElement();
+                summaryRow.style.flexDirection = FlexDirection.Row;
+                summaryRow.style.alignItems = Align.Center;
+                summaryRow.style.height = 22;
 
-                Action updatePos = () =>
-                {
-                    kf.Position = new Vector3(xField.value, yField.value, zField.value);
-                    SaveCurrentSpellCard();
-                };
-                xField.RegisterValueChangedCallback(_ => updatePos());
-                yField.RegisterValueChangedCallback(_ => updatePos());
-                zField.RegisterValueChangedCallback(_ => updatePos());
+                var expandLabel = new Label("\u25b6");
+                expandLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+                expandLabel.style.fontSize = 10;
+                expandLabel.style.width = 14;
+                summaryRow.Add(expandLabel);
 
-                row.Add(xField);
-                row.Add(yField);
-                row.Add(zField);
+                var summaryText = new Label($"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})");
+                summaryText.style.color = new Color(0.85f, 0.85f, 0.85f);
+                summaryText.style.fontSize = 11;
+                summaryText.style.flexGrow = 1;
+                summaryRow.Add(summaryText);
 
                 var delBtn = new Button(() =>
                 {
@@ -1182,9 +1178,65 @@ namespace STGEngine.Editor.UI.Timeline
                 delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
                 delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
                     delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
-                row.Add(delBtn);
+                summaryRow.Add(delBtn);
 
-                parent.Add(row);
+                // Toggle expand/collapse on click
+                bool expanded = false;
+                summaryRow.RegisterCallback<ClickEvent>(evt =>
+                {
+                    // Ignore if click was on the delete button
+                    if (evt.target is Button) return;
+
+                    expanded = !expanded;
+                    detail.style.display = expanded ? DisplayStyle.Flex : DisplayStyle.None;
+                    expandLabel.text = expanded ? "\u25bc" : "\u25b6";
+                });
+
+                wrapper.Add(summaryRow);
+
+                // ── Detail fields (each on its own line) ──
+                var timeField = new FloatField("Time") { value = kf.Time };
+                timeField.isDelayed = true;
+                timeField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Time = Mathf.Max(0f, e.newValue);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveCurrentSpellCard();
+                });
+                detail.Add(timeField);
+
+                var xField = new FloatField("X") { value = kf.Position.x };
+                xField.isDelayed = true;
+                xField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(e.newValue, kf.Position.y, kf.Position.z);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveCurrentSpellCard();
+                });
+                detail.Add(xField);
+
+                var yField = new FloatField("Y") { value = kf.Position.y };
+                yField.isDelayed = true;
+                yField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(kf.Position.x, e.newValue, kf.Position.z);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveCurrentSpellCard();
+                });
+                detail.Add(yField);
+
+                var zField = new FloatField("Z") { value = kf.Position.z };
+                zField.isDelayed = true;
+                zField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(kf.Position.x, kf.Position.y, e.newValue);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveCurrentSpellCard();
+                });
+                detail.Add(zField);
+
+                wrapper.Add(detail);
+                parent.Add(wrapper);
             }
 
             var addKfBtn = new Button(() =>
