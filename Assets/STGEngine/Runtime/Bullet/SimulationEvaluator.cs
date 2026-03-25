@@ -3,6 +3,7 @@ using UnityEngine;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Emitters;
 using STGEngine.Core.Modifiers;
+using STGEngine.Core.Random;
 
 namespace STGEngine.Runtime.Bullet
 {
@@ -25,9 +26,12 @@ namespace STGEngine.Runtime.Bullet
             public BulletSpawnData Spawn;
             // Per-bullet modifier instances (each bullet needs its own state)
             public List<ISimulationModifier> SimMods;
+            // Per-bullet deterministic RNG
+            public DeterministicRng Rng;
         }
 
         private readonly BulletPattern _pattern;
+        private readonly SeedManager _seedManager;
         private List<BulletInstance> _bullets;
         private float _currentTime;
         private bool _initialized;
@@ -36,9 +40,12 @@ namespace STGEngine.Runtime.Bullet
         private List<IFormulaModifier> _formulaMods;
         private SpeedCurveModifier _speedCurveMod;
 
-        public SimulationEvaluator(BulletPattern pattern)
+        public SimulationEvaluator(BulletPattern pattern) : this(pattern, pattern?.Seed ?? 0) { }
+
+        public SimulationEvaluator(BulletPattern pattern, int seed)
         {
             _pattern = pattern;
+            _seedManager = new SeedManager(seed);
             CacheFormulaModifiers();
         }
 
@@ -63,6 +70,7 @@ namespace STGEngine.Runtime.Bullet
             _currentTime = 0f;
             _initialized = false;
             _bullets = null;
+            _seedManager.Reset();
         }
 
         /// <summary>
@@ -252,6 +260,7 @@ namespace STGEngine.Runtime.Bullet
                     // bullets start at spawn position and move via velocity.
                 }
 
+                var rng = _seedManager.NextRng();
                 var bullet = new BulletInstance
                 {
                     Position = pos,
@@ -259,7 +268,8 @@ namespace STGEngine.Runtime.Bullet
                     Elapsed = 0f,
                     Active = true,
                     Spawn = spawn,
-                    SimMods = CreateModifierInstances()
+                    SimMods = CreateModifierInstances(rng),
+                    Rng = rng
                 };
 
                 _bullets.Add(bullet);
@@ -269,7 +279,7 @@ namespace STGEngine.Runtime.Bullet
         /// <summary>
         /// Create per-bullet modifier instances (each bullet needs independent state).
         /// </summary>
-        private List<ISimulationModifier> CreateModifierInstances()
+        private List<ISimulationModifier> CreateModifierInstances(DeterministicRng rng)
         {
             var mods = new List<ISimulationModifier>();
             if (_pattern.Modifiers == null) return mods;
@@ -279,7 +289,7 @@ namespace STGEngine.Runtime.Bullet
                 if (mod is ISimulationModifier)
                 {
                     // Clone modifier for per-bullet state
-                    var instance = CloneSimModifier(mod);
+                    var instance = CloneSimModifier(mod, rng);
                     if (instance != null)
                     {
                         mods.Add(instance);
@@ -292,7 +302,7 @@ namespace STGEngine.Runtime.Bullet
             return mods;
         }
 
-        private ISimulationModifier CloneSimModifier(IModifier mod)
+        private ISimulationModifier CloneSimModifier(IModifier mod, DeterministicRng rng)
         {
             // Create a new instance with same parameters but fresh state
             if (mod is HomingModifier hm)
@@ -302,7 +312,8 @@ namespace STGEngine.Runtime.Bullet
                     TargetPosition = hm.TargetPosition,
                     TurnSpeed = hm.TurnSpeed,
                     Delay = hm.Delay,
-                    AntiParallel = hm.AntiParallel
+                    AntiParallel = hm.AntiParallel,
+                    Rng = rng
                 };
             }
             if (mod is BounceModifier bm)
@@ -328,6 +339,8 @@ namespace STGEngine.Runtime.Bullet
 
         private BulletInstance CreateChildBullet(BulletInstance parent, Vector3 velocity)
         {
+            // Child bullets derive a new RNG from the parent's seed manager
+            var childRng = _seedManager.NextRng();
             return new BulletInstance
             {
                 Position = parent.Position,
@@ -335,14 +348,15 @@ namespace STGEngine.Runtime.Bullet
                 Elapsed = 0f,
                 Active = true,
                 Spawn = parent.Spawn,
-                SimMods = CreateChildModifierInstances()
+                SimMods = CreateChildModifierInstances(childRng),
+                Rng = childRng
             };
         }
 
         /// <summary>
         /// Create modifier instances for child bullets (no SplitModifier to avoid recursive splits).
         /// </summary>
-        private List<ISimulationModifier> CreateChildModifierInstances()
+        private List<ISimulationModifier> CreateChildModifierInstances(DeterministicRng rng)
         {
             var mods = new List<ISimulationModifier>();
             if (_pattern.Modifiers == null) return mods;
@@ -351,7 +365,7 @@ namespace STGEngine.Runtime.Bullet
             {
                 if (mod is ISimulationModifier && !(mod is SplitModifier))
                 {
-                    var instance = CloneSimModifier(mod);
+                    var instance = CloneSimModifier(mod, rng);
                     if (instance != null) mods.Add(instance);
                 }
             }
@@ -360,6 +374,7 @@ namespace STGEngine.Runtime.Bullet
 
         private BulletInstance CreateEmptyBullet()
         {
+            var rng = _seedManager.NextRng();
             return new BulletInstance
             {
                 Position = Vector3.zero,
@@ -367,7 +382,8 @@ namespace STGEngine.Runtime.Bullet
                 Elapsed = 0f,
                 Active = false,
                 Spawn = default,
-                SimMods = CreateModifierInstances()
+                SimMods = CreateModifierInstances(rng),
+                Rng = rng
             };
         }
 

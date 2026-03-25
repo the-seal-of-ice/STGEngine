@@ -12,6 +12,12 @@ namespace STGEngine.Core.DataModel
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
 
+        /// <summary>
+        /// Master seed for deterministic PRNG. Controls all random behavior
+        /// across the entire stage. Same seed = identical replay.
+        /// </summary>
+        public int Seed { get; set; } = 0;
+
         /// <summary>Ordered list of segments composing this stage.</summary>
         public List<TimelineSegment> Segments { get; set; } = new();
     }

@@ -50,6 +50,7 @@ namespace STGEngine.Editor.UI
         private FloatField _bulletScaleField;
         private ColorField _bulletColorField;
         private FloatField _durationField;
+        private IntegerField _seedField;
         private DropdownField _meshTypeDropdown;
         private VisualElement _collisionContainer;
 
@@ -177,6 +178,30 @@ namespace STGEngine.Editor.UI
 
             _durationField = new FloatField("Duration");
             _root.Add(_durationField);
+
+            // Seed field (same layout as Scale/Duration)
+            _seedField = new IntegerField("Seed");
+            _seedField.isDelayed = true;
+            _seedField.AddToClassList("seed-field");
+            _root.Add(_seedField);
+
+            // Randomize seed button
+            var randomizeBtn = new Button(() =>
+            {
+                if (_pattern == null) return;
+                int newSeed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+                var cmd = new PropertyChangeCommand<int>(
+                    "Randomize Seed",
+                    () => _pattern.Seed,
+                    v => _pattern.Seed = v,
+                    newSeed);
+                _commandStack.Execute(cmd);
+                _seedField.SetValueWithoutNotify(newSeed);
+            }) { text = "Randomize Seed" };
+            randomizeBtn.style.height = 22;
+            randomizeBtn.style.marginTop = 2;
+            randomizeBtn.style.marginBottom = 4;
+            _root.Add(randomizeBtn);
 
             // MeshType dropdown
             var meshTypes = new List<string> { "Sphere", "Diamond", "Arrow", "Rice" };
@@ -410,6 +435,9 @@ namespace STGEngine.Editor.UI
 
             _patternBinder.Bind(_durationField, _pattern,
                 nameof(BulletPattern.Duration), _commandStack);
+
+            _patternBinder.Bind(_seedField, _pattern,
+                nameof(BulletPattern.Seed), _commandStack);
 
             // Color uses custom field, bind manually
             _bulletColorField.SetColor(_pattern.BulletColor);
@@ -1226,8 +1254,40 @@ namespace STGEngine.Editor.UI
             // IntegerField
             root.Query<IntegerField>().ForEach(f =>
             {
-                f.labelElement.style.minWidth = labelWidth;
-                f.labelElement.style.maxWidth = labelWidth;
+                f.labelElement.style.color = lightText;
+                if (f.ClassListContains("seed-field"))
+                {
+                    // Seed field: compact style to fit in tight spaces
+                    f.style.fontSize = 10;
+                    f.style.paddingTop = 0;
+                    f.style.paddingBottom = 0;
+                    f.style.marginTop = 0;
+                    f.style.marginBottom = 0;
+                    f.labelElement.style.paddingTop = 0;
+                    f.labelElement.style.paddingBottom = 0;
+                    f.Query(className: "unity-base-field__input").ForEach(inp =>
+                    {
+                        inp.style.color = lightText;
+                        inp.style.backgroundColor = new Color(0.22f, 0.22f, 0.22f);
+                        inp.style.paddingTop = 0;
+                        inp.style.paddingBottom = 0;
+                        inp.style.paddingLeft = 2;
+                        inp.style.paddingRight = 2;
+                        inp.style.marginTop = 0;
+                        inp.style.marginBottom = 0;
+                    });
+                }
+                else
+                {
+                    // Normal IntegerField: same layout as FloatField
+                    f.labelElement.style.minWidth = labelWidth;
+                    f.labelElement.style.maxWidth = labelWidth;
+                    f.Query(className: "unity-base-field__input").ForEach(inp =>
+                    {
+                        inp.style.color = lightText;
+                        inp.style.backgroundColor = new Color(0.22f, 0.22f, 0.22f);
+                    });
+                }
             });
             // DropdownField
             root.Query<DropdownField>().ForEach(f =>

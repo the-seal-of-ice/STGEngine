@@ -324,6 +324,8 @@ namespace STGEngine.Core.Serialization
             EmitScalar(emitter, stage.Id);
             EmitScalar(emitter, "name");
             EmitScalar(emitter, stage.Name);
+            EmitScalar(emitter, "seed");
+            EmitScalar(emitter, stage.Seed.ToString());
 
             EmitScalar(emitter, "segments");
             emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Block));
@@ -447,6 +449,8 @@ namespace STGEngine.Core.Serialization
             var stage = new Stage();
             if (dict.TryGetValue("id", out var id)) stage.Id = id.ToString();
             if (dict.TryGetValue("name", out var name)) stage.Name = name.ToString();
+            if (dict.TryGetValue("seed", out var seedVal))
+                stage.Seed = int.TryParse(seedVal.ToString(), out var s) ? s : 0;
 
             if (dict.TryGetValue("segments", out var segsObj) && segsObj is List<object> segsList)
             {
@@ -676,12 +680,13 @@ namespace STGEngine.Core.Serialization
             return curve;
         }
 
-        /// <summary>Emit all public properties of an object, skipping TypeName and RequiresSimulation.</summary>
+        /// <summary>Emit all public properties of an object, skipping non-serializable ones.</summary>
         private static void EmitObjectProperties(YamlEmitter emitter, object value, Type type)
         {
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (prop.Name == "TypeName" || prop.Name == "RequiresSimulation") continue;
+                if (prop.Name == "Rng") continue; // Runtime-only, not serialized
                 if (!prop.CanRead) continue;
 
                 var val = prop.GetValue(value);

@@ -1,4 +1,5 @@
 using UnityEngine;
+using STGEngine.Core.Random;
 using STGEngine.Core.Serialization;
 
 namespace STGEngine.Core.Modifiers
@@ -57,6 +58,12 @@ namespace STGEngine.Core.Modifiers
         private Vector3 _cachedAxis;
         private bool _axisSeeded;
 
+        /// <summary>
+        /// Deterministic RNG injected by SimulationEvaluator.
+        /// When set, replaces UnityEngine.Random for anti-parallel axis seeding.
+        /// </summary>
+        public DeterministicRng Rng { get; set; }
+
         public HomingModifier() { }
 
         public void Step(float dt, ref Vector3 position, ref Vector3 velocity)
@@ -105,7 +112,8 @@ namespace STGEngine.Core.Modifiers
             // AntiParallelMode.Random — seed once per bullet instance
             if (!_axisSeeded)
             {
-                _cachedAxis = Random.onUnitSphere;
+                // Use deterministic RNG if available, fallback to Unity Random
+                _cachedAxis = Rng != null ? Rng.OnUnitSphere() : UnityEngine.Random.onUnitSphere;
                 _cachedAxis = Vector3.Cross(currentDir, _cachedAxis);
                 if (_cachedAxis.sqrMagnitude < 0.0001f)
                     _cachedAxis = Vector3.Cross(currentDir, Vector3.up);

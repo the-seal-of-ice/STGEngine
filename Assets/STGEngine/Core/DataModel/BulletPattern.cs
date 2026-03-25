@@ -70,6 +70,12 @@ namespace STGEngine.Core.DataModel
         /// <summary>Pattern duration in seconds.</summary>
         public float Duration { get; set; } = 5f;
 
+        /// <summary>
+        /// Deterministic seed for PRNG. Controls all random behavior in this pattern
+        /// (e.g. HomingModifier anti-parallel axis). Same seed = same trajectory.
+        /// </summary>
+        public int Seed { get; set; } = 0;
+
         /// <summary>Bullet mesh shape type.</summary>
         public MeshType MeshType { get; set; } = MeshType.Sphere;
 
