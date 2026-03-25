@@ -1,0 +1,137 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UIElements;
+using STGEngine.Core.Timeline;
+using STGEngine.Runtime.Preview;
+
+namespace STGEngine.Editor.UI.Timeline.Layers
+{
+    /// <summary>
+    /// Timeline layer for a MidStage segment.
+    /// Blocks = SpawnPatternEvent / SpawnWaveEvent, freely positioned (can overlap).
+    /// Double-click a pattern event → PatternLayer; wave event → WaveLayer.
+    /// </summary>
+    public class MidStageLayer : ITimelineLayer
+    {
+        private readonly TimelineSegment _segment;
+        private readonly List<EventBlock> _blocks = new();
+
+        public MidStageLayer(TimelineSegment segment)
+        {
+            _segment = segment;
+            RebuildBlockList();
+        }
+
+        // ── Identity ──
+
+        public string LayerId => $"segment:{_segment.Id}";
+        public string DisplayName => _segment.Name;
+
+        // ── Block data ──
+
+        public int BlockCount => _blocks.Count;
+
+        public ITimelineBlock GetBlock(int index) => _blocks[index];
+
+        public IReadOnlyList<ITimelineBlock> GetAllBlocks()
+        {
+            RebuildBlockList();
+            return _blocks;
+        }
+
+        // ── Timeline parameters ──
+
+        public float TotalDuration => _segment.Duration;
+
+        public bool IsSequential => false;
+
+        // ── Interaction ──
+
+        public bool CanAddBlock => true;
+
+        public bool CanDoubleClickEnter(ITimelineBlock block)
+        {
+            // Pattern events → PatternLayer, Wave events → WaveLayer (both implemented in 1g)
+            return block?.DataSource is SpawnPatternEvent or SpawnWaveEvent;
+        }
+
+        public ITimelineLayer CreateChildLayer(ITimelineBlock block)
+        {
+            // PatternLayer and WaveLayer will be implemented in step 1g.
+            // For now, return null (double-click will be a no-op).
+            return null;
+        }
+
+        // ── Context menu ──
+
+        public IReadOnlyList<ContextMenuEntry> GetContextMenuEntries(float time, ITimelineBlock selectedBlock)
+        {
+            var entries = new List<ContextMenuEntry>
+            {
+                new("Add Pattern Event", () => OnAddPatternRequested?.Invoke(time)),
+                new("Add Wave Event", () => OnAddWaveRequested?.Invoke(time))
+            };
+
+            if (selectedBlock != null)
+            {
+                entries.Add(new ContextMenuEntry("Delete Selected Event", () => OnDeleteRequested?.Invoke(selectedBlock), true));
+            }
+
+            return entries;
+        }
+
+        // ── Properties panel ──
+
+        public void BuildPropertiesPanel(VisualElement container, ITimelineBlock block)
+        {
+            // Properties panel building will be migrated from TimelineEditorView in step 1d.
+            // For now, show a minimal label.
+            if (block == null)
+            {
+                container.Add(new Label("Select an event to view properties."));
+                return;
+            }
+
+            var evt = block.DataSource as TimelineEvent;
+            if (evt == null) return;
+
+            var label = new Label($"{block.DisplayLabel}  (t={evt.StartTime:F1}s, dur={evt.Duration:F1}s)");
+            label.style.color = new Color(0.8f, 0.8f, 0.8f);
+            container.Add(label);
+        }
+
+        // ── Preview ──
+
+        public void LoadPreview(TimelinePlaybackController playback)
+        {
+            playback?.LoadSegment(_segment);
+        }
+
+        // ── Layer-specific events (consumed by TimelineEditorView) ──
+
+        /// <summary>Raised when "Add Pattern Event" is selected from context menu.</summary>
+        public System.Action<float> OnAddPatternRequested;
+
+        /// <summary>Raised when "Add Wave Event" is selected from context menu.</summary>
+        public System.Action<float> OnAddWaveRequested;
+
+        /// <summary>Raised when "Delete Selected Event" is selected from context menu.</summary>
+        public System.Action<ITimelineBlock> OnDeleteRequested;
+
+        // ── Internal ──
+
+        /// <summary>The underlying segment data.</summary>
+        public TimelineSegment Segment => _segment;
+
+        private void RebuildBlockList()
+        {
+            _blocks.Clear();
+            if (_segment?.Events == null) return;
+
+            foreach (var evt in _segment.Events)
+            {
+                _blocks.Add(new EventBlock(evt));
+            }
+        }
+    }
+}
