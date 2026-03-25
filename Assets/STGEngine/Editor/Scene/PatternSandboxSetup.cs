@@ -561,6 +561,9 @@ namespace STGEngine.Editor.Scene
                 case AssetCategory.Waves:
                     _timelineView.AddWaveEventFromLibrary(id);
                     break;
+                case AssetCategory.SpellCards:
+                    _timelineView.AddSpellCardToCurrentBossFight(id);
+                    break;
                 default:
                     Debug.Log($"[AssetLibrary] Cannot add {category} directly to timeline.");
                     break;

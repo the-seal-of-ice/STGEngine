@@ -281,6 +281,24 @@ namespace STGEngine.Editor.UI.Timeline
             CreateEventWithWave(waveId, atTime);
         }
 
+        /// <summary>
+        /// Add a spell card ID to the current BossFight segment.
+        /// Called from AssetLibraryPanel via PatternSandboxSetup.
+        /// </summary>
+        public void AddSpellCardToCurrentBossFight(string spellCardId)
+        {
+            var seg = _segmentList.SelectedSegment;
+            if (seg == null || seg.Type != SegmentType.BossFight)
+            {
+                Debug.LogWarning("[TimelineEditor] Select a BossFight segment first.");
+                return;
+            }
+
+            seg.SpellCardIds.Add(spellCardId);
+            ShowBossFightSpellCards(seg);
+            OnStageDataChanged();
+        }
+
         public void Dispose()
         {
             _playback.OnTimeChanged -= OnPlaybackTimeChanged;
