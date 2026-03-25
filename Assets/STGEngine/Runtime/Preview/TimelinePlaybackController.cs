@@ -263,7 +263,8 @@ namespace STGEngine.Runtime.Preview
 
         private bool IsEventActive(SpawnPatternEvent evt, float time)
         {
-            return time >= evt.StartTime && time < evt.EndTime;
+            float endTime = Duration > 0f ? Mathf.Min(evt.EndTime, Duration) : evt.EndTime;
+            return time >= evt.StartTime && time < endTime;
         }
 
         private bool IsAlreadyActive(SpawnPatternEvent evt)

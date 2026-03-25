@@ -462,19 +462,22 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 if (seg.Type == SegmentType.MidStage)
                 {
-                    // Copy events with time offset
+                    float segEnd = segmentOffset + seg.Duration;
+                    // Copy events with time offset, clamped to segment boundary
                     foreach (var evt in seg.Events)
                     {
                         if (evt is SpawnPatternEvent sp)
                         {
+                            if (sp.StartTime >= seg.Duration) continue; // starts after segment ends
                             var pattern = _library?.Resolve(sp.PatternId);
                             if (pattern == null) continue;
 
+                            float clampedDur = Mathf.Min(sp.Duration, seg.Duration - sp.StartTime);
                             tempSegment.Events.Add(new SpawnPatternEvent
                             {
                                 Id = $"_so_{seg.Id}_{sp.Id}",
                                 StartTime = segmentOffset + sp.StartTime,
-                                Duration = sp.Duration,
+                                Duration = clampedDur,
                                 PatternId = sp.PatternId,
                                 SpawnPosition = sp.SpawnPosition,
                                 ResolvedPattern = pattern
@@ -482,11 +485,13 @@ namespace STGEngine.Editor.UI.Timeline
                         }
                         else if (evt is SpawnWaveEvent sw)
                         {
+                            if (sw.StartTime >= seg.Duration) continue;
+                            float clampedDur = Mathf.Min(sw.Duration, seg.Duration - sw.StartTime);
                             tempSegment.Events.Add(new SpawnWaveEvent
                             {
                                 Id = $"_so_{seg.Id}_{sw.Id}",
                                 StartTime = segmentOffset + sw.StartTime,
-                                Duration = sw.Duration,
+                                Duration = clampedDur,
                                 WaveId = sw.WaveId,
                                 SpawnOffset = sw.SpawnOffset
                             });
@@ -1354,6 +1359,33 @@ namespace STGEngine.Editor.UI.Timeline
 
             _trackArea.SetSegment(tempSegment);
             _playback.LoadSegment(tempSegment);
+        }
+
+        /// <summary>
+        /// <summary>
+        /// Clamp events in a temporary segment so none exceed the segment's Duration.
+        /// Events that start after Duration are removed.
+        /// Events that overlap the boundary have their Duration truncated.
+        /// </summary>
+        private static void ClampEventsToSegmentDuration(TimelineSegment segment)
+        {
+            if (segment == null || segment.Events == null) return;
+            float limit = segment.Duration;
+
+            for (int i = segment.Events.Count - 1; i >= 0; i--)
+            {
+                var evt = segment.Events[i];
+                if (evt.StartTime >= limit)
+                {
+                    segment.Events.RemoveAt(i);
+                    continue;
+                }
+                float endTime = evt.StartTime + evt.Duration;
+                if (endTime > limit)
+                {
+                    evt.Duration = limit - evt.StartTime;
+                }
+            }
         }
 
         /// <summary>
