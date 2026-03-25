@@ -4,18 +4,29 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.Timeline;
 using STGEngine.Editor.Commands;
+using STGEngine.Editor.UI.Timeline.Layers;
 
 namespace STGEngine.Editor.UI.Timeline
 {
     public class TrackAreaView : IDisposable
     {
         public VisualElement Root { get; }
+
+        // ─── New generic events ───
+        public event Action<ITimelineBlock> OnBlockSelected;
+        public event Action OnBlocksChanged;
+        public event Action<ITimelineBlock> OnBlockValuesChanged;
+        public event Action<ITimelineBlock> OnBlockDoubleClicked;
+        public event Action<float> OnSeekRequested;
+
+        // ─── Legacy events (kept for backward compat during migration) ───
         public event Action<TimelineEvent> OnEventSelected;
         public event Action OnEventsChanged;
-        /// <summary>Fired during drag when StartTime/Duration changes in real-time.</summary>
         public event Action<TimelineEvent> OnEventValuesChanged;
+        public event Action<float> OnAddEventRequested;
+        public event Action<float> OnAddWaveEventRequested;
 
-        private TimelineSegment _segment;
+        private ITimelineLayer _layer;
         private readonly CommandStack _commandStack;
 
         private readonly VisualElement _rulerArea;
@@ -28,12 +39,12 @@ namespace STGEngine.Editor.UI.Timeline
         private const float MinPPS = 15f;
         private const float MaxPPS = 300f;
 
-        private readonly List<EventBlockInfo> _blocks = new();
-        private TimelineEvent _selectedEvent;
+        private readonly List<BlockInfo> _blocks = new();
+        private ITimelineBlock _selectedBlock;
 
         private enum DragMode { None, Move, Resize, Scrub }
         private DragMode _dragMode;
-        private EventBlockInfo _dragBlock;
+        private BlockInfo _dragBlockInfo;
         private float _dragStartMouseX;
         private float _dragStartValue;
 
@@ -41,19 +52,18 @@ namespace STGEngine.Editor.UI.Timeline
         private const float TrackPadding = 4f;
         private float _currentPlayTime;
 
-        // ─── Snap Settings ───
-        /// <summary>Max distance (seconds) to snap to playhead. 0 = disabled.</summary>
         public float SnapPlayheadThreshold { get; set; }
-        /// <summary>Grid interval (seconds) to snap to. 0 = disabled.</summary>
         public float SnapGridSize { get; set; }
 
-        private struct EventBlockInfo
+        private struct BlockInfo
         {
-            public TimelineEvent Event;
-            public VisualElement Block;
+            public ITimelineBlock Block;
+            public VisualElement Element;
             public VisualElement ResizeHandle;
             public int Row;
         }
+
+        // ─── Constructor ───
 
         public TrackAreaView(CommandStack commandStack)
         {
@@ -102,15 +112,27 @@ namespace STGEngine.Editor.UI.Timeline
             _playheadLine.style.backgroundColor = new Color(1f, 0.2f, 0.2f);
             _trackContent.Add(_playheadLine);
 
-            // Register delayed theme override to survive Unity Runtime Theme
             TimelineEditorView.RegisterThemeOverride(Root);
         }
 
+        // ─── Layer Binding ───
+
+        public void SetLayer(ITimelineLayer layer)
+        {
+            _layer = layer;
+            _selectedBlock = null;
+            RebuildBlocks();
+        }
+
+        /// <summary>Legacy bridge: wraps a segment in MidStageLayer.</summary>
         public void SetSegment(TimelineSegment segment)
         {
-            _segment = segment;
-            _selectedEvent = null;
-            RebuildBlocks();
+            if (segment == null)
+            {
+                SetLayer(null);
+                return;
+            }
+            SetLayer(new MidStageLayer(segment));
         }
 
         public void SetPlayTime(float time)
@@ -120,7 +142,12 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         public float PixelsPerSecond => _pixelsPerSecond;
-        public TimelineEvent SelectedEvent => _selectedEvent;
+        public ITimelineBlock SelectedBlock => _selectedBlock;
+
+        /// <summary>Legacy accessor.</summary>
+        public TimelineEvent SelectedEvent => _selectedBlock?.DataSource as TimelineEvent;
+
+        public ITimelineLayer CurrentLayer => _layer;
 
         public void RebuildBlocks()
         {
@@ -135,28 +162,26 @@ namespace STGEngine.Editor.UI.Timeline
 
             _blocks.Clear();
 
-            if (_segment == null) return;
+            if (_layer == null) return;
 
-            var rows = AssignRows(_segment.Events);
+            var allBlocks = _layer.GetAllBlocks();
+            var rows = AssignRows(allBlocks);
 
-            foreach (var evt in _segment.Events)
+            for (int i = 0; i < allBlocks.Count; i++)
             {
-                int row = rows.TryGetValue(evt, out var r) ? r : 0;
-                CreateEventBlock(evt, row);
+                var blk = allBlocks[i];
+                int row = rows.TryGetValue(blk, out var r) ? r : 0;
+                CreateBlock(blk, row);
             }
 
             // Restore visual selection highlight after rebuild
-            if (_selectedEvent != null)
+            if (_selectedBlock != null)
             {
                 foreach (var b in _blocks)
                 {
-                    if (b.Event == _selectedEvent)
+                    if (b.Block.Id == _selectedBlock.Id)
                     {
-                        b.Block.style.borderTopColor = b.Block.style.borderBottomColor =
-                            b.Block.style.borderLeftColor = b.Block.style.borderRightColor =
-                                new Color(0.3f, 0.6f, 1f);
-                        b.Block.style.borderTopWidth = b.Block.style.borderBottomWidth =
-                            b.Block.style.borderLeftWidth = b.Block.style.borderRightWidth = 2;
+                        ApplySelectionStyle(b.Element, true);
                         break;
                     }
                 }
@@ -172,38 +197,38 @@ namespace STGEngine.Editor.UI.Timeline
             _blocks.Clear();
         }
 
-        // ─── Event Block Creation ───
+        // ─── Block Creation ───
 
-        private void CreateEventBlock(TimelineEvent evt, int row)
+        private void CreateBlock(ITimelineBlock blk, int row)
         {
-            var block = new VisualElement();
-            block.style.position = Position.Absolute;
-            block.style.height = TrackRowHeight - 6;
-            block.style.backgroundColor = GetEventColor(evt);
-            block.style.borderTopLeftRadius = block.style.borderTopRightRadius =
-                block.style.borderBottomLeftRadius = block.style.borderBottomRightRadius = 3;
-            block.style.borderTopWidth = block.style.borderBottomWidth =
-                block.style.borderLeftWidth = block.style.borderRightWidth = 1;
-            block.style.borderTopColor = block.style.borderBottomColor =
-                block.style.borderLeftColor = block.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
-            block.style.overflow = Overflow.Hidden;
-            block.style.paddingLeft = 4;
-            block.style.justifyContent = Justify.Center;
+            var element = new VisualElement();
+            element.style.position = Position.Absolute;
+            element.style.height = TrackRowHeight - 6;
+            element.style.backgroundColor = blk.BlockColor;
+            element.style.borderTopLeftRadius = element.style.borderTopRightRadius =
+                element.style.borderBottomLeftRadius = element.style.borderBottomRightRadius = 3;
+            element.style.borderTopWidth = element.style.borderBottomWidth =
+                element.style.borderLeftWidth = element.style.borderRightWidth = 1;
+            element.style.borderTopColor = element.style.borderBottomColor =
+                element.style.borderLeftColor = element.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+            element.style.overflow = Overflow.Hidden;
+            element.style.paddingLeft = 4;
+            element.style.justifyContent = Justify.Center;
 
-            string displayLabel = evt switch
-            {
-                SpawnPatternEvent sp => sp.PatternId,
-                SpawnWaveEvent sw => $"\u2693 {sw.WaveId}",
-                _ => evt.Id
-            };
-
-            var label = new Label(displayLabel);
+            var label = new Label(blk.DisplayLabel);
             label.style.color = new Color(0.9f, 0.9f, 0.9f);
             label.style.fontSize = 10;
             label.style.overflow = Overflow.Hidden;
             label.style.textOverflow = TextOverflow.Ellipsis;
             label.style.whiteSpace = WhiteSpace.NoWrap;
-            block.Add(label);
+            element.Add(label);
+
+            // DesignEstimate green line (drawn via generateVisualContent)
+            float estimate = blk.DesignEstimate;
+            if (estimate >= 0f && estimate < blk.Duration)
+            {
+                element.generateVisualContent += ctx => DrawDesignEstimateLine(ctx, blk);
+            }
 
             // Resize handle
             var resizeHandle = new VisualElement();
@@ -213,24 +238,35 @@ namespace STGEngine.Editor.UI.Timeline
             resizeHandle.style.bottom = 0;
             resizeHandle.style.width = 6;
             resizeHandle.style.backgroundColor = new Color(1f, 1f, 1f, 0.15f);
-            block.Add(resizeHandle);
+            element.Add(resizeHandle);
 
-            var info = new EventBlockInfo
+            var info = new BlockInfo
             {
-                Event = evt,
-                Block = block,
+                Block = blk,
+                Element = element,
                 ResizeHandle = resizeHandle,
                 Row = row
             };
             _blocks.Add(info);
 
             // Left-click: select + start drag
-            block.RegisterCallback<MouseDownEvent>(e =>
+            element.RegisterCallback<MouseDownEvent>(e =>
             {
-                if (e.button == 0 && !IsOverResizeHandle(e, block, resizeHandle))
+                if (e.button == 0 && !IsOverResizeHandle(e, element))
                 {
-                    SelectEvent(evt);
-                    StartDrag(DragMode.Move, info, e.mousePosition.x);
+                    // Double-click detection
+                    if (e.clickCount == 2)
+                    {
+                        OnBlockDoubleClicked?.Invoke(blk);
+                        e.StopPropagation();
+                        return;
+                    }
+
+                    SelectBlock(blk);
+                    if (blk.CanMove)
+                    {
+                        StartDrag(DragMode.Move, info, e.mousePosition.x);
+                    }
                     e.StopPropagation();
                 }
             });
@@ -245,14 +281,46 @@ namespace STGEngine.Editor.UI.Timeline
                 }
             });
 
-            _trackContent.Add(block);
+            _trackContent.Add(element);
             _playheadLine.BringToFront();
         }
 
-        private bool IsOverResizeHandle(MouseDownEvent e, VisualElement block, VisualElement handle)
+        private void DrawDesignEstimateLine(MeshGenerationContext ctx, ITimelineBlock blk)
         {
-            var localPos = block.WorldToLocal(e.mousePosition);
-            return localPos.x >= block.resolvedStyle.width - 8;
+            float estimate = blk.DesignEstimate;
+            if (estimate < 0f || estimate >= blk.Duration) return;
+
+            float blockWidth = blk.Duration * _pixelsPerSecond;
+            if (blockWidth <= 0f) return;
+
+            float lineX = (estimate / blk.Duration) * blockWidth;
+            float height = TrackRowHeight - 6;
+
+            var painter = ctx.painter2D;
+
+            // Semi-transparent overlay on the right side (past DesignEstimate)
+            painter.fillColor = new Color(0f, 0f, 0f, 0.3f);
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(lineX, 0));
+            painter.LineTo(new Vector2(blockWidth, 0));
+            painter.LineTo(new Vector2(blockWidth, height));
+            painter.LineTo(new Vector2(lineX, height));
+            painter.ClosePath();
+            painter.Fill();
+
+            // Green vertical line
+            painter.strokeColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
+            painter.lineWidth = 2f;
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(lineX, 0));
+            painter.LineTo(new Vector2(lineX, height));
+            painter.Stroke();
+        }
+
+        private bool IsOverResizeHandle(MouseDownEvent e, VisualElement element)
+        {
+            var localPos = element.WorldToLocal(e.mousePosition);
+            return localPos.x >= element.resolvedStyle.width - 8;
         }
 
         // ─── Snap ───
@@ -261,11 +329,9 @@ namespace STGEngine.Editor.UI.Timeline
         {
             float result = time;
 
-            // Grid snap
             if (SnapGridSize > 0f)
                 result = Mathf.Round(time / SnapGridSize) * SnapGridSize;
 
-            // Playhead snap (higher priority, overrides grid)
             if (SnapPlayheadThreshold > 0f && Mathf.Abs(time - _currentPlayTime) <= SnapPlayheadThreshold)
                 result = _currentPlayTime;
 
@@ -274,12 +340,12 @@ namespace STGEngine.Editor.UI.Timeline
 
         // ─── Drag Logic ───
 
-        private void StartDrag(DragMode mode, EventBlockInfo info, float mouseX)
+        private void StartDrag(DragMode mode, BlockInfo info, float mouseX)
         {
             _dragMode = mode;
-            _dragBlock = info;
+            _dragBlockInfo = info;
             _dragStartMouseX = mouseX;
-            _dragStartValue = mode == DragMode.Move ? info.Event.StartTime : info.Event.Duration;
+            _dragStartValue = mode == DragMode.Move ? info.Block.StartTime : info.Block.Duration;
 
             _trackContent.RegisterCallback<MouseMoveEvent>(OnDragMove);
             _trackContent.RegisterCallback<MouseUpEvent>(OnDragEnd);
@@ -292,11 +358,12 @@ namespace STGEngine.Editor.UI.Timeline
 
             float deltaX = e.mousePosition.x - _dragStartMouseX;
             float deltaTime = deltaX / _pixelsPerSecond;
+            var blk = _dragBlockInfo.Block;
 
             if (_dragMode == DragMode.Move)
             {
                 float rawStart = Mathf.Max(0f, _dragStartValue + deltaTime);
-                float duration = _dragBlock.Event.Duration;
+                float duration = blk.Duration;
                 float rawEnd = rawStart + duration;
 
                 float snappedStart = SnapTime(rawStart);
@@ -308,37 +375,33 @@ namespace STGEngine.Editor.UI.Timeline
                 float newStart;
                 if (startSnapped && endSnapped)
                 {
-                    // Both edges snapped — pick the closer one
                     newStart = Mathf.Abs(snappedStart - rawStart) <= Mathf.Abs(snappedEnd - rawEnd)
                         ? snappedStart
                         : Mathf.Max(0f, snappedEnd - duration);
                 }
                 else if (startSnapped)
-                {
                     newStart = snappedStart;
-                }
                 else if (endSnapped)
-                {
                     newStart = Mathf.Max(0f, snappedEnd - duration);
-                }
                 else
-                {
                     newStart = rawStart;
-                }
 
-                _dragBlock.Event.StartTime = newStart;
+                blk.StartTime = newStart;
             }
             else if (_dragMode == DragMode.Resize)
             {
                 float rawDuration = Mathf.Max(0.5f, _dragStartValue + deltaTime);
-                float startTime = _dragBlock.Event.StartTime;
+                float startTime = blk.StartTime;
                 float snappedEnd = SnapTime(startTime + rawDuration);
                 float newDuration = Mathf.Max(0.5f, snappedEnd - startTime);
-                _dragBlock.Event.Duration = newDuration;
+                blk.Duration = newDuration;
             }
 
             UpdateAllBlockPositions();
-            OnEventValuesChanged?.Invoke(_dragBlock.Event);
+            OnBlockValuesChanged?.Invoke(blk);
+            // Legacy bridge
+            if (blk.DataSource is TimelineEvent te)
+                OnEventValuesChanged?.Invoke(te);
         }
 
         private void OnDragEnd(MouseUpEvent e)
@@ -349,71 +412,95 @@ namespace STGEngine.Editor.UI.Timeline
             _trackContent.UnregisterCallback<MouseUpEvent>(OnDragEnd);
             _trackContent.ReleaseMouse();
 
+            var blk = _dragBlockInfo.Block;
+
             if (_dragMode == DragMode.Move)
             {
                 float oldVal = _dragStartValue;
-                float newVal = _dragBlock.Event.StartTime;
+                float newVal = blk.StartTime;
                 if (Mathf.Abs(oldVal - newVal) > 0.001f)
                 {
-                    var evt = _dragBlock.Event;
-                    evt.StartTime = oldVal;
+                    blk.StartTime = oldVal;
                     var cmd = new PropertyChangeCommand<float>(
-                        "Move Event",
-                        () => evt.StartTime,
-                        v => evt.StartTime = v,
+                        "Move Block",
+                        () => blk.StartTime,
+                        v => blk.StartTime = v,
                         newVal);
                     _commandStack.Execute(cmd);
+                    OnBlocksChanged?.Invoke();
                     OnEventsChanged?.Invoke();
                 }
             }
             else if (_dragMode == DragMode.Resize)
             {
                 float oldVal = _dragStartValue;
-                float newVal = _dragBlock.Event.Duration;
+                float newVal = blk.Duration;
                 if (Mathf.Abs(oldVal - newVal) > 0.001f)
                 {
-                    var evt = _dragBlock.Event;
-                    evt.Duration = oldVal;
+                    blk.Duration = oldVal;
                     var cmd = new PropertyChangeCommand<float>(
-                        "Resize Event",
-                        () => evt.Duration,
-                        v => evt.Duration = v,
+                        "Resize Block",
+                        () => blk.Duration,
+                        v => blk.Duration = v,
                         newVal);
                     _commandStack.Execute(cmd);
+                    OnBlocksChanged?.Invoke();
                     OnEventsChanged?.Invoke();
                 }
             }
 
             _dragMode = DragMode.None;
-            _dragBlock = default;
+            _dragBlockInfo = default;
             UpdateAllBlockPositions();
         }
 
         // ─── Selection ───
 
-        public void SelectEvent(TimelineEvent evt)
+        public void SelectBlock(ITimelineBlock blk)
         {
-            _selectedEvent = evt;
+            _selectedBlock = blk;
             foreach (var b in _blocks)
             {
-                if (b.Event == evt)
+                ApplySelectionStyle(b.Element, b.Block == blk);
+            }
+            OnBlockSelected?.Invoke(blk);
+            // Legacy bridge
+            OnEventSelected?.Invoke(blk?.DataSource as TimelineEvent);
+        }
+
+        /// <summary>Legacy bridge.</summary>
+        public void SelectEvent(TimelineEvent evt)
+        {
+            if (evt == null) { SelectBlock(null); return; }
+            foreach (var b in _blocks)
+            {
+                if (b.Block.DataSource == evt)
                 {
-                    b.Block.style.borderTopColor = b.Block.style.borderBottomColor =
-                        b.Block.style.borderLeftColor = b.Block.style.borderRightColor =
-                            new Color(0.3f, 0.6f, 1f);
-                    b.Block.style.borderTopWidth = b.Block.style.borderBottomWidth =
-                        b.Block.style.borderLeftWidth = b.Block.style.borderRightWidth = 2;
-                }
-                else
-                {
-                    b.Block.style.borderTopColor = b.Block.style.borderBottomColor =
-                        b.Block.style.borderLeftColor = b.Block.style.borderRightColor =
-                            new Color(0.4f, 0.4f, 0.4f);
-                    b.Block.style.borderTopWidth = b.Block.style.borderBottomWidth =
-                        b.Block.style.borderLeftWidth = b.Block.style.borderRightWidth = 1;
+                    SelectBlock(b.Block);
+                    return;
                 }
             }
-            OnEventSelected?.Invoke(evt);
+            SelectBlock(null);
+        }
+
+        private void ApplySelectionStyle(VisualElement element, bool selected)
+        {
+            if (selected)
+            {
+                element.style.borderTopColor = element.style.borderBottomColor =
+                    element.style.borderLeftColor = element.style.borderRightColor =
+                        new Color(0.3f, 0.6f, 1f);
+                element.style.borderTopWidth = element.style.borderBottomWidth =
+                    element.style.borderLeftWidth = element.style.borderRightWidth = 2;
+            }
+            else
+            {
+                element.style.borderTopColor = element.style.borderBottomColor =
+                    element.style.borderLeftColor = element.style.borderRightColor =
+                        new Color(0.4f, 0.4f, 0.4f);
+                element.style.borderTopWidth = element.style.borderBottomWidth =
+                    element.style.borderLeftWidth = element.style.borderRightWidth = 1;
+            }
         }
 
         // ─── Zoom ───
@@ -439,16 +526,22 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnTrackRightClick(MouseDownEvent e)
         {
-            if (e.button != 1) return; // right-click only
-            if (_segment == null) return;
+            if (e.button != 1) return;
+            if (_layer == null) return;
 
-            ShowAddEventMenu(e.mousePosition, _currentPlayTime);
+            float time = ((e.localMousePosition.x + _scrollOffset) / _pixelsPerSecond);
+            time = Mathf.Max(0f, time);
+
+            ShowContextMenu(e.mousePosition, time);
             e.StopPropagation();
             e.PreventDefault();
         }
 
-        private void ShowAddEventMenu(Vector2 screenPos, float atTime)
+        private void ShowContextMenu(Vector2 screenPos, float atTime)
         {
+            var entries = _layer.GetContextMenuEntries(atTime, _selectedBlock);
+            if (entries == null || entries.Count == 0) return;
+
             var menu = new VisualElement();
             menu.style.position = Position.Absolute;
             menu.style.left = screenPos.x;
@@ -463,8 +556,6 @@ namespace STGEngine.Editor.UI.Timeline
             menu.style.borderTopLeftRadius = menu.style.borderTopRightRadius =
                 menu.style.borderBottomLeftRadius = menu.style.borderBottomRightRadius = 3;
 
-            // Dismiss layer: full-screen transparent element behind the menu.
-            // Clicking anywhere outside the menu hits this layer and closes it.
             var dismiss = new VisualElement();
             dismiss.style.position = Position.Absolute;
             dismiss.style.left = dismiss.style.top = 0;
@@ -476,50 +567,29 @@ namespace STGEngine.Editor.UI.Timeline
                 evt.StopPropagation();
             });
 
-            // Helper to close both menu and dismiss layer
             void CloseMenu()
             {
                 menu.RemoveFromHierarchy();
                 dismiss.RemoveFromHierarchy();
             }
 
-            var addBtn = new Button(() =>
+            foreach (var entry in entries)
             {
-                CloseMenu();
-                AddEventAtTime(atTime);
-            })
-            { text = "Add Pattern Event" };
-            addBtn.style.backgroundColor = Color.clear;
-            addBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
-            addBtn.style.borderTopWidth = addBtn.style.borderBottomWidth =
-                addBtn.style.borderLeftWidth = addBtn.style.borderRightWidth = 0;
-            menu.Add(addBtn);
-
-            var addWaveBtn = new Button(() =>
-            {
-                CloseMenu();
-                AddWaveEventAtTime(atTime);
-            })
-            { text = "Add Wave Event" };
-            addWaveBtn.style.backgroundColor = Color.clear;
-            addWaveBtn.style.color = new Color(0.3f, 0.9f, 0.4f);
-            addWaveBtn.style.borderTopWidth = addWaveBtn.style.borderBottomWidth =
-                addWaveBtn.style.borderLeftWidth = addWaveBtn.style.borderRightWidth = 0;
-            menu.Add(addWaveBtn);
-
-            if (_selectedEvent != null)
-            {
-                var delBtn = new Button(() =>
+                var capturedEntry = entry;
+                var btn = new Button(() =>
                 {
                     CloseMenu();
-                    DeleteSelectedEvent();
+                    capturedEntry.Action?.Invoke();
                 })
-                { text = "Delete Selected Event" };
-                delBtn.style.backgroundColor = Color.clear;
-                delBtn.style.color = new Color(1f, 0.5f, 0.5f);
-                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
-                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
-                menu.Add(delBtn);
+                { text = capturedEntry.Label };
+                btn.style.backgroundColor = Color.clear;
+                btn.style.color = capturedEntry.Label.Contains("Delete")
+                    ? new Color(1f, 0.5f, 0.5f)
+                    : new Color(0.9f, 0.9f, 0.9f);
+                btn.style.borderTopWidth = btn.style.borderBottomWidth =
+                    btn.style.borderLeftWidth = btn.style.borderRightWidth = 0;
+                btn.SetEnabled(capturedEntry.Enabled);
+                menu.Add(btn);
             }
 
             Root.panel.visualTree.Add(dismiss);
@@ -527,51 +597,49 @@ namespace STGEngine.Editor.UI.Timeline
             TimelineEditorView.RegisterThemeOverride(menu);
         }
 
-        public event Action<float> OnAddEventRequested;
-        public event Action<float> OnAddWaveEventRequested;
-
-        private void AddEventAtTime(float time)
-        {
-            OnAddEventRequested?.Invoke(Mathf.Max(0f, time));
-        }
-
-        private void AddWaveEventAtTime(float time)
-        {
-            OnAddWaveEventRequested?.Invoke(Mathf.Max(0f, time));
-        }
+        // ─── Legacy Bridge Methods ───
+        // These methods are kept during migration so TimelineEditorView can still call them.
+        // They will be removed once TimelineEditorView is fully refactored in step 1d.
 
         public void AddEvent(TimelineEvent evt)
         {
-            if (_segment == null) return;
+            // Find the MidStageLayer's segment to add to
+            var segment = (_layer as MidStageLayer)?.Segment;
+            if (segment == null) return;
 
             string desc = evt is SpawnWaveEvent ? "Add Wave Event" : "Add Pattern Event";
             var cmd = ListCommand<TimelineEvent>.Add(
-                _segment.Events, evt, -1, desc);
+                segment.Events, evt, -1, desc);
             _commandStack.Execute(cmd);
 
             RebuildBlocks();
             SelectEvent(evt);
             OnEventsChanged?.Invoke();
+            OnBlocksChanged?.Invoke();
         }
 
         public void DeleteSelectedEvent()
         {
-            if (_segment == null || _selectedEvent == null) return;
+            var segment = (_layer as MidStageLayer)?.Segment;
+            var selectedEvt = _selectedBlock?.DataSource as TimelineEvent;
+            if (segment == null || selectedEvt == null) return;
 
-            int index = _segment.Events.IndexOf(_selectedEvent);
+            int index = segment.Events.IndexOf(selectedEvt);
             if (index < 0) return;
 
             var cmd = ListCommand<TimelineEvent>.Remove(
-                _segment.Events, index, "Delete Event");
+                segment.Events, index, "Delete Event");
             _commandStack.Execute(cmd);
 
-            _selectedEvent = null;
+            _selectedBlock = null;
             RebuildBlocks();
             OnEventSelected?.Invoke(null);
+            OnBlockSelected?.Invoke(null);
             OnEventsChanged?.Invoke();
+            OnBlocksChanged?.Invoke();
         }
 
-        // ─── Ruler Scrub (click + drag to seek) ───
+        // ─── Ruler Scrub ───
 
         private void OnRulerMouseDown(MouseDownEvent e)
         {
@@ -609,20 +677,18 @@ namespace STGEngine.Editor.UI.Timeline
             OnSeekRequested?.Invoke(Mathf.Max(0f, time));
         }
 
-        public event Action<float> OnSeekRequested;
-
         // ─── Layout Helpers ───
 
         private void UpdateAllBlockPositions()
         {
             foreach (var info in _blocks)
             {
-                float left = info.Event.StartTime * _pixelsPerSecond - _scrollOffset;
-                float width = info.Event.Duration * _pixelsPerSecond;
+                float left = info.Block.StartTime * _pixelsPerSecond - _scrollOffset;
+                float width = info.Block.Duration * _pixelsPerSecond;
 
-                info.Block.style.left = left;
-                info.Block.style.top = TrackPadding + info.Row * TrackRowHeight;
-                info.Block.style.width = Mathf.Max(width, 4f);
+                info.Element.style.left = left;
+                info.Element.style.top = TrackPadding + info.Row * TrackRowHeight;
+                info.Element.style.width = Mathf.Max(width, 4f);
             }
         }
 
@@ -633,23 +699,23 @@ namespace STGEngine.Editor.UI.Timeline
             _playheadRulerMarker.style.left = x - 4;
         }
 
-        private Dictionary<TimelineEvent, int> AssignRows(List<TimelineEvent> events)
+        private Dictionary<ITimelineBlock, int> AssignRows(IReadOnlyList<ITimelineBlock> blocks)
         {
-            var result = new Dictionary<TimelineEvent, int>();
+            var result = new Dictionary<ITimelineBlock, int>();
             var rowEnds = new List<float>();
 
-            var sorted = new List<TimelineEvent>(events);
+            var sorted = new List<ITimelineBlock>(blocks);
             sorted.Sort((a, b) => a.StartTime.CompareTo(b.StartTime));
 
-            foreach (var evt in sorted)
+            foreach (var blk in sorted)
             {
                 int assignedRow = -1;
                 for (int r = 0; r < rowEnds.Count; r++)
                 {
-                    if (evt.StartTime >= rowEnds[r])
+                    if (blk.StartTime >= rowEnds[r])
                     {
                         assignedRow = r;
-                        rowEnds[r] = evt.EndTime;
+                        rowEnds[r] = blk.StartTime + blk.Duration;
                         break;
                     }
                 }
@@ -657,33 +723,13 @@ namespace STGEngine.Editor.UI.Timeline
                 if (assignedRow < 0)
                 {
                     assignedRow = rowEnds.Count;
-                    rowEnds.Add(evt.EndTime);
+                    rowEnds.Add(blk.StartTime + blk.Duration);
                 }
 
-                result[evt] = assignedRow;
+                result[blk] = assignedRow;
             }
 
             return result;
-        }
-
-        private Color GetEventColor(TimelineEvent evt)
-        {
-            if (evt is SpawnWaveEvent sw)
-            {
-                // Green-ish for wave events
-                int hash = sw.WaveId?.GetHashCode() ?? 0;
-                float hue = 0.3f + Mathf.Abs(hash % 60) / 360f; // Green range
-                return Color.HSVToRGB(hue, 0.5f, 0.55f);
-            }
-
-            if (evt is SpawnPatternEvent sp)
-            {
-                int hash = sp.PatternId?.GetHashCode() ?? 0;
-                float hue = Mathf.Abs(hash % 360) / 360f;
-                return Color.HSVToRGB(hue, 0.5f, 0.6f);
-            }
-
-            return new Color(0.4f, 0.4f, 0.4f);
         }
 
         // ─── Ruler Drawing ───
@@ -730,14 +776,16 @@ namespace STGEngine.Editor.UI.Timeline
             return 60f;
         }
 
+        // ─── Zoom to Fit ───
+
         public void ZoomToFit()
         {
-            if (_segment == null || _segment.Duration <= 0) return;
+            if (_layer == null || _layer.TotalDuration <= 0) return;
 
             float availableWidth = _trackContent.resolvedStyle.width;
             if (availableWidth <= 0) availableWidth = 600f;
 
-            _pixelsPerSecond = Mathf.Clamp(availableWidth / _segment.Duration * 0.9f, MinPPS, MaxPPS);
+            _pixelsPerSecond = Mathf.Clamp(availableWidth / _layer.TotalDuration * 0.9f, MinPPS, MaxPPS);
             _scrollOffset = 0f;
 
             UpdateAllBlockPositions();
