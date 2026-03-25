@@ -33,6 +33,9 @@ namespace STGEngine.Editor.UI.FileManager
     {
         public List<CatalogEntry> Patterns = new();
         public List<CatalogEntry> Stages = new();
+        public List<CatalogEntry> EnemyTypes = new();
+        public List<CatalogEntry> Waves = new();
+        public List<CatalogEntry> SpellCards = new();
 
         // ─── Paths ───
 
@@ -48,6 +51,15 @@ namespace STGEngine.Editor.UI.FileManager
 
         public static string StagesDir =>
             Path.Combine(BasePath, "Stages");
+
+        public static string EnemyTypesDir =>
+            Path.Combine(BasePath, "EnemyTypes");
+
+        public static string WavesDir =>
+            Path.Combine(BasePath, "Waves");
+
+        public static string SpellCardsDir =>
+            Path.Combine(BasePath, "SpellCards");
 
         // ─── Load / Save ───
 
@@ -94,6 +106,15 @@ namespace STGEngine.Editor.UI.FileManager
         public CatalogEntry FindStage(string id) =>
             Stages.FirstOrDefault(e => e.Id == id);
 
+        public CatalogEntry FindEnemyType(string id) =>
+            EnemyTypes.FirstOrDefault(e => e.Id == id);
+
+        public CatalogEntry FindWave(string id) =>
+            Waves.FirstOrDefault(e => e.Id == id);
+
+        public CatalogEntry FindSpellCard(string id) =>
+            SpellCards.FirstOrDefault(e => e.Id == id);
+
         public void AddOrUpdatePattern(string id, string name)
         {
             var entry = FindPattern(id);
@@ -130,6 +151,60 @@ namespace STGEngine.Editor.UI.FileManager
             }
         }
 
+        public void AddOrUpdateEnemyType(string id, string name)
+        {
+            var entry = FindEnemyType(id);
+            if (entry != null)
+            {
+                entry.Name = name;
+            }
+            else
+            {
+                EnemyTypes.Add(new CatalogEntry
+                {
+                    Id = id,
+                    Name = name,
+                    File = $"EnemyTypes/{id}.yaml"
+                });
+            }
+        }
+
+        public void AddOrUpdateWave(string id, string name)
+        {
+            var entry = FindWave(id);
+            if (entry != null)
+            {
+                entry.Name = name;
+            }
+            else
+            {
+                Waves.Add(new CatalogEntry
+                {
+                    Id = id,
+                    Name = name,
+                    File = $"Waves/{id}.yaml"
+                });
+            }
+        }
+
+        public void AddOrUpdateSpellCard(string id, string name)
+        {
+            var entry = FindSpellCard(id);
+            if (entry != null)
+            {
+                entry.Name = name;
+            }
+            else
+            {
+                SpellCards.Add(new CatalogEntry
+                {
+                    Id = id,
+                    Name = name,
+                    File = $"SpellCards/{id}.yaml"
+                });
+            }
+        }
+
         public bool RemovePattern(string id)
         {
             var entry = FindPattern(id);
@@ -156,6 +231,45 @@ namespace STGEngine.Editor.UI.FileManager
             return true;
         }
 
+        public bool RemoveEnemyType(string id)
+        {
+            var entry = FindEnemyType(id);
+            if (entry == null) return false;
+
+            var absPath = Path.Combine(BasePath, entry.File);
+            if (System.IO.File.Exists(absPath))
+                System.IO.File.Delete(absPath);
+
+            EnemyTypes.Remove(entry);
+            return true;
+        }
+
+        public bool RemoveWave(string id)
+        {
+            var entry = FindWave(id);
+            if (entry == null) return false;
+
+            var absPath = Path.Combine(BasePath, entry.File);
+            if (System.IO.File.Exists(absPath))
+                System.IO.File.Delete(absPath);
+
+            Waves.Remove(entry);
+            return true;
+        }
+
+        public bool RemoveSpellCard(string id)
+        {
+            var entry = FindSpellCard(id);
+            if (entry == null) return false;
+
+            var absPath = Path.Combine(BasePath, entry.File);
+            if (System.IO.File.Exists(absPath))
+                System.IO.File.Delete(absPath);
+
+            SpellCards.Remove(entry);
+            return true;
+        }
+
         /// <summary>Absolute disk path for a pattern entry.</summary>
         public string GetPatternPath(string id)
         {
@@ -172,6 +286,33 @@ namespace STGEngine.Editor.UI.FileManager
             return entry != null
                 ? Path.Combine(BasePath, entry.File)
                 : Path.Combine(StagesDir, $"{id}.yaml");
+        }
+
+        /// <summary>Absolute disk path for an enemy type entry.</summary>
+        public string GetEnemyTypePath(string id)
+        {
+            var entry = FindEnemyType(id);
+            return entry != null
+                ? Path.Combine(BasePath, entry.File)
+                : Path.Combine(EnemyTypesDir, $"{id}.yaml");
+        }
+
+        /// <summary>Absolute disk path for a wave entry.</summary>
+        public string GetWavePath(string id)
+        {
+            var entry = FindWave(id);
+            return entry != null
+                ? Path.Combine(BasePath, entry.File)
+                : Path.Combine(WavesDir, $"{id}.yaml");
+        }
+
+        /// <summary>Absolute disk path for a spell card entry.</summary>
+        public string GetSpellCardPath(string id)
+        {
+            var entry = FindSpellCard(id);
+            return entry != null
+                ? Path.Combine(BasePath, entry.File)
+                : Path.Combine(SpellCardsDir, $"{id}.yaml");
         }
 
         // ─── ID Generation ───
@@ -210,6 +351,39 @@ namespace STGEngine.Editor.UI.FileManager
             {
                 var candidate = $"{baseId}_{i}";
                 if (FindStage(candidate) == null) return candidate;
+            }
+            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+        }
+
+        public string EnsureUniqueEnemyTypeId(string baseId)
+        {
+            if (FindEnemyType(baseId) == null) return baseId;
+            for (int i = 2; i < 1000; i++)
+            {
+                var candidate = $"{baseId}_{i}";
+                if (FindEnemyType(candidate) == null) return candidate;
+            }
+            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+        }
+
+        public string EnsureUniqueWaveId(string baseId)
+        {
+            if (FindWave(baseId) == null) return baseId;
+            for (int i = 2; i < 1000; i++)
+            {
+                var candidate = $"{baseId}_{i}";
+                if (FindWave(candidate) == null) return candidate;
+            }
+            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+        }
+
+        public string EnsureUniqueSpellCardId(string baseId)
+        {
+            if (FindSpellCard(baseId) == null) return baseId;
+            for (int i = 2; i < 1000; i++)
+            {
+                var candidate = $"{baseId}_{i}";
+                if (FindSpellCard(candidate) == null) return candidate;
             }
             return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
         }
@@ -308,21 +482,23 @@ namespace STGEngine.Editor.UI.FileManager
         {
             var sb = new StringBuilder();
             sb.AppendLine("# STGEngine Asset Catalog — auto-generated, do not edit manually");
-            sb.AppendLine("patterns:");
-            foreach (var e in catalog.Patterns)
-            {
-                sb.AppendLine($"  - id: {e.Id}");
-                sb.AppendLine($"    name: \"{EscapeYaml(e.Name)}\"");
-                sb.AppendLine($"    file: {e.File}");
-            }
-            sb.AppendLine("stages:");
-            foreach (var e in catalog.Stages)
-            {
-                sb.AppendLine($"  - id: {e.Id}");
-                sb.AppendLine($"    name: \"{EscapeYaml(e.Name)}\"");
-                sb.AppendLine($"    file: {e.File}");
-            }
+            AppendCatalogSection(sb, "patterns", catalog.Patterns);
+            AppendCatalogSection(sb, "stages", catalog.Stages);
+            AppendCatalogSection(sb, "enemy_types", catalog.EnemyTypes);
+            AppendCatalogSection(sb, "waves", catalog.Waves);
+            AppendCatalogSection(sb, "spell_cards", catalog.SpellCards);
             return sb.ToString();
+        }
+
+        private static void AppendCatalogSection(StringBuilder sb, string sectionName, List<CatalogEntry> entries)
+        {
+            sb.AppendLine($"{sectionName}:");
+            foreach (var e in entries)
+            {
+                sb.AppendLine($"  - id: {e.Id}");
+                sb.AppendLine($"    name: \"{EscapeYaml(e.Name)}\"");
+                sb.AppendLine($"    file: {e.File}");
+            }
         }
 
         private static STGCatalog ParseCatalog(string yaml)
@@ -348,6 +524,24 @@ namespace STGEngine.Editor.UI.FileManager
                 if (trimmed == "stages:")
                 {
                     currentList = catalog.Stages;
+                    currentEntry = null;
+                    continue;
+                }
+                if (trimmed == "enemy_types:")
+                {
+                    currentList = catalog.EnemyTypes;
+                    currentEntry = null;
+                    continue;
+                }
+                if (trimmed == "waves:")
+                {
+                    currentList = catalog.Waves;
+                    currentEntry = null;
+                    continue;
+                }
+                if (trimmed == "spell_cards:")
+                {
+                    currentList = catalog.SpellCards;
                     currentEntry = null;
                     continue;
                 }
@@ -391,6 +585,9 @@ namespace STGEngine.Editor.UI.FileManager
         {
             Directory.CreateDirectory(PatternsDir);
             Directory.CreateDirectory(StagesDir);
+            Directory.CreateDirectory(EnemyTypesDir);
+            Directory.CreateDirectory(WavesDir);
+            Directory.CreateDirectory(SpellCardsDir);
         }
     }
 }
