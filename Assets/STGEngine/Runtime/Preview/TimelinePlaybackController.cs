@@ -281,5 +281,33 @@ namespace STGEngine.Runtime.Preview
                 _pool.Release(active.Previewer);
             _activeEvents.Clear();
         }
+
+        /// <summary>
+        /// Refresh the previewer for a specific event whose pattern data has changed.
+        /// Re-assigns the pattern and force-refreshes to pick up modified parameters.
+        /// </summary>
+        public void RefreshEvent(SpawnPatternEvent evt)
+        {
+            foreach (var active in _activeEvents)
+            {
+                if (active.Event == evt)
+                {
+                    var previewer = active.Previewer;
+                    // Re-assign pattern to rebuild evaluator with new parameters
+                    previewer.Pattern = evt.ResolvedPattern;
+                    previewer.transform.position = evt.SpawnPosition;
+                    previewer.Playback.Duration = evt.Duration;
+
+                    // Seek to current local time
+                    float localTime = CurrentTime - evt.StartTime;
+                    previewer.Playback.Seek(Mathf.Max(localTime, 0f));
+                    previewer.ForceRefresh();
+
+                    if (IsPlaying)
+                        previewer.Playback.Play();
+                    break;
+                }
+            }
+        }
     }
 }

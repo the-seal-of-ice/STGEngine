@@ -61,12 +61,16 @@ namespace STGEngine.Editor.UI.Timeline
         private Slider _speedSlider;
         private Label _speedValueLabel;
 
+        // Stage seed UI
+        private IntegerField _stageSeedField;
+
         // Pattern editor for selected event
         private PatternEditorView _patternEditor;
 
         // Live-updated property fields for the selected event
         private FloatField _propStartField;
         private FloatField _propDurField;
+        private SpawnPatternEvent _selectedEvent;
 
         public TimelineEditorView(TimelinePlaybackController playback, PatternLibrary library,
             PatternPreviewer singlePreviewer)
@@ -105,6 +109,43 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSegment.style.color = new Color(0.5f, 0.8f, 1f);
             _breadcrumbSegment.style.unityFontStyleAndWeight = FontStyle.Bold;
             _breadcrumbBar.Add(_breadcrumbSegment);
+
+            // Spacer to push seed controls to the right
+            var breadcrumbSpacer = new VisualElement();
+            breadcrumbSpacer.style.flexGrow = 1;
+            _breadcrumbBar.Add(breadcrumbSpacer);
+
+            // Stage Seed controls
+            var seedLabel = new Label("Seed:");
+            seedLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            seedLabel.style.fontSize = 11;
+            seedLabel.style.marginRight = 4;
+            _breadcrumbBar.Add(seedLabel);
+
+            _stageSeedField = new IntegerField();
+            _stageSeedField.isDelayed = true;
+            _stageSeedField.AddToClassList("seed-field");
+            _stageSeedField.style.width = 80;
+            _stageSeedField.style.height = 22;
+            _stageSeedField.RegisterValueChangedCallback(e =>
+            {
+                if (_stage == null) return;
+                _stage.Seed = e.newValue;
+            });
+            _breadcrumbBar.Add(_stageSeedField);
+
+            var seedRandomBtn = new Button(() =>
+            {
+                if (_stage == null) return;
+                int newSeed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+                _stage.Seed = newSeed;
+                _stageSeedField.SetValueWithoutNotify(newSeed);
+            }) { text = "Rnd" };
+            seedRandomBtn.style.width = 34;
+            seedRandomBtn.style.height = 22;
+            seedRandomBtn.style.fontSize = 11;
+            seedRandomBtn.style.marginLeft = 4;
+            _breadcrumbBar.Add(seedRandomBtn);
 
             Root.Add(_breadcrumbBar);
 
@@ -211,6 +252,9 @@ namespace STGEngine.Editor.UI.Timeline
             _playback.OnPlayStateChanged -= OnPlayStateChanged;
             _commandStack.OnStateChanged -= OnCommandStateChanged;
 
+            if (_patternEditor != null)
+                _patternEditor.Commands.OnStateChanged -= OnPatternEditorChanged;
+
             CloseSnapPopup();
             _patternEditor?.Dispose();
             _segmentList.Dispose();
@@ -223,6 +267,7 @@ namespace STGEngine.Editor.UI.Timeline
         {
             _stage = stage;
             _breadcrumbStage.text = stage?.Name ?? "Stage";
+            _stageSeedField.SetValueWithoutNotify(stage?.Seed ?? 0);
 
             // Resolve all pattern references
             if (_stage != null)
@@ -647,10 +692,15 @@ namespace STGEngine.Editor.UI.Timeline
         private void OnEventSelected(SpawnPatternEvent evt)
         {
             _propertyContent.Clear();
-            _patternEditor?.Dispose();
+            if (_patternEditor != null)
+            {
+                _patternEditor.Commands.OnStateChanged -= OnPatternEditorChanged;
+                _patternEditor.Dispose();
+            }
             _patternEditor = null;
             _propStartField = null;
             _propDurField = null;
+            _selectedEvent = evt;
 
             if (evt == null)
             {
@@ -754,6 +804,9 @@ namespace STGEngine.Editor.UI.Timeline
                 _patternEditor = new PatternEditorView(_singlePreviewer);
                 _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
                 _patternEditor.SetPattern(evt.ResolvedPattern);
+
+                // When pattern parameters change, refresh the timeline's active previewer
+                _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
 
                 // Embed the pattern editor root (without its outer container positioning)
                 var editorRoot = _patternEditor.Root;
@@ -872,6 +925,16 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// Called when the embedded PatternEditorView's CommandStack changes.
+        /// Refreshes the timeline's active previewer so edits are visible immediately.
+        /// </summary>
+        private void OnPatternEditorChanged()
+        {
+            if (_selectedEvent != null)
+                _playback.RefreshEvent(_selectedEvent);
+        }
+
+        /// <summary>
         /// Called during drag to update property fields in real-time without rebuilding.
         /// </summary>
         private void OnEventValuesChanged(SpawnPatternEvent evt)
@@ -987,6 +1050,41 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     f.labelElement.style.minWidth = labelWidth;
                     f.labelElement.style.maxWidth = labelWidth;
+                }
+            });
+
+            // IntegerField
+            root.Query<IntegerField>().ForEach(f =>
+            {
+                f.labelElement.style.color = Lt;
+                if (f.ClassListContains("seed-field"))
+                {
+                    f.style.fontSize = 10;
+                    f.style.paddingTop = 0;
+                    f.style.paddingBottom = 0;
+                    f.style.marginTop = 0;
+                    f.style.marginBottom = 0;
+                    f.labelElement.style.paddingTop = 0;
+                    f.labelElement.style.paddingBottom = 0;
+                    f.Query(className: "unity-base-field__input").ForEach(e =>
+                    {
+                        e.style.color = Lt;
+                        e.style.backgroundColor = InputBg;
+                        e.style.paddingTop = 0;
+                        e.style.paddingBottom = 0;
+                        e.style.paddingLeft = 2;
+                        e.style.paddingRight = 2;
+                        e.style.marginTop = 0;
+                        e.style.marginBottom = 0;
+                    });
+                }
+                else
+                {
+                    f.Query(className: "unity-base-field__input").ForEach(e =>
+                    {
+                        e.style.color = Lt;
+                        e.style.backgroundColor = InputBg;
+                    });
                 }
             });
 
