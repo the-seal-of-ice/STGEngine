@@ -331,6 +331,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             seg.SpellCardIds.Add(spellCardId);
             ShowBossFightSpellCards(seg);
+            LoadBossFightPreview(seg);
             OnStageDataChanged();
         }
 
@@ -872,7 +873,6 @@ namespace STGEngine.Editor.UI.Timeline
 
             _trackArea.SetSegment(tempSegment);
             _playback.LoadSegment(tempSegment);
-            _playback.Play();
 
             // Show boss placeholder with combined path
             if (combinedBossPath.Count > 0)
@@ -969,6 +969,7 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         segment.SpellCardIds.RemoveAt(idx);
                         ShowBossFightSpellCards(segment);
+                        LoadBossFightPreview(segment);
                         OnStageDataChanged();
                     }
                 })
@@ -1051,6 +1052,7 @@ namespace STGEngine.Editor.UI.Timeline
                         picker.RemoveFromHierarchy();
                         segment.SpellCardIds.Add(scId);
                         ShowBossFightSpellCards(segment);
+                        LoadBossFightPreview(segment);
                         OnStageDataChanged();
                     })
                     { text = label };
@@ -1151,7 +1153,6 @@ namespace STGEngine.Editor.UI.Timeline
 
             _trackArea.SetSegment(tempSegment);
             _playback.LoadSegment(tempSegment);
-            _playback.Play();
         }
 
         /// <summary>

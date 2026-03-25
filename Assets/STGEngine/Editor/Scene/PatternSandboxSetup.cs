@@ -80,7 +80,6 @@ namespace STGEngine.Editor.Scene
         // Boss placeholder
         private BossPlaceholder _bossPlaceholder;
         private SpellCard _activeBossSpellCard;
-        private float _bossPathTimer;
 
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
@@ -158,14 +157,11 @@ namespace STGEngine.Editor.Scene
                 _timelinePlayback.Tick(Time.deltaTime);
             }
 
-            // Drive Boss placeholder along path
-            if (_bossPlaceholder != null && _bossPlaceholder.IsVisible && _activeBossSpellCard != null)
+            // Drive Boss placeholder along path — synced to playback time
+            if (_bossPlaceholder != null && _bossPlaceholder.IsVisible && _activeBossSpellCard != null
+                && _timelinePlayback != null)
             {
-                _bossPathTimer += Time.deltaTime;
-                float limit = _activeBossSpellCard.TimeLimit;
-                if (limit > 0f && _bossPathTimer > limit)
-                    _bossPathTimer -= limit; // Loop
-                _bossPlaceholder.SetTime(_bossPathTimer);
+                _bossPlaceholder.SetTime(_timelinePlayback.CurrentTime);
             }
         }
 
@@ -571,7 +567,6 @@ namespace STGEngine.Editor.Scene
             if (sc != null)
             {
                 _activeBossSpellCard = sc;
-                _bossPathTimer = 0f;
                 _bossPlaceholder.SetPath(sc.BossPath);
                 _bossPlaceholder.SetTime(0f);
                 _bossPlaceholder.Show();
