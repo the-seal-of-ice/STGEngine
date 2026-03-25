@@ -483,6 +483,50 @@ namespace STGEngine.Core.Timeline
 - 运行时二进制格式导出
 - 用户引导 / 示例弹幕库
 
+### 待实现设计想法（不属于特定 Phase，可随时插入）
+
+#### 发射位置偏移修饰器（SpawnOffsetModifier）
+
+> 目的：让弹幕发射位置相对 Boss 有空间散布，而非精确点发射。
+
+**路径 A（通用，推荐）：Emitter 层 SpawnOffsetModifier**
+
+在 `IEmitter.Evaluate()` 返回的 `BulletSpawnData.Position` 上叠加随机偏移。
+作为新的 `IModifier` 实现类，在发射时（而非飞行中）对初始位置做扰动。
+任何 Pattern 都能使用，不限于符卡。
+
+```
+SpawnOffsetModifier
+├── DistributionMode: Normal | Uniform
+├── RangeX: float  (各轴散布范围)
+├── RangeY: float
+├── RangeZ: float
+└── 使用 DeterministicRng（不使用 UnityEngine.Random）
+```
+
+**路径 B（符卡专用）：SpellCardPattern.Offset 动态化**
+
+将 `SpellCardPattern.Offset`（固定 Vector3）扩展为 `OffsetDistribution` 结构：
+
+```
+OffsetDistribution
+├── Mode: Fixed | Normal | Uniform
+├── BaseOffset: Vector3  (固定偏移)
+├── RangeX/Y/Z: float   (随机范围)
+```
+
+两条路径不冲突，可共存。现有架构支持零改动插入（新 IModifier + TypeTag 自动序列化 + Editor UI 修饰器列表动态添加）。
+
+#### Boss 路径曲线化
+
+> 当前 BossPath 使用 `List<PathKeyframe>`（线性插值），后续可扩展：
+
+**路径 A：关键帧升级** — PathKeyframe 加 InTangent/OutTangent/InterpolationType（Linear/Bezier/CatmullRom）
+
+**路径 B：修饰器模式** — `IBossPathModifier` 接口，叠加正弦摇摆、圆形绕行、随机抖动等
+
+两条路径不冲突，可同时存在。
+
 ---
 
 ## 六、YAML 示例（垂直切片目标输出）
