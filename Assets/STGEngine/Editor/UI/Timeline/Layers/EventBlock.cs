@@ -9,16 +9,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 {
     /// <summary>
     /// ITimelineBlock wrapper for a TimelineEvent (SpawnPatternEvent / SpawnWaveEvent).
-    /// Used by MidStageLayer. Delegates StartTime/Duration directly to the underlying event.
-    /// Pattern events have bullet trajectory thumbnails; wave events have spawn-delay bars.
+    /// Pattern events have pseudo-3D bullet trajectory thumbnails with depth + time coloring.
     /// </summary>
     public class EventBlock : ITimelineBlock
     {
         private readonly TimelineEvent _event;
-
-        // Cached trajectory data for pattern thumbnail
-        private List<Vector2[]> _trajectoryLines;
-        private Rect _trajectoryBounds;
+        private List<TrajectoryThumbnailRenderer.TrajPoint[]> _trajectories;
         private bool _trajectoryComputed;
 
         public EventBlock(TimelineEvent evt)
@@ -57,14 +53,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     float hue = 0.3f + Mathf.Abs(hash % 60) / 360f;
                     return Color.HSVToRGB(hue, 0.5f, 0.55f);
                 }
-
                 if (_event is SpawnPatternEvent sp)
                 {
                     int hash = sp.PatternId?.GetHashCode() ?? 0;
                     float hue = Mathf.Abs(hash % 360) / 360f;
                     return Color.HSVToRGB(hue, 0.5f, 0.6f);
                 }
-
                 return new Color(0.4f, 0.4f, 0.4f);
             }
         }
@@ -73,12 +67,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public float DesignEstimate
         {
-            get
-            {
-                if (_event is SpawnPatternEvent sp)
-                    return sp.ComputedEffectiveDuration;
-                return -1f;
-            }
+            get => (_event is SpawnPatternEvent sp) ? sp.ComputedEffectiveDuration : -1f;
             set { }
         }
 
@@ -93,7 +82,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 if (_event is SpawnPatternEvent sp && sp.ResolvedPattern != null)
                 {
                     EnsureTrajectoryComputed(sp.ResolvedPattern);
-                    return _trajectoryLines != null && _trajectoryLines.Count > 0;
+                    return _trajectories != null && _trajectories.Count > 0;
                 }
                 return false;
             }
@@ -103,94 +92,231 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
         {
-            if (_trajectoryLines == null || _trajectoryLines.Count == 0) return;
-
-            float margin = 2f;
-            float drawW = blockWidth - margin * 2;
-            float drawH = blockHeight - margin * 2;
-            if (drawW < 4f || drawH < 4f) return;
-
-            float bw = _trajectoryBounds.width;
-            float bh = _trajectoryBounds.height;
-            if (bw < 0.01f) bw = 1f;
-            if (bh < 0.01f) bh = 1f;
-
-            float scale = Mathf.Min(drawW / bw, drawH / bh);
-            float offsetX = margin + (drawW - bw * scale) * 0.5f;
-            float offsetY = margin + (drawH - bh * scale) * 0.5f;
-
-            painter.strokeColor = new Color(0.9f, 0.9f, 0.9f, 0.7f);
-            painter.lineWidth = 1f;
-
-            foreach (var line in _trajectoryLines)
-            {
-                if (line.Length < 2) continue;
-                painter.BeginPath();
-                for (int i = 0; i < line.Length; i++)
-                {
-                    float x = offsetX + (line[i].x - _trajectoryBounds.xMin) * scale;
-                    float y = offsetY + (line[i].y - _trajectoryBounds.yMin) * scale;
-                    if (i == 0)
-                        painter.MoveTo(new Vector2(x, y));
-                    else
-                        painter.LineTo(new Vector2(x, y));
-                }
-                painter.Stroke();
-            }
+            if (_trajectories == null || _trajectories.Count == 0) return;
+            TrajectoryThumbnailRenderer.Draw(painter, blockWidth, blockHeight, _trajectories);
         }
 
         private void EnsureTrajectoryComputed(BulletPattern pattern)
         {
             if (_trajectoryComputed) return;
             _trajectoryComputed = true;
+            _trajectories = TrajectoryThumbnailRenderer.Compute(pattern,
+                _event.Duration > 0f ? _event.Duration : 5f);
+        }
+    }
 
-            if (pattern?.Emitter == null) return;
+    /// <summary>
+    /// Shared pseudo-3D trajectory thumbnail renderer.
+    /// Virtual camera: 30° elevation, 45° azimuth, perspective projection centered on emitter.
+    /// Color: time → blue(early) to red(late), depth → bright(near) to dim(far).
+    /// </summary>
+    public static class TrajectoryThumbnailRenderer
+    {
+        public struct TrajPoint
+        {
+            public Vector3 Position3D;
+            public float TimeNormalized; // 0..1
+        }
+
+        // Virtual camera parameters
+        private static readonly float CamElevation = 30f * Mathf.Deg2Rad;
+        private static readonly float CamAzimuth = 45f * Mathf.Deg2Rad;
+        private static readonly float CamDistance = 15f;
+
+        private static readonly Vector3 CamForward;
+        private static readonly Vector3 CamRight;
+        private static readonly Vector3 CamUp;
+        private static readonly Vector3 CamDir; // Unit vector from origin toward camera
+
+        static TrajectoryThumbnailRenderer()
+        {
+            float cosE = Mathf.Cos(CamElevation);
+            float sinE = Mathf.Sin(CamElevation);
+            float cosA = Mathf.Cos(CamAzimuth);
+            float sinA = Mathf.Sin(CamAzimuth);
+
+            CamDir = new Vector3(cosE * sinA, sinE, cosE * cosA);
+            CamForward = -CamDir;
+            CamRight = Vector3.Cross(Vector3.up, CamForward).normalized;
+            if (CamRight.sqrMagnitude < 0.001f)
+                CamRight = Vector3.right;
+            CamUp = Vector3.Cross(CamForward, CamRight).normalized;
+        }
+
+        private const int MaxBullets = 12;
+        private const int TimeSteps = 10;
+
+        /// <summary>
+        /// Sample bullet trajectories from a pattern.
+        /// Camera is centered on the emitter's average spawn position.
+        /// </summary>
+        public static List<TrajPoint[]> Compute(BulletPattern pattern, float duration)
+        {
+            if (pattern?.Emitter == null) return null;
 
             int bulletCount = pattern.Emitter.Count;
-            int maxBullets = Mathf.Min(bulletCount, 12); // Sample up to 12 bullets
-            int timeSteps = 8;
-            float duration = _event.Duration > 0f ? _event.Duration : 5f;
-
-            _trajectoryLines = new List<Vector2[]>(maxBullets);
-            float xMin = float.MaxValue, xMax = float.MinValue;
-            float yMin = float.MaxValue, yMax = float.MinValue;
-
-            // Sample evenly spaced bullets
+            int maxBullets = Mathf.Min(bulletCount, MaxBullets);
             int step = Mathf.Max(1, bulletCount / maxBullets);
 
-            for (int bi = 0; bi < bulletCount && _trajectoryLines.Count < maxBullets; bi += step)
+            var result = new List<TrajPoint[]>(maxBullets);
+
+            for (int bi = 0; bi < bulletCount && result.Count < maxBullets; bi += step)
             {
-                var points = new Vector2[timeSteps];
-                for (int ti = 0; ti < timeSteps; ti++)
+                var points = new TrajPoint[TimeSteps];
+                for (int ti = 0; ti < TimeSteps; ti++)
                 {
-                    float t = (ti / (float)(timeSteps - 1)) * duration;
+                    float tNorm = ti / (float)(TimeSteps - 1);
+                    float t = tNorm * duration;
                     var states = BulletEvaluator.EvaluateAll(pattern, t);
                     if (bi < states.Count)
                     {
-                        // Project 3D → 2D: use X and Z (top-down view)
-                        var pos = states[bi].Position;
-                        float px = pos.x;
-                        float py = -pos.z; // Flip Z for screen coords (Z+ = up in top-down)
-                        points[ti] = new Vector2(px, py);
-
-                        if (px < xMin) xMin = px;
-                        if (px > xMax) xMax = px;
-                        if (py < yMin) yMin = py;
-                        if (py > yMax) yMax = py;
+                        points[ti] = new TrajPoint
+                        {
+                            Position3D = states[bi].Position,
+                            TimeNormalized = tNorm
+                        };
                     }
                     else
                     {
-                        // Bullet index out of range at this time — use last known
-                        points[ti] = ti > 0 ? points[ti - 1] : Vector2.zero;
+                        points[ti] = ti > 0 ? points[ti - 1] : new TrajPoint();
                     }
                 }
-                _trajectoryLines.Add(points);
+                result.Add(points);
             }
 
-            // Add small padding to bounds
-            float pad = 0.5f;
-            _trajectoryBounds = new Rect(xMin - pad, yMin - pad,
-                (xMax - xMin) + pad * 2, (yMax - yMin) + pad * 2);
+            return result;
+        }
+
+        /// <summary>
+        /// Project a 3D point to 2D using the virtual camera.
+        /// Returns (screenX, screenY, depth).
+        /// Camera position is offset from focusPoint along CamDir.
+        /// </summary>
+        private static Vector3 Project(Vector3 worldPos, Vector3 camPos)
+        {
+            Vector3 rel = worldPos - camPos;
+            float depth = Vector3.Dot(rel, CamForward);
+            float screenX = Vector3.Dot(rel, CamRight);
+            float screenY = Vector3.Dot(rel, CamUp);
+
+            // Perspective division
+            if (depth > 0.1f)
+            {
+                float perspScale = CamDistance / depth;
+                screenX *= perspScale;
+                screenY *= perspScale;
+            }
+
+            return new Vector3(screenX, -screenY, depth);
+        }
+
+        /// <summary>
+        /// Color for a trajectory segment.
+        /// Time: blue(0) → red(1). Depth: bright(near) → dim(far).
+        /// </summary>
+        private static Color GetSegmentColor(float timeNormalized, float depthNormalized)
+        {
+            Color c = Color.Lerp(
+                new Color(0.3f, 0.5f, 1f),   // Early: blue
+                new Color(1f, 0.3f, 0.2f),   // Late: red
+                timeNormalized);
+
+            float brightness = Mathf.Lerp(1f, 0.35f, Mathf.Clamp01(depthNormalized));
+            c.r *= brightness;
+            c.g *= brightness;
+            c.b *= brightness;
+            c.a = Mathf.Lerp(0.9f, 0.4f, Mathf.Clamp01(depthNormalized));
+
+            return c;
+        }
+
+        /// <summary>
+        /// Draw pseudo-3D trajectories into a Painter2D area.
+        /// </summary>
+        public static void Draw(Painter2D painter, float blockWidth, float blockHeight,
+            List<TrajPoint[]> trajectories)
+        {
+            if (trajectories == null || trajectories.Count == 0) return;
+
+            float margin = 2f;
+            float drawW = blockWidth - margin * 2;
+            float drawH = blockHeight - margin * 2;
+            if (drawW < 4f || drawH < 4f) return;
+
+            // Find focus point (average of all t=0 positions = emitter center)
+            Vector3 focus = Vector3.zero;
+            int count = 0;
+            foreach (var traj in trajectories)
+            {
+                if (traj.Length > 0)
+                {
+                    focus += traj[0].Position3D;
+                    count++;
+                }
+            }
+            if (count > 0) focus /= count;
+
+            Vector3 camPos = focus + CamDir * CamDistance;
+
+            // Project all points, find 2D bounds + depth range
+            float xMin = float.MaxValue, xMax = float.MinValue;
+            float yMin = float.MaxValue, yMax = float.MinValue;
+            float dMin = float.MaxValue, dMax = float.MinValue;
+
+            var projected = new List<Vector3[]>(trajectories.Count);
+            foreach (var traj in trajectories)
+            {
+                var pts = new Vector3[traj.Length];
+                for (int i = 0; i < traj.Length; i++)
+                {
+                    pts[i] = Project(traj[i].Position3D, camPos);
+                    if (pts[i].x < xMin) xMin = pts[i].x;
+                    if (pts[i].x > xMax) xMax = pts[i].x;
+                    if (pts[i].y < yMin) yMin = pts[i].y;
+                    if (pts[i].y > yMax) yMax = pts[i].y;
+                    if (pts[i].z < dMin) dMin = pts[i].z;
+                    if (pts[i].z > dMax) dMax = pts[i].z;
+                }
+                projected.Add(pts);
+            }
+
+            float bw = xMax - xMin;
+            float bh = yMax - yMin;
+            if (bw < 0.01f) bw = 1f;
+            if (bh < 0.01f) bh = 1f;
+            float dRange = dMax - dMin;
+            if (dRange < 0.01f) dRange = 1f;
+
+            float scale = Mathf.Min(drawW / bw, drawH / bh);
+            float offsetX = margin + (drawW - bw * scale) * 0.5f;
+            float offsetY = margin + (drawH - bh * scale) * 0.5f;
+
+            painter.lineWidth = 1.2f;
+
+            // Draw segment-by-segment with per-segment color
+            for (int ti = 0; ti < trajectories.Count; ti++)
+            {
+                var traj = trajectories[ti];
+                var pts = projected[ti];
+                if (pts.Length < 2) continue;
+
+                for (int i = 0; i < pts.Length - 1; i++)
+                {
+                    float x0 = offsetX + (pts[i].x - xMin) * scale;
+                    float y0 = offsetY + (pts[i].y - yMin) * scale;
+                    float x1 = offsetX + (pts[i + 1].x - xMin) * scale;
+                    float y1 = offsetY + (pts[i + 1].y - yMin) * scale;
+
+                    float timeMid = (traj[i].TimeNormalized + traj[i + 1].TimeNormalized) * 0.5f;
+                    float depthMid = ((pts[i].z - dMin) + (pts[i + 1].z - dMin)) * 0.5f / dRange;
+
+                    painter.strokeColor = GetSegmentColor(timeMid, depthMid);
+                    painter.BeginPath();
+                    painter.MoveTo(new Vector2(x0, y0));
+                    painter.LineTo(new Vector2(x1, y1));
+                    painter.Stroke();
+                }
+            }
         }
     }
 }
