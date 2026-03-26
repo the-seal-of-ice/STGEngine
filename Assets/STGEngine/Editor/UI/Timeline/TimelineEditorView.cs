@@ -2182,18 +2182,17 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
-        /// Generic block selection handler. For non-MidStage layers (BossFight, SpellCardDetail, Wave, etc.),
-        /// delegates to the current layer's BuildPropertiesPanel. MidStage blocks are handled by the
-        /// legacy OnEventSelected path.
+        /// Generic block selection handler. Routes to the appropriate existing
+        /// property editor based on the current layer type and selected block.
+        /// MidStage is handled by the legacy OnEventSelected path.
         /// </summary>
         private void OnBlockSelectedGeneric(ITimelineBlock block)
         {
-            // Skip if current layer is MidStage — legacy OnEventSelected handles it
+            // MidStage uses legacy OnEventSelected path
             if (_currentLayer is MidStageLayer) return;
-            // Skip if we're in the legacy segment-based view (no _currentLayer set yet)
             if (_currentLayer == null) return;
 
-            _propertyContent.Clear();
+            // Clean up pattern editor if active
             if (_patternEditor != null)
             {
                 _patternEditor.Commands.OnStateChanged -= OnPatternEditorChanged;
@@ -2205,7 +2204,285 @@ namespace STGEngine.Editor.UI.Timeline
             _selectedEvent = null;
             _selectedTimelineEvent = null;
 
-            _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+            if (_currentLayer is StageLayer)
+            {
+                // Stage level: show segment properties
+                if (block?.DataSource is TimelineSegment segment)
+                {
+                    _propertyContent.Clear();
+                    BuildSegmentProperties(segment);
+                }
+                else
+                {
+                    _propertyContent.Clear();
+                    _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                }
+            }
+            else if (_currentLayer is BossFightLayer bfLayer)
+            {
+                // BossFight level: selecting a SpellCard block shows its editable properties
+                if (block is SpellCardBlock scBlock)
+                {
+                    var sc = scBlock.DataSource as SpellCard;
+                    if (sc != null)
+                    {
+                        _propertyContent.Clear();
+                        BuildSpellCardBlockProperties(sc, scBlock.SpellCardId, bfLayer);
+                    }
+                }
+                else
+                {
+                    // TransitionBlock or null — show layer summary
+                    _propertyContent.Clear();
+                    _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+                }
+            }
+            else if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                // SpellCard detail level: selecting a pattern block shows its editable properties
+                if (block?.DataSource is SpellCardPattern scp)
+                {
+                    _propertyContent.Clear();
+                    BuildSpellCardPatternProperties(scp, scLayer);
+                }
+                else
+                {
+                    _propertyContent.Clear();
+                    _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                }
+            }
+            else if (_currentLayer is WaveLayer waveLayer)
+            {
+                // Wave level: selecting an enemy block shows its editable properties
+                if (block?.DataSource is EnemyInstance ei)
+                {
+                    _propertyContent.Clear();
+                    BuildEnemyInstanceProperties(ei, waveLayer);
+                }
+                else
+                {
+                    _propertyContent.Clear();
+                    _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                }
+            }
+            else
+            {
+                _propertyContent.Clear();
+                _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+            }
+        }
+
+        // ─── Per-Layer Editable Properties ───
+
+        private void BuildSegmentProperties(TimelineSegment segment)
+        {
+            _propertyHeaderLabel.text = $"Segment: {segment.Name}";
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            // Name
+            var nameField = new TextField("Name") { value = segment.Name };
+            nameField.isDelayed = true;
+            nameField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<string>(
+                    "Change Segment Name",
+                    () => segment.Name, v => segment.Name = v, e.newValue);
+                _commandStack.Execute(cmd);
+            });
+            container.Add(nameField);
+
+            // Duration
+            var durField = new FloatField("Duration") { value = segment.Duration };
+            durField.isDelayed = true;
+            durField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Segment Duration",
+                    () => segment.Duration, v => segment.Duration = v,
+                    Mathf.Max(1f, e.newValue));
+                _commandStack.Execute(cmd);
+            });
+            container.Add(durField);
+
+            // Type (read-only)
+            var typeLabel = new Label($"Type: {(segment.Type == SegmentType.BossFight ? "BossFight" : "MidStage")}");
+            typeLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            typeLabel.style.marginTop = 4;
+            container.Add(typeLabel);
+
+            // Content summary
+            string content = segment.Type == SegmentType.BossFight
+                ? $"Spell Cards: {segment.SpellCardIds.Count}"
+                : $"Events: {segment.Events.Count}";
+            var contentLabel = new Label(content);
+            contentLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            container.Add(contentLabel);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        private void BuildSpellCardBlockProperties(SpellCard sc, string scId, BossFightLayer bfLayer)
+        {
+            _propertyHeaderLabel.text = $"SpellCard: {scId}";
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            // Name
+            var nameField = new TextField("Name") { value = sc.Name ?? "" };
+            nameField.isDelayed = true;
+            nameField.RegisterValueChangedCallback(e => { sc.Name = e.newValue; });
+            container.Add(nameField);
+
+            // TimeLimit
+            var tlField = new FloatField("Time Limit") { value = sc.TimeLimit };
+            tlField.isDelayed = true;
+            tlField.RegisterValueChangedCallback(e =>
+            {
+                sc.TimeLimit = Mathf.Max(1f, e.newValue);
+                _trackArea.RefreshBlockPositions();
+            });
+            container.Add(tlField);
+
+            // Health
+            var hpField = new FloatField("Health") { value = sc.Health };
+            hpField.isDelayed = true;
+            hpField.RegisterValueChangedCallback(e => { sc.Health = Mathf.Max(1f, e.newValue); });
+            container.Add(hpField);
+
+            // TransitionDuration
+            var transField = new FloatField("Transition Duration") { value = sc.TransitionDuration };
+            transField.isDelayed = true;
+            transField.RegisterValueChangedCallback(e =>
+            {
+                sc.TransitionDuration = Mathf.Max(0.1f, e.newValue);
+                _trackArea.RefreshBlockPositions();
+            });
+            container.Add(transField);
+
+            // DesignEstimate
+            var deField = new FloatField("Design Estimate") { value = sc.DesignEstimate };
+            deField.isDelayed = true;
+            deField.RegisterValueChangedCallback(e =>
+            {
+                sc.DesignEstimate = e.newValue;
+                _trackArea.RefreshBlockPositions();
+            });
+            container.Add(deField);
+
+            // Patterns count (read-only)
+            var patLabel = new Label($"Patterns: {sc.Patterns.Count}");
+            patLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            patLabel.style.marginTop = 4;
+            container.Add(patLabel);
+
+            // Edit button → enter SpellCard detail
+            var editBtn = new Button(() =>
+            {
+                EnterSpellCardEditing(bfLayer.Segment, scId);
+            }) { text = "Edit SpellCard Details ▶" };
+            editBtn.style.marginTop = 8;
+            editBtn.style.backgroundColor = new Color(0.25f, 0.3f, 0.45f);
+            editBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            container.Add(editBtn);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        private void BuildSpellCardPatternProperties(SpellCardPattern scp, SpellCardDetailLayer scLayer)
+        {
+            _propertyHeaderLabel.text = $"Pattern: {scp.PatternId}";
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            // Pattern ID (read-only)
+            var idLabel = new Label($"Pattern: {scp.PatternId}");
+            idLabel.style.color = new Color(0.7f, 0.85f, 1f);
+            idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            idLabel.style.marginBottom = 4;
+            container.Add(idLabel);
+
+            // Delay
+            var delayField = new FloatField("Delay") { value = scp.Delay };
+            delayField.isDelayed = true;
+            delayField.RegisterValueChangedCallback(e =>
+            {
+                scp.Delay = Mathf.Max(0f, e.newValue);
+                _trackArea.RefreshBlockPositions();
+            });
+            container.Add(delayField);
+
+            // Duration
+            var durField = new FloatField("Duration") { value = scp.Duration };
+            durField.isDelayed = true;
+            durField.RegisterValueChangedCallback(e =>
+            {
+                scp.Duration = Mathf.Max(0.1f, e.newValue);
+                _trackArea.RefreshBlockPositions();
+            });
+            container.Add(durField);
+
+            // Offset X/Y/Z
+            var ox = new FloatField("Offset X") { value = scp.Offset.x };
+            ox.isDelayed = true;
+            ox.RegisterValueChangedCallback(e => { scp.Offset = new Vector3(e.newValue, scp.Offset.y, scp.Offset.z); });
+            container.Add(ox);
+
+            var oy = new FloatField("Offset Y") { value = scp.Offset.y };
+            oy.isDelayed = true;
+            oy.RegisterValueChangedCallback(e => { scp.Offset = new Vector3(scp.Offset.x, e.newValue, scp.Offset.z); });
+            container.Add(oy);
+
+            var oz = new FloatField("Offset Z") { value = scp.Offset.z };
+            oz.isDelayed = true;
+            oz.RegisterValueChangedCallback(e => { scp.Offset = new Vector3(scp.Offset.x, scp.Offset.y, e.newValue); });
+            container.Add(oz);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        private void BuildEnemyInstanceProperties(EnemyInstance ei, WaveLayer waveLayer)
+        {
+            _propertyHeaderLabel.text = $"Enemy: {ei.EnemyTypeId}";
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            // EnemyType ID (read-only)
+            var idLabel = new Label($"Type: {ei.EnemyTypeId}");
+            idLabel.style.color = new Color(1f, 0.7f, 0.5f);
+            idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            idLabel.style.marginBottom = 4;
+            container.Add(idLabel);
+
+            // SpawnDelay
+            var delayField = new FloatField("Spawn Delay") { value = ei.SpawnDelay };
+            delayField.isDelayed = true;
+            delayField.RegisterValueChangedCallback(e =>
+            {
+                ei.SpawnDelay = Mathf.Max(0f, e.newValue);
+                _trackArea.RefreshBlockPositions();
+            });
+            container.Add(delayField);
+
+            // Path points count
+            var pathLabel = new Label($"Path points: {ei.Path?.Count ?? 0}");
+            pathLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            pathLabel.style.marginTop = 4;
+            container.Add(pathLabel);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
         }
 
         /// <summary>
