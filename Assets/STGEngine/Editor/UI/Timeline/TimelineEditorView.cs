@@ -2574,6 +2574,9 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnEventSelected(TimelineEvent evt)
         {
+            // Non-MidStage layers are handled by OnBlockSelectedGeneric — skip legacy path
+            if (_currentLayer != null && _currentLayer is not MidStageLayer) return;
+
             _propertyContent.Clear();
             if (_patternEditor != null)
             {
