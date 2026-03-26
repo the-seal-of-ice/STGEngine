@@ -51,6 +51,9 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly List<BlockInfo> _blocks = new();
         private ITimelineBlock _selectedBlock;
 
+        // Active hover popups — tracked so they can be dismissed on click/rebuild
+        private readonly List<VisualElement> _activePopups = new();
+
         private enum DragMode { None, Move, Resize, Scrub, Reorder }
         private DragMode _dragMode;
         private BlockInfo _dragBlockInfo;
@@ -181,8 +184,17 @@ namespace STGEngine.Editor.UI.Timeline
 
         public ITimelineLayer CurrentLayer => _layer;
 
+        /// <summary>Dismiss all active hover popups.</summary>
+        private void DismissAllPopups()
+        {
+            foreach (var p in _activePopups)
+                p?.RemoveFromHierarchy();
+            _activePopups.Clear();
+        }
+
         public void RebuildBlocks()
         {
+            DismissAllPopups();
             var toRemove = new List<VisualElement>();
             foreach (var child in _trackContent.Children())
             {
@@ -289,11 +301,16 @@ namespace STGEngine.Editor.UI.Timeline
                 };
 
                 Root.panel?.visualTree?.Add(popup);
+                _activePopups.Add(popup);
             });
             icon.RegisterCallback<MouseLeaveEvent>(_ =>
             {
-                popup?.RemoveFromHierarchy();
-                popup = null;
+                if (popup != null)
+                {
+                    popup.RemoveFromHierarchy();
+                    _activePopups.Remove(popup);
+                    popup = null;
+                }
             });
 
             return icon;
@@ -449,11 +466,16 @@ namespace STGEngine.Editor.UI.Timeline
                             }
 
                             Root.panel?.visualTree?.Add(modPopup);
+                            _activePopups.Add(modPopup);
                         });
                         modIcon.RegisterCallback<MouseLeaveEvent>(_ =>
                         {
-                            modPopup?.RemoveFromHierarchy();
-                            modPopup = null;
+                            if (modPopup != null)
+                            {
+                                modPopup.RemoveFromHierarchy();
+                                _activePopups.Remove(modPopup);
+                                modPopup = null;
+                            }
                         });
 
                         contentRow.Add(modIcon);
@@ -764,6 +786,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         public void SelectBlock(ITimelineBlock blk)
         {
+            DismissAllPopups();
             _selectedBlock = blk;
             foreach (var b in _blocks)
             {
