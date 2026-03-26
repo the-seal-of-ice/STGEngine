@@ -46,7 +46,13 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         bool HasThumbnail { get; }
 
         /// <summary>
-        /// Draw a thumbnail inside the block using Painter2D.
+        /// If true, thumbnail is drawn as a small inline icon after the label,
+        /// with a hover-to-enlarge popup. If false, drawn as block background.
+        /// </summary>
+        bool ThumbnailInline { get; }
+
+        /// <summary>
+        /// Draw a thumbnail using Painter2D.
         /// Called via generateVisualContent. blockWidth/blockHeight are in pixels.
         /// </summary>
         void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight);

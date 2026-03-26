@@ -94,6 +94,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         }
 
         public bool HasThumbnail => _thumbnailBars != null && _thumbnailBars.Count > 0;
+        public bool ThumbnailInline => false;
 
         public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
         {

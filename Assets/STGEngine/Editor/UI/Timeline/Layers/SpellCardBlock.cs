@@ -70,6 +70,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         // ── Thumbnail ──
 
         public bool HasThumbnail => _thumbnailBars != null && _thumbnailBars.Count > 0;
+        public bool ThumbnailInline => false;
 
         public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
         {
@@ -188,6 +189,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         // ── Thumbnail: diagonal hatch ──
 
         public bool HasThumbnail => true;
+        public bool ThumbnailInline => false;
 
         public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
         {

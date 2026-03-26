@@ -238,16 +238,86 @@ namespace STGEngine.Editor.UI.Timeline
             element.style.paddingLeft = 4;
             element.style.justifyContent = Justify.Center;
 
+            // Layout: horizontal row for label + inline thumbnail
+            var contentRow = new VisualElement();
+            contentRow.style.flexDirection = FlexDirection.Row;
+            contentRow.style.alignItems = Align.Center;
+            contentRow.style.flexGrow = 1;
+            contentRow.style.overflow = Overflow.Hidden;
+
             var label = new Label(blk.DisplayLabel);
             label.style.color = new Color(0.9f, 0.9f, 0.9f);
             label.style.fontSize = 10;
             label.style.overflow = Overflow.Hidden;
             label.style.textOverflow = TextOverflow.Ellipsis;
             label.style.whiteSpace = WhiteSpace.NoWrap;
-            element.Add(label);
+            label.style.flexShrink = 1;
+            contentRow.Add(label);
 
-            // Thumbnail (drawn first, underneath label and DesignEstimate line)
-            if (blk.HasThumbnail)
+            // Inline thumbnail: small icon after label with hover popup
+            if (blk.HasThumbnail && blk.ThumbnailInline)
+            {
+                float thumbSize = TrackRowHeight - 10;
+                var thumbIcon = new VisualElement();
+                thumbIcon.style.width = thumbSize;
+                thumbIcon.style.height = thumbSize;
+                thumbIcon.style.marginLeft = 4;
+                thumbIcon.style.flexShrink = 0;
+                thumbIcon.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.6f);
+                thumbIcon.style.borderTopLeftRadius = thumbIcon.style.borderTopRightRadius =
+                    thumbIcon.style.borderBottomLeftRadius = thumbIcon.style.borderBottomRightRadius = 2;
+                thumbIcon.generateVisualContent += ctx =>
+                {
+                    float w = thumbIcon.resolvedStyle.width;
+                    float h = thumbIcon.resolvedStyle.height;
+                    if (w > 0f && h > 0f)
+                        blk.DrawThumbnail(ctx.painter2D, w, h);
+                };
+
+                // Hover: show enlarged popup
+                VisualElement popup = null;
+                thumbIcon.RegisterCallback<MouseEnterEvent>(_ =>
+                {
+                    if (popup != null) return;
+                    float popupSize = 120f;
+                    popup = new VisualElement();
+                    popup.style.position = Position.Absolute;
+                    popup.style.width = popupSize;
+                    popup.style.height = popupSize;
+                    popup.style.backgroundColor = new Color(0.12f, 0.12f, 0.15f, 0.95f);
+                    popup.style.borderTopWidth = popup.style.borderBottomWidth =
+                        popup.style.borderLeftWidth = popup.style.borderRightWidth = 1;
+                    popup.style.borderTopColor = popup.style.borderBottomColor =
+                        popup.style.borderLeftColor = popup.style.borderRightColor = new Color(0.4f, 0.4f, 0.5f);
+                    popup.style.borderTopLeftRadius = popup.style.borderTopRightRadius =
+                        popup.style.borderBottomLeftRadius = popup.style.borderBottomRightRadius = 4;
+                    popup.pickingMode = PickingMode.Ignore;
+
+                    // Position popup above the icon
+                    var iconWorld = thumbIcon.worldBound;
+                    popup.style.left = iconWorld.x;
+                    popup.style.top = iconWorld.y - popupSize - 4;
+
+                    popup.generateVisualContent += ctx =>
+                    {
+                        blk.DrawThumbnail(ctx.painter2D, popupSize, popupSize);
+                    };
+
+                    Root.panel?.visualTree?.Add(popup);
+                });
+                thumbIcon.RegisterCallback<MouseLeaveEvent>(_ =>
+                {
+                    popup?.RemoveFromHierarchy();
+                    popup = null;
+                });
+
+                contentRow.Add(thumbIcon);
+            }
+
+            element.Add(contentRow);
+
+            // Background thumbnail (color bars, hatching — drawn underneath content)
+            if (blk.HasThumbnail && !blk.ThumbnailInline)
             {
                 element.generateVisualContent += ctx =>
                 {

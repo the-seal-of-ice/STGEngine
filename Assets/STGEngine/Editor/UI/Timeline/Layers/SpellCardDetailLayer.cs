@@ -76,14 +76,15 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             }
         }
 
+        public bool ThumbnailInline => true;
+
         public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
         {
             if (_trajectoryLines == null || _trajectoryLines.Count == 0) return;
 
-            float margin = 3f;
-            float labelSpace = 12f;
+            float margin = 2f;
             float drawW = blockWidth - margin * 2;
-            float drawH = blockHeight - labelSpace - margin;
+            float drawH = blockHeight - margin * 2;
             if (drawW < 4f || drawH < 4f) return;
 
             float bw = _trajectoryBounds.width;
@@ -93,9 +94,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
             float scale = Mathf.Min(drawW / bw, drawH / bh);
             float offsetX = margin + (drawW - bw * scale) * 0.5f;
-            float offsetY = labelSpace + (drawH - bh * scale) * 0.5f;
+            float offsetY = margin + (drawH - bh * scale) * 0.5f;
 
-            painter.strokeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
+            painter.strokeColor = new Color(0.9f, 0.9f, 0.9f, 0.7f);
             painter.lineWidth = 1f;
 
             foreach (var line in _trajectoryLines)
