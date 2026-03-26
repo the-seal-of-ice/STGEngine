@@ -736,23 +736,44 @@ namespace STGEngine.Editor.UI.Timeline
                 // Reset visual feedback
                 _dragBlockInfo.Element.style.opacity = 1f;
 
-                // Determine target index based on drop position
+                // Determine target index based on drop position.
+                // Build a "remaining blocks" layout (excluding the dragged block)
+                // and find which slot the drop point falls into.
                 float dropX = e.mousePosition.x + _scrollOffset;
                 float dropTime = dropX / _pixelsPerSecond;
 
-                // Find which position the block should be inserted at
                 var allBlocks = _layer.GetAllBlocks();
                 int fromIndex = _reorderOriginalIndex;
-                int toIndex = allBlocks.Count - 1;
 
-                // Walk through blocks to find where dropTime falls
-                float accum = 0f;
+                // Collect non-dragged blocks with their original indices
+                var others = new List<(int origIdx, float duration)>();
                 for (int i = 0; i < allBlocks.Count; i++)
                 {
-                    if (i == fromIndex) { accum += allBlocks[i].Duration; continue; }
-                    float mid = accum + allBlocks[i].Duration * 0.5f;
-                    if (dropTime < mid) { toIndex = i; break; }
-                    accum += allBlocks[i].Duration;
+                    if (i == fromIndex) continue;
+                    others.Add((i, allBlocks[i].Duration));
+                }
+
+                // Find insertion slot: walk the remaining blocks' accumulated widths
+                int toIndex = fromIndex; // default: no move
+                float accum = 0f;
+                bool placed = false;
+                for (int s = 0; s < others.Count; s++)
+                {
+                    float mid = accum + others[s].duration * 0.5f;
+                    if (dropTime < mid)
+                    {
+                        toIndex = others[s].origIdx;
+                        placed = true;
+                        break;
+                    }
+                    accum += others[s].duration;
+                }
+                if (!placed && others.Count > 0)
+                {
+                    // Dropped past the last block → move to end
+                    toIndex = others[others.Count - 1].origIdx;
+                    // If dragged block was before this, target is the last position
+                    if (fromIndex < toIndex) toIndex = allBlocks.Count - 1;
                 }
 
                 if (fromIndex != toIndex)

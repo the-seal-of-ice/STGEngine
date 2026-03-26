@@ -2217,41 +2217,40 @@ namespace STGEngine.Editor.UI.Timeline
             if (_currentLayer is BossFightLayer bfLayer)
             {
                 var ids = bfLayer.Segment.SpellCardIds;
-                // Filter: fromIndex/toIndex are block indices (including TransitionBlocks).
+                // fromIndex/toIndex are block indices (including TransitionBlocks).
                 // Map to SpellCard-only indices.
                 var allBlocks = bfLayer.GetAllBlocks();
                 if (fromIndex < 0 || fromIndex >= allBlocks.Count) return;
                 if (toIndex < 0 || toIndex >= allBlocks.Count) return;
 
-                // Get the SpellCard IDs for the from/to blocks
                 var fromBlock = allBlocks[fromIndex] as SpellCardBlock;
-                var toBlock = allBlocks[toIndex] as SpellCardBlock;
                 if (fromBlock == null) return; // Can't reorder transition blocks
 
+                // Map block indices to SpellCardIds indices
                 int fromScIdx = ids.IndexOf(fromBlock.SpellCardId);
                 if (fromScIdx < 0) return;
 
-                // Calculate target SC index
-                int toScIdx;
+                // Find target SC index: count SpellCardBlocks up to toIndex
+                int toScIdx = 0;
+                var toBlock = allBlocks[toIndex] as SpellCardBlock;
                 if (toBlock != null)
                     toScIdx = ids.IndexOf(toBlock.SpellCardId);
                 else
-                    toScIdx = fromScIdx; // dropped on transition, no move
+                    return; // dropped on transition, no move
 
                 if (fromScIdx == toScIdx) return;
 
-                // Reorder via remove + insert (with undo)
+                // Remove from old position, insert at new position
                 var id = ids[fromScIdx];
-                var removeCmd = ListCommand<string>.Remove(ids, fromScIdx, "Reorder Spell Card (remove)");
-                _commandStack.Execute(removeCmd);
-
+                ids.RemoveAt(fromScIdx);
+                // After removal, adjust target index if it was after the source
                 int insertIdx = toScIdx > fromScIdx ? toScIdx - 1 : toScIdx;
                 insertIdx = Mathf.Clamp(insertIdx, 0, ids.Count);
-                var insertCmd = ListCommand<string>.Add(ids, id, insertIdx, "Reorder Spell Card (insert)");
-                _commandStack.Execute(insertCmd);
+                ids.Insert(insertIdx, id);
 
                 // Rebuild
                 bfLayer.InvalidateBlocks();
+                WireLayerToTrackArea(bfLayer);
                 _trackArea.RebuildBlocks();
                 ShowBossFightSpellCards(bfLayer.Segment);
                 LoadBossFightPreview(bfLayer.Segment);
