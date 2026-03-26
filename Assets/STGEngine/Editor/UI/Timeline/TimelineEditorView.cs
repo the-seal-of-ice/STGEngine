@@ -1432,7 +1432,7 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>
         /// Linear interpolation along BossPath keyframes (same logic as BossPlaceholder).
         /// </summary>
-        private static Vector3 EvaluateBossPath(List<PathKeyframe> path, float t)
+        internal static Vector3 EvaluateBossPath(List<PathKeyframe> path, float t)
         {
             if (path == null || path.Count == 0) return new Vector3(0, 6, 0);
             if (path.Count == 1) return path[0].Position;
@@ -2387,8 +2387,18 @@ namespace STGEngine.Editor.UI.Timeline
             // Generic double-click: navigate into child layer
             NavigateTo(childLayer);
 
+            // SpellCardDetailLayer: show Boss placeholder with this spell card's path
+            if (childLayer is SpellCardDetailLayer scLayer)
+            {
+                var sc = scLayer.SpellCard;
+                if (sc != null && sc.BossPath != null && sc.BossPath.Count > 0)
+                    OnSpellCardEditingChanged?.Invoke(sc);
+                else
+                    OnSpellCardEditingChanged?.Invoke(null);
+            }
+
             // TODO: PatternLayer preview — needs coordination between _singlePreviewer
-            // and TimelinePlaybackController. Will be implemented in 1h.
+            // and TimelinePlaybackController. Will be implemented later.
         }
 
         private void OnAddEventRequested(float atTime)

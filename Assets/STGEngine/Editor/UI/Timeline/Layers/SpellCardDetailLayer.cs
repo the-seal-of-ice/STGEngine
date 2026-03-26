@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
+using STGEngine.Core.Timeline;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Bullet;
 using STGEngine.Runtime.Preview;
@@ -266,8 +267,35 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public void LoadPreview(TimelinePlaybackController playback)
         {
-            // Preview will be handled by TimelineEditorView's LoadSpellCardPreview
-            playback?.LoadSegment(null);
+            if (playback == null || _spellCard == null) return;
+
+            var tempSegment = new TimelineSegment
+            {
+                Id = $"_spellcard_{_spellCardId}",
+                Name = _spellCard.Name,
+                Type = SegmentType.MidStage,
+                Duration = _spellCard.TimeLimit
+            };
+
+            foreach (var scp in _spellCard.Patterns)
+            {
+                var pattern = _library?.Resolve(scp.PatternId);
+                if (pattern == null) continue;
+
+                var bossPos = TimelineEditorView.EvaluateBossPath(_spellCard.BossPath, scp.Delay);
+
+                tempSegment.Events.Add(new SpawnPatternEvent
+                {
+                    Id = $"_sc_evt_{scp.PatternId}_{scp.Delay:F0}",
+                    StartTime = scp.Delay,
+                    Duration = scp.Duration,
+                    PatternId = scp.PatternId,
+                    SpawnPosition = bossPos + scp.Offset,
+                    ResolvedPattern = pattern
+                });
+            }
+
+            playback.LoadSegment(tempSegment);
         }
 
         // ── Layer-specific events ──
