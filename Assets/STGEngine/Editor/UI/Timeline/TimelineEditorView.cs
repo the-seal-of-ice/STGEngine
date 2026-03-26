@@ -143,8 +143,8 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         _currentLayer = _stageLayer;
                         _trackArea.SetLayer(_stageLayer);
+                        // LoadStageOverviewPreview handles OnSpellCardEditingChanged internally
                         LoadStageOverviewPreview();
-                        OnSpellCardEditingChanged?.Invoke(null);
                         RebuildBreadcrumb();
                     }
                 }
