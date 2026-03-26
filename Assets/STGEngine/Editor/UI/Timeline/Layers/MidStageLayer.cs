@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using STGEngine.Core.DataModel;
 using STGEngine.Core.Timeline;
+using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
 
 namespace STGEngine.Editor.UI.Timeline.Layers
@@ -15,6 +17,11 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     {
         private readonly TimelineSegment _segment;
         private readonly List<EventBlock> _blocks = new();
+
+        /// <summary>Optional: set to enable double-click into Pattern/Wave layers.</summary>
+        public PatternLibrary Library { get; set; }
+        /// <summary>Optional: set to enable double-click into Wave layers.</summary>
+        public STGEngine.Editor.UI.FileManager.STGCatalog Catalog { get; set; }
 
         public MidStageLayer(TimelineSegment segment)
         {
@@ -57,8 +64,26 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public ITimelineLayer CreateChildLayer(ITimelineBlock block)
         {
-            // PatternLayer and WaveLayer will be implemented in step 1g.
-            // For now, return null (double-click will be a no-op).
+            if (block?.DataSource is SpawnPatternEvent sp && Library != null)
+            {
+                var pattern = Library.Resolve(sp.PatternId);
+                if (pattern != null)
+                    return new PatternLayer(pattern, sp.PatternId);
+            }
+            else if (block?.DataSource is SpawnWaveEvent sw && Catalog != null)
+            {
+                var path = Catalog.GetWavePath(sw.WaveId);
+                if (System.IO.File.Exists(path))
+                {
+                    try
+                    {
+                        var wave = Core.Serialization.YamlSerializer.DeserializeWave(
+                            System.IO.File.ReadAllText(path));
+                        return new WaveLayer(wave, sw.WaveId);
+                    }
+                    catch { }
+                }
+            }
             return null;
         }
 

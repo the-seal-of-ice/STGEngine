@@ -1516,6 +1516,8 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (layer is MidStageLayer midLayer)
             {
+                midLayer.Library = _library;
+                midLayer.Catalog = _catalog;
                 midLayer.OnAddPatternRequested = time => OnAddEventRequested(time);
                 midLayer.OnAddWaveRequested = time => OnAddWaveEventRequested(time);
                 midLayer.OnDeleteRequested = blk =>
