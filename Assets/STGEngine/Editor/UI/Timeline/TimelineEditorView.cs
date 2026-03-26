@@ -2226,10 +2226,10 @@ namespace STGEngine.Editor.UI.Timeline
 
                 int scCount = bfLayer.LoadedSpellCards.Count;
 
-                // Walk the full visual layout (including the dragged card) to find
-                // which slot the drop point falls into. dropTime is based on the
-                // current visual layout which still includes the dragged card.
-                int toIdx = scCount - 1; // default: after last
+                // Find the insertion slot index (0..scCount).
+                // Slot 0 = before first SC, slot 1 = between SC0 and SC1, etc.
+                // We compare dropTime against each SC's midpoint in the visual layout.
+                int insertSlot = scCount; // default: after last
                 float accum = 0f;
                 for (int i = 0; i < scCount; i++)
                 {
@@ -2237,7 +2237,7 @@ namespace STGEngine.Editor.UI.Timeline
                     float mid = accum + scDur * 0.5f;
                     if (dropTime < mid)
                     {
-                        toIdx = i;
+                        insertSlot = i;
                         break;
                     }
                     accum += scDur;
@@ -2245,14 +2245,16 @@ namespace STGEngine.Editor.UI.Timeline
                         accum += bfLayer.LoadedSpellCards[i].TransitionDuration;
                 }
 
-                if (fromIdx == toIdx) return;
+                // Convert insertSlot to the actual target index after removal.
+                // If dragging forward (fromIdx < insertSlot), removal shifts slots down by 1.
+                int targetIdx = insertSlot > fromIdx ? insertSlot - 1 : insertSlot;
+                if (targetIdx == fromIdx) return;
 
-                // Remove + insert
+                // Execute
                 var id = ids[fromIdx];
                 ids.RemoveAt(fromIdx);
-                int insertIdx = toIdx > fromIdx ? toIdx - 1 : toIdx;
-                insertIdx = Mathf.Clamp(insertIdx, 0, ids.Count);
-                ids.Insert(insertIdx, id);
+                targetIdx = Mathf.Clamp(targetIdx, 0, ids.Count);
+                ids.Insert(targetIdx, id);
 
                 // Rebuild
                 bfLayer.InvalidateBlocks();
@@ -2271,23 +2273,22 @@ namespace STGEngine.Editor.UI.Timeline
                 int fromIdx = segments.IndexOf(seg);
                 if (fromIdx < 0) return;
 
-                // Walk segment durations to find target slot
-                int toIdx = segments.Count - 1;
+                // Find insertion slot (0..count)
+                int insertSlot = segments.Count;
                 float accum = 0f;
                 for (int i = 0; i < segments.Count; i++)
                 {
-                    if (i == fromIdx) continue;
                     float mid = accum + segments[i].Duration * 0.5f;
-                    if (dropTime < mid) { toIdx = i; break; }
+                    if (dropTime < mid) { insertSlot = i; break; }
                     accum += segments[i].Duration;
                 }
 
-                if (fromIdx == toIdx) return;
+                int targetIdx = insertSlot > fromIdx ? insertSlot - 1 : insertSlot;
+                if (targetIdx == fromIdx) return;
 
                 segments.RemoveAt(fromIdx);
-                int insertIdx = toIdx > fromIdx ? toIdx - 1 : toIdx;
-                insertIdx = Mathf.Clamp(insertIdx, 0, segments.Count);
-                segments.Insert(insertIdx, seg);
+                targetIdx = Mathf.Clamp(targetIdx, 0, segments.Count);
+                segments.Insert(targetIdx, seg);
 
                 stageLayer.InvalidateBlocks();
                 _trackArea.RebuildBlocks();
