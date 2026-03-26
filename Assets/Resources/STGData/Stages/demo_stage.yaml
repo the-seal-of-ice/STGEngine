@@ -1,5 +1,6 @@
 id: demo_stage
 name: Demo Stage
+seed: 0
 segments:
 - id: midstage_1
   name: Opening Wave
@@ -43,3 +44,4 @@ segments:
     duration: 10
     pattern_id: demo_ring_split
     spawn_position: {x: 0, y: 8, z: 0}
+  spell_card_ids: [spell_01, spell_02]

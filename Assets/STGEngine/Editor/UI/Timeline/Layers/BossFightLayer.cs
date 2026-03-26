@@ -50,8 +50,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public IReadOnlyList<ITimelineBlock> GetAllBlocks()
         {
-            RebuildBlockList();
             return _blocks;
+        }
+
+        /// <summary>
+        /// Force a full reload of SpellCard data from disk.
+        /// Call this after structural changes (add/remove spell card) or override revert.
+        /// </summary>
+        public void InvalidateBlocks()
+        {
+            RebuildBlockList();
         }
 
         // ── Timeline parameters ──

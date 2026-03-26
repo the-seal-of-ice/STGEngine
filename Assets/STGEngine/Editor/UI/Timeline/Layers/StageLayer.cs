@@ -50,8 +50,13 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public IReadOnlyList<ITimelineBlock> GetAllBlocks()
         {
-            RebuildBlockList();
             return _blocks;
+        }
+
+        /// <summary>Force rebuild of block list from stage segments.</summary>
+        public void InvalidateBlocks()
+        {
+            RebuildBlockList();
         }
 
         // ── Timeline parameters ──

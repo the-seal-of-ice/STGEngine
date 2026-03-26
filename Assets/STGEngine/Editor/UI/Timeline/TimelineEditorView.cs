@@ -267,6 +267,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.OnAddEventRequested += OnAddEventRequested;
             _trackArea.OnAddWaveEventRequested += OnAddWaveEventRequested;
             _trackArea.OnBlockDoubleClicked += OnBlockDoubleClicked;
+            _trackArea.OnBlockSelected += OnBlockSelectedGeneric;
             _mainSplit.Add(_trackArea.Root);
 
             Root.Add(_mainSplit);
@@ -1602,7 +1603,10 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     // Refresh the BossFight view after override revert
                     var seg = bfLayer.Segment;
-                    _trackArea.SetLayer(new BossFightLayer(seg, _catalog, _library));
+                    var newBfLayer = new BossFightLayer(seg, _catalog, _library);
+                    _currentLayer = newBfLayer;
+                    WireLayerToTrackArea(newBfLayer);
+                    _trackArea.SetLayer(newBfLayer);
                     LoadBossFightPreview(seg);
                     RebuildBreadcrumb();
                 };
@@ -2176,6 +2180,33 @@ namespace STGEngine.Editor.UI.Timeline
             Root.panel.visualTree.Add(picker);
         }
 
+        /// <summary>
+        /// Generic block selection handler. For non-MidStage layers (BossFight, SpellCardDetail, Wave, etc.),
+        /// delegates to the current layer's BuildPropertiesPanel. MidStage blocks are handled by the
+        /// legacy OnEventSelected path.
+        /// </summary>
+        private void OnBlockSelectedGeneric(ITimelineBlock block)
+        {
+            // Skip if current layer is MidStage — legacy OnEventSelected handles it
+            if (_currentLayer is MidStageLayer) return;
+            // Skip if we're in the legacy segment-based view (no _currentLayer set yet)
+            if (_currentLayer == null) return;
+
+            _propertyContent.Clear();
+            if (_patternEditor != null)
+            {
+                _patternEditor.Commands.OnStateChanged -= OnPatternEditorChanged;
+                _patternEditor.Dispose();
+            }
+            _patternEditor = null;
+            _propStartField = null;
+            _propDurField = null;
+            _selectedEvent = null;
+            _selectedTimelineEvent = null;
+
+            _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+        }
+
         private void OnEventSelected(TimelineEvent evt)
         {
             _propertyContent.Clear();
@@ -2701,12 +2732,28 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnStageDataChanged()
         {
+            // Structural change: force the current layer to rebuild its block list from data
+            InvalidateCurrentLayerBlocks();
             _trackArea.RebuildBlocks();
+        }
+
+        /// <summary>
+        /// Tell the current layer to rebuild its internal block list.
+        /// Called before RebuildBlocks() when the underlying data structure has changed
+        /// (add/remove events, spell cards, etc.).
+        /// </summary>
+        private void InvalidateCurrentLayerBlocks()
+        {
+            if (_currentLayer is BossFightLayer bf) bf.InvalidateBlocks();
+            else if (_currentLayer is MidStageLayer ml) ml.InvalidateBlocks();
+            else if (_currentLayer is SpellCardDetailLayer sc) sc.InvalidateBlocks();
+            else if (_currentLayer is StageLayer sl) sl.InvalidateBlocks();
+            else if (_currentLayer is WaveLayer wl) wl.InvalidateBlocks();
         }
 
         private void OnCommandStateChanged()
         {
-            _trackArea.RebuildBlocks();
+            _trackArea.RefreshBlockPositions();
         }
 
         /// <summary>

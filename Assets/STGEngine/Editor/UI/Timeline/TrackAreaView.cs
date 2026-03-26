@@ -59,6 +59,9 @@ namespace STGEngine.Editor.UI.Timeline
         private const float TrackPadding = 4f;
         private float _currentPlayTime;
 
+        // Double-click: track which block was last clicked
+        private ITimelineBlock _lastClickedBlock;
+
         public float SnapPlayheadThreshold { get; set; }
         public float SnapGridSize { get; set; }
 
@@ -506,14 +509,16 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 if (e.button == 0 && !IsOverResizeHandle(e, element))
                 {
-                    // Double-click detection
-                    if (e.clickCount == 2)
+                    // Double-click detection: must be same block as last click
+                    if (e.clickCount == 2 && _lastClickedBlock == blk)
                     {
+                        _lastClickedBlock = null;
                         OnBlockDoubleClicked?.Invoke(blk);
                         e.StopPropagation();
                         return;
                     }
 
+                    _lastClickedBlock = blk;
                     SelectBlock(blk);
                     if (blk.CanMove)
                     {
@@ -681,8 +686,10 @@ namespace STGEngine.Editor.UI.Timeline
                         v => blk.StartTime = v,
                         newVal);
                     _commandStack.Execute(cmd);
-                    OnBlocksChanged?.Invoke();
-                    OnEventsChanged?.Invoke();
+                    // Note: OnStateChanged → RefreshBlockPositions handles UI update.
+                    // Legacy OnEventValuesChanged for property panel sync:
+                    if (blk.DataSource is TimelineEvent moveEvt)
+                        OnEventValuesChanged?.Invoke(moveEvt);
                 }
             }
             else if (_dragMode == DragMode.Resize)
@@ -698,8 +705,9 @@ namespace STGEngine.Editor.UI.Timeline
                         v => blk.Duration = v,
                         newVal);
                     _commandStack.Execute(cmd);
-                    OnBlocksChanged?.Invoke();
-                    OnEventsChanged?.Invoke();
+                    // Legacy bridge for property panel sync:
+                    if (blk.DataSource is TimelineEvent resizeEvt)
+                        OnEventValuesChanged?.Invoke(resizeEvt);
                 }
             }
 
@@ -995,6 +1003,15 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         // ─── Layout Helpers ───
+
+        /// <summary>
+        /// Update visual positions of all blocks without rebuilding the block list.
+        /// Use this for property changes (undo/redo) that don't alter the block structure.
+        /// </summary>
+        public void RefreshBlockPositions()
+        {
+            UpdateAllBlockPositions();
+        }
 
         private void UpdateAllBlockPositions()
         {

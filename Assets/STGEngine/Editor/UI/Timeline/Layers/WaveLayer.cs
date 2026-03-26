@@ -162,8 +162,13 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public IReadOnlyList<ITimelineBlock> GetAllBlocks()
         {
-            RebuildBlockList();
             return _blocks;
+        }
+
+        /// <summary>Force rebuild of block list from wave enemies.</summary>
+        public void InvalidateBlocks()
+        {
+            RebuildBlockList();
         }
 
         // ── Timeline parameters ──
