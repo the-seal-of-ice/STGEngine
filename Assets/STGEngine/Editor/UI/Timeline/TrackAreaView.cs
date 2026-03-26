@@ -39,6 +39,13 @@ namespace STGEngine.Editor.UI.Timeline
         private const float MinPPS = 15f;
         private const float MaxPPS = 300f;
 
+        // Edge-scroll during drag
+        private const float EdgeScrollMargin = 30f;  // px from edge to trigger scroll
+        private const float EdgeScrollSpeed = 200f;   // px/sec base scroll speed
+        private const long EdgeScrollIntervalMs = 30;  // timer tick interval
+        private IVisualElementScheduledItem _edgeScrollTimer;
+        private float _lastEdgeScrollMouseX;           // track area local X of last mouse pos
+
         private readonly List<BlockInfo> _blocks = new();
         private ITimelineBlock _selectedBlock;
 
@@ -216,6 +223,76 @@ namespace STGEngine.Editor.UI.Timeline
             _blocks.Clear();
         }
 
+        /// <summary>
+        /// Rebuild blocks to refresh all thumbnails with fresh data.
+        /// Called when pattern data changes (emitter/modifier edits).
+        /// </summary>
+        public void InvalidateThumbnails()
+        {
+            RebuildBlocks();
+        }
+
+        // ─── Thumbnail Helpers ───
+
+        /// <summary>
+        /// Create a small thumbnail icon with hover-to-enlarge popup.
+        /// </summary>
+        private VisualElement CreateThumbnailIcon(float size, System.Action<Painter2D, float, float> drawAction)
+        {
+            var icon = new VisualElement();
+            icon.style.width = size;
+            icon.style.height = size;
+            icon.style.marginLeft = 2;
+            icon.style.flexShrink = 0;
+            icon.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.6f);
+            icon.style.borderTopLeftRadius = icon.style.borderTopRightRadius =
+                icon.style.borderBottomLeftRadius = icon.style.borderBottomRightRadius = 2;
+            icon.generateVisualContent += ctx =>
+            {
+                float w = icon.resolvedStyle.width;
+                float h = icon.resolvedStyle.height;
+                if (w > 0f && h > 0f)
+                    drawAction(ctx.painter2D, w, h);
+            };
+
+            VisualElement popup = null;
+            icon.RegisterCallback<MouseEnterEvent>(_ =>
+            {
+                if (popup != null) return;
+                float popupSize = 120f;
+                popup = new VisualElement();
+                popup.style.position = Position.Absolute;
+                popup.style.width = popupSize;
+                popup.style.height = popupSize;
+                popup.style.backgroundColor = new Color(0.12f, 0.12f, 0.15f, 0.95f);
+                popup.style.borderTopWidth = popup.style.borderBottomWidth =
+                    popup.style.borderLeftWidth = popup.style.borderRightWidth = 1;
+                popup.style.borderTopColor = popup.style.borderBottomColor =
+                    popup.style.borderLeftColor = popup.style.borderRightColor = new Color(0.4f, 0.4f, 0.5f);
+                popup.style.borderTopLeftRadius = popup.style.borderTopRightRadius =
+                    popup.style.borderBottomLeftRadius = popup.style.borderBottomRightRadius = 4;
+                popup.pickingMode = PickingMode.Ignore;
+
+                var iconWorld = icon.worldBound;
+                popup.style.left = iconWorld.x;
+                popup.style.top = iconWorld.y - popupSize - 4;
+
+                popup.generateVisualContent += ctx =>
+                {
+                    drawAction(ctx.painter2D, popupSize, popupSize);
+                };
+
+                Root.panel?.visualTree?.Add(popup);
+            });
+            icon.RegisterCallback<MouseLeaveEvent>(_ =>
+            {
+                popup?.RemoveFromHierarchy();
+                popup = null;
+            });
+
+            return icon;
+        }
+
         // ─── Block Creation ───
 
         private void CreateBlock(ITimelineBlock blk, int row)
@@ -258,60 +335,119 @@ namespace STGEngine.Editor.UI.Timeline
             if (blk.HasThumbnail && blk.ThumbnailInline)
             {
                 float thumbSize = TrackRowHeight - 10;
-                var thumbIcon = new VisualElement();
-                thumbIcon.style.width = thumbSize;
-                thumbIcon.style.height = thumbSize;
-                thumbIcon.style.marginLeft = 4;
-                thumbIcon.style.flexShrink = 0;
-                thumbIcon.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.6f);
-                thumbIcon.style.borderTopLeftRadius = thumbIcon.style.borderTopRightRadius =
-                    thumbIcon.style.borderBottomLeftRadius = thumbIcon.style.borderBottomRightRadius = 2;
-                thumbIcon.generateVisualContent += ctx =>
+
+                // Icon 1: Emitter-only thumbnail
+                contentRow.Add(CreateThumbnailIcon(thumbSize, blk.DrawThumbnail));
+
+                // Modifier thumbnails (separate icons)
+                if (blk is IModifierThumbnailProvider modProvider && modProvider.HasModifierThumbnails)
                 {
-                    float w = thumbIcon.resolvedStyle.width;
-                    float h = thumbIcon.resolvedStyle.height;
-                    if (w > 0f && h > 0f)
-                        blk.DrawThumbnail(ctx.painter2D, w, h);
-                };
+                    int modCount = modProvider.ModifierThumbnailCount;
 
-                // Hover: show enlarged popup
-                VisualElement popup = null;
-                thumbIcon.RegisterCallback<MouseEnterEvent>(_ =>
-                {
-                    if (popup != null) return;
-                    float popupSize = 120f;
-                    popup = new VisualElement();
-                    popup.style.position = Position.Absolute;
-                    popup.style.width = popupSize;
-                    popup.style.height = popupSize;
-                    popup.style.backgroundColor = new Color(0.12f, 0.12f, 0.15f, 0.95f);
-                    popup.style.borderTopWidth = popup.style.borderBottomWidth =
-                        popup.style.borderLeftWidth = popup.style.borderRightWidth = 1;
-                    popup.style.borderTopColor = popup.style.borderBottomColor =
-                        popup.style.borderLeftColor = popup.style.borderRightColor = new Color(0.4f, 0.4f, 0.5f);
-                    popup.style.borderTopLeftRadius = popup.style.borderTopRightRadius =
-                        popup.style.borderBottomLeftRadius = popup.style.borderBottomRightRadius = 4;
-                    popup.pickingMode = PickingMode.Ignore;
-
-                    // Position popup above the icon
-                    var iconWorld = thumbIcon.worldBound;
-                    popup.style.left = iconWorld.x;
-                    popup.style.top = iconWorld.y - popupSize - 4;
-
-                    popup.generateVisualContent += ctx =>
+                    // Icon 2: First modifier (single bullet + first modifier)
+                    // Hover expands to show all per-modifier thumbnails
+                    if (modCount > 0)
                     {
-                        blk.DrawThumbnail(ctx.painter2D, popupSize, popupSize);
-                    };
+                        var modIcon = new VisualElement();
+                        modIcon.style.width = thumbSize;
+                        modIcon.style.height = thumbSize;
+                        modIcon.style.marginLeft = 2;
+                        modIcon.style.flexShrink = 0;
+                        modIcon.style.backgroundColor = new Color(0.08f, 0.1f, 0.14f, 0.7f);
+                        modIcon.style.borderTopLeftRadius = modIcon.style.borderTopRightRadius =
+                            modIcon.style.borderBottomLeftRadius = modIcon.style.borderBottomRightRadius = 2;
+                        modIcon.style.borderLeftWidth = modIcon.style.borderRightWidth =
+                            modIcon.style.borderTopWidth = modIcon.style.borderBottomWidth = 1;
+                        modIcon.style.borderLeftColor = modIcon.style.borderRightColor =
+                            modIcon.style.borderTopColor = modIcon.style.borderBottomColor =
+                                new Color(0.4f, 0.5f, 0.6f, 0.5f);
 
-                    Root.panel?.visualTree?.Add(popup);
-                });
-                thumbIcon.RegisterCallback<MouseLeaveEvent>(_ =>
-                {
-                    popup?.RemoveFromHierarchy();
-                    popup = null;
-                });
+                        // Draw first modifier inline
+                        var provider = modProvider; // capture for closure
+                        modIcon.generateVisualContent += ctx =>
+                        {
+                            float w = modIcon.resolvedStyle.width;
+                            float h = modIcon.resolvedStyle.height;
+                            if (w > 0f && h > 0f)
+                                provider.DrawModifierThumbnail(ctx.painter2D, w, h, 0);
+                        };
 
-                contentRow.Add(thumbIcon);
+                        // Hover: show all per-modifier thumbnails in a horizontal popup
+                        VisualElement modPopup = null;
+                        modIcon.RegisterCallback<MouseEnterEvent>(_ =>
+                        {
+                            if (modPopup != null) return;
+                            float popupSize = 120f;
+                            float popupW = popupSize * modCount + (modCount - 1) * 2f;
+
+                            modPopup = new VisualElement();
+                            modPopup.style.position = Position.Absolute;
+                            modPopup.style.flexDirection = FlexDirection.Row;
+                            modPopup.style.width = popupW;
+                            modPopup.style.height = popupSize + 16f; // extra for label
+                            modPopup.style.backgroundColor = new Color(0.12f, 0.12f, 0.15f, 0.95f);
+                            modPopup.style.borderTopWidth = modPopup.style.borderBottomWidth =
+                                modPopup.style.borderLeftWidth = modPopup.style.borderRightWidth = 1;
+                            modPopup.style.borderTopColor = modPopup.style.borderBottomColor =
+                                modPopup.style.borderLeftColor = modPopup.style.borderRightColor =
+                                    new Color(0.4f, 0.4f, 0.5f);
+                            modPopup.style.borderTopLeftRadius = modPopup.style.borderTopRightRadius =
+                                modPopup.style.borderBottomLeftRadius = modPopup.style.borderBottomRightRadius = 4;
+                            modPopup.style.paddingLeft = modPopup.style.paddingRight =
+                                modPopup.style.paddingTop = modPopup.style.paddingBottom = 2;
+                            modPopup.pickingMode = PickingMode.Ignore;
+
+                            var iconWorld = modIcon.worldBound;
+                            modPopup.style.left = iconWorld.x;
+                            modPopup.style.top = iconWorld.y - popupSize - 20f;
+
+                            for (int mi = 0; mi < modCount; mi++)
+                            {
+                                int capturedMi = mi;
+                                var cell = new VisualElement();
+                                cell.style.width = popupSize;
+                                cell.style.flexDirection = FlexDirection.Column;
+                                if (mi > 0) cell.style.marginLeft = 2;
+
+                                // Modifier label
+                                var modLabel = new Label(provider.GetModifierLabel(mi));
+                                modLabel.style.fontSize = 9;
+                                modLabel.style.color = new Color(0.7f, 0.8f, 0.9f);
+                                modLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                                modLabel.style.height = 14;
+                                cell.Add(modLabel);
+
+                                // Thumbnail canvas
+                                var canvas = new VisualElement();
+                                canvas.style.width = popupSize;
+                                canvas.style.height = popupSize;
+                                canvas.style.backgroundColor = new Color(0.08f, 0.08f, 0.1f, 0.8f);
+                                canvas.generateVisualContent += ctx =>
+                                {
+                                    provider.DrawModifierThumbnail(ctx.painter2D, popupSize, popupSize, capturedMi);
+                                };
+                                cell.Add(canvas);
+
+                                modPopup.Add(cell);
+                            }
+
+                            Root.panel?.visualTree?.Add(modPopup);
+                        });
+                        modIcon.RegisterCallback<MouseLeaveEvent>(_ =>
+                        {
+                            modPopup?.RemoveFromHierarchy();
+                            modPopup = null;
+                        });
+
+                        contentRow.Add(modIcon);
+                    }
+
+                    // Icon 3: All bullets + all modifiers
+                    if (modProvider.HasAllBulletsThumbnail)
+                    {
+                        contentRow.Add(CreateThumbnailIcon(thumbSize, modProvider.DrawAllBulletsThumbnail));
+                    }
+                }
             }
 
             element.Add(contentRow);
@@ -507,6 +643,8 @@ namespace STGEngine.Editor.UI.Timeline
             // Legacy bridge
             if (blk.DataSource is TimelineEvent te)
                 OnEventValuesChanged?.Invoke(te);
+
+            UpdateEdgeScroll(e.mousePosition);
         }
 
         private void OnDragEnd(MouseUpEvent e)
@@ -556,6 +694,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             _dragMode = DragMode.None;
             _dragBlockInfo = default;
+            StopEdgeScroll();
             UpdateAllBlockPositions();
         }
 
@@ -605,6 +744,69 @@ namespace STGEngine.Editor.UI.Timeline
                         new Color(0.4f, 0.4f, 0.4f);
                 element.style.borderTopWidth = element.style.borderBottomWidth =
                     element.style.borderLeftWidth = element.style.borderRightWidth = 1;
+            }
+        }
+
+        // ─── Edge Scroll ───
+
+        /// <summary>
+        /// Check if mouse is near the left/right edge of the track area and start/stop
+        /// auto-scrolling accordingly. Call from any drag-move handler.
+        /// </summary>
+        private void UpdateEdgeScroll(Vector2 mouseWorldPos)
+        {
+            float localX = _trackContent.WorldToLocal(mouseWorldPos).x;
+            float trackWidth = _trackContent.resolvedStyle.width;
+            _lastEdgeScrollMouseX = localX;
+
+            float scrollDir = 0f;
+            if (localX < EdgeScrollMargin)
+                scrollDir = -1f;
+            else if (localX > trackWidth - EdgeScrollMargin)
+                scrollDir = 1f;
+
+            if (scrollDir != 0f)
+            {
+                if (_edgeScrollTimer == null)
+                {
+                    _edgeScrollTimer = _trackContent.schedule.Execute(() =>
+                    {
+                        float lx = _lastEdgeScrollMouseX;
+                        float tw = _trackContent.resolvedStyle.width;
+                        float dir = 0f;
+                        if (lx < EdgeScrollMargin) dir = -1f;
+                        else if (lx > tw - EdgeScrollMargin) dir = 1f;
+
+                        if (dir == 0f) return;
+
+                        float deltaPx = dir * EdgeScrollSpeed * (EdgeScrollIntervalMs / 1000f);
+                        _scrollOffset = Mathf.Max(0f, _scrollOffset + deltaPx);
+
+                        // During scrub, also update the seek position
+                        if (_dragMode == DragMode.Scrub)
+                        {
+                            float time = (lx + _scrollOffset) / _pixelsPerSecond;
+                            OnSeekRequested?.Invoke(Mathf.Max(0f, time));
+                        }
+
+                        UpdateAllBlockPositions();
+                        UpdatePlayhead();
+                        _rulerArea.MarkDirtyRepaint();
+                    }).Every(EdgeScrollIntervalMs);
+                }
+            }
+            else
+            {
+                StopEdgeScroll();
+            }
+        }
+
+        private void StopEdgeScroll()
+        {
+            if (_edgeScrollTimer != null)
+            {
+                _edgeScrollTimer.Pause();
+                _edgeScrollTimer = null;
             }
         }
 
@@ -760,6 +962,7 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (_dragMode != DragMode.Scrub) return;
             SeekFromRuler(e.mousePosition);
+            UpdateEdgeScroll(e.mousePosition);
         }
 
         private void OnRulerMouseUp(MouseUpEvent e)
@@ -770,6 +973,7 @@ namespace STGEngine.Editor.UI.Timeline
             _rulerArea.UnregisterCallback<MouseUpEvent>(OnRulerMouseUp);
             _rulerArea.ReleaseMouse();
             _dragMode = DragMode.None;
+            StopEdgeScroll();
         }
 
         private void SeekFromRuler(Vector2 mousePosition)

@@ -23,6 +23,9 @@ enemy_types:
   - id: grunt_a
     name: "小兵A"
     file: EnemyTypes/grunt_a.yaml
+  - id: new_enemy
+    name: "New Enemy"
+    file: EnemyTypes/new_enemy.yaml
 waves:
   - id: wave_01
     name: "第一波"
@@ -35,7 +38,7 @@ spell_cards:
     name: "星符「流星雨」"
     file: SpellCards/spell_01.yaml
   - id: spell_02
-    name: "幻符「螺旋追踪弾」"
+    name: "幻符「螺旋追踪弹」"
     file: SpellCards/spell_02.yaml
   - id: spell_03
     name: "弾符「円錐反射陣」"

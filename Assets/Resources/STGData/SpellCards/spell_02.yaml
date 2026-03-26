@@ -4,7 +4,7 @@ patterns:
 - pattern_id: demo_sphere_homing
   delay: 0
   duration: 12
-  offset: {x: 0, y: 0, z: 0}
+  offset: {x: 3, y: 0, z: 0}
 - pattern_id: demo_ring_wave
   delay: 6
   duration: 10
@@ -24,3 +24,5 @@ boss_path:
   position: {x: 0, y: 7, z: 0}
 time_limit: 25
 health: 1500
+design_estimate: -1
+transition_duration: 1.5

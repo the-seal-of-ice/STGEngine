@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
+using STGEngine.Core.Modifiers;
 using STGEngine.Core.Timeline;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Bullet;
@@ -12,14 +13,19 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 {
     /// <summary>
     /// ITimelineBlock wrapper for a SpellCardPattern within a SpellCard.
-    /// Uses shared TrajectoryThumbnailRenderer for pseudo-3D thumbnails.
+    /// Uses shared TrajectoryThumbnailRenderer for orthographic thumbnails.
+    /// Implements IModifierThumbnailProvider for per-modifier icons.
     /// </summary>
-    public class SpellCardPatternBlock : ITimelineBlock
+    public class SpellCardPatternBlock : ITimelineBlock, IModifierThumbnailProvider
     {
         private readonly SpellCardPattern _pattern;
         private readonly BulletPattern _resolvedPattern;
-        private List<TrajectoryThumbnailRenderer.TrajPoint[]> _trajectories;
         private bool _trajectoryComputed;
+
+        private List<TrajectoryThumbnailRenderer.TrajPoint[]> _emitterTrajectories;
+        private List<List<TrajectoryThumbnailRenderer.TrajPoint[]>> _perModifierTrajectories;
+        private List<TrajectoryThumbnailRenderer.TrajPoint[]> _allModsTrajectories;
+        private List<string> _modifierLabels;
 
         public SpellCardPatternBlock(SpellCardPattern pattern, BulletPattern resolvedPattern = null)
         {
@@ -56,6 +62,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public float DesignEstimate { get => -1f; set { } }
         public object DataSource => _pattern;
 
+        // ── ITimelineBlock Thumbnail (emitter only) ──
+
         public bool HasThumbnail
         {
             get
@@ -63,7 +71,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 if (_resolvedPattern != null)
                 {
                     EnsureComputed();
-                    return _trajectories != null && _trajectories.Count > 0;
+                    return _emitterTrajectories != null && _emitterTrajectories.Count > 0;
                 }
                 return false;
             }
@@ -73,16 +81,81 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
         {
-            if (_trajectories == null || _trajectories.Count == 0) return;
-            TrajectoryThumbnailRenderer.Draw(painter, blockWidth, blockHeight, _trajectories);
+            if (_emitterTrajectories == null || _emitterTrajectories.Count == 0) return;
+            TrajectoryThumbnailRenderer.Draw(painter, blockWidth, blockHeight, _emitterTrajectories);
         }
+
+        // ── IModifierThumbnailProvider ──
+
+        public bool HasModifierThumbnails =>
+            _perModifierTrajectories != null && _perModifierTrajectories.Count > 0;
+
+        public int ModifierThumbnailCount =>
+            _perModifierTrajectories?.Count ?? 0;
+
+        public void DrawModifierThumbnail(Painter2D painter, float w, float h, int modifierIndex)
+        {
+            if (_perModifierTrajectories == null || modifierIndex < 0 ||
+                modifierIndex >= _perModifierTrajectories.Count) return;
+            var trajs = _perModifierTrajectories[modifierIndex];
+            if (trajs != null && trajs.Count > 0)
+                TrajectoryThumbnailRenderer.Draw(painter, w, h, trajs);
+        }
+
+        public string GetModifierLabel(int modifierIndex)
+        {
+            if (_modifierLabels == null || modifierIndex < 0 ||
+                modifierIndex >= _modifierLabels.Count) return "?";
+            return _modifierLabels[modifierIndex];
+        }
+
+        public bool HasAllBulletsThumbnail =>
+            _allModsTrajectories != null && _allModsTrajectories.Count > 0;
+
+        public void DrawAllBulletsThumbnail(Painter2D painter, float w, float h)
+        {
+            if (_allModsTrajectories == null || _allModsTrajectories.Count == 0) return;
+            TrajectoryThumbnailRenderer.Draw(painter, w, h, _allModsTrajectories);
+        }
+
+        public void InvalidateThumbnailCache()
+        {
+            _trajectoryComputed = false;
+            _emitterTrajectories = null;
+            _perModifierTrajectories = null;
+            _allModsTrajectories = null;
+            _modifierLabels = null;
+        }
+
+        // ── Compute ──
 
         private void EnsureComputed()
         {
             if (_trajectoryComputed) return;
             _trajectoryComputed = true;
+            if (_resolvedPattern == null) return;
+
             float sampleDuration = Mathf.Max(10f, (_pattern.Duration > 0f ? _pattern.Duration : 5f) * 3f);
-            _trajectories = TrajectoryThumbnailRenderer.Compute(_resolvedPattern, sampleDuration);
+            float modSampleDuration = Mathf.Max(2f, _pattern.Duration > 0f ? _pattern.Duration : 3f);
+
+            _emitterTrajectories = TrajectoryThumbnailRenderer.ComputeEmitterOnly(_resolvedPattern, sampleDuration);
+
+            if (_resolvedPattern.Modifiers != null && _resolvedPattern.Modifiers.Count > 0)
+            {
+                _perModifierTrajectories = new List<List<TrajectoryThumbnailRenderer.TrajPoint[]>>();
+                _modifierLabels = new List<string>();
+
+                foreach (var mod in _resolvedPattern.Modifiers)
+                {
+                    var trajs = TrajectoryThumbnailRenderer.ComputeSingleBulletWithModifier(
+                        _resolvedPattern, mod, modSampleDuration);
+                    _perModifierTrajectories.Add(trajs);
+                    _modifierLabels.Add(mod.TypeName);
+                }
+
+                _allModsTrajectories = TrajectoryThumbnailRenderer.ComputeAllBulletsAllModifiers(
+                    _resolvedPattern, modSampleDuration);
+            }
         }
     }
 

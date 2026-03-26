@@ -10,6 +10,8 @@ using STGEngine.Core.Modifiers;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.Commands;
 using STGEngine.Editor.UI.FileManager;
+using STGEngine.Editor.UI.Timeline.Layers;
+using STGEngine.Runtime.Bullet;
 using STGEngine.Runtime.Preview;
 
 namespace STGEngine.Editor.UI
@@ -60,6 +62,12 @@ namespace STGEngine.Editor.UI
         private Button _playPauseBtn;
         private Slider _speedSlider;
         private FloatField _speedField;
+
+        // Trajectory thumbnails (live-updating)
+        private const float ThumbnailSize = 100f;
+        private VisualElement _emitterThumbnail;
+        private VisualElement _allModsThumbnail;
+        private readonly List<VisualElement> _perModifierThumbnails = new();
 
         // Factories
         private static readonly Dictionary<string, Func<IEmitter>> EmitterFactories = new()
@@ -422,6 +430,7 @@ namespace STGEngine.Editor.UI
 
             _previewer.SetDefaultPattern(_pattern);
             UpdateTimeSliderRange();
+            RefreshThumbnails();
         }
 
         private void BindPatternFields()
@@ -556,6 +565,10 @@ namespace STGEngine.Editor.UI
             }
 
             ApplyLightTextTheme(_emitterParamsContainer);
+
+            // Emitter trajectory thumbnail (below emitter params)
+            _emitterThumbnail = CreateTrajectoryThumbnail(ThumbnailSize);
+            _emitterParamsContainer.Add(_emitterThumbnail);
         }
 
         // ─── Modifiers ───
@@ -576,6 +589,8 @@ namespace STGEngine.Editor.UI
         {
             DisposeModifierBinders();
             _modifierListContainer.Clear();
+            _perModifierThumbnails.Clear();
+            _allModsThumbnail = null;
 
             for (int i = 0; i < _pattern.Modifiers.Count; i++)
             {
@@ -726,6 +741,25 @@ namespace STGEngine.Editor.UI
                 }
 
                 _modifierListContainer.Add(container);
+
+                // Per-modifier trajectory thumbnail
+                var modThumb = CreateTrajectoryThumbnail(ThumbnailSize);
+                container.Add(modThumb);
+                _perModifierThumbnails.Add(modThumb);
+            }
+
+            // All-bullets-all-modifiers thumbnail (after all modifier blocks)
+            if (_pattern.Modifiers.Count > 0)
+            {
+                var allLabel = new Label("All Bullets + All Modifiers");
+                allLabel.style.fontSize = 10;
+                allLabel.style.color = new Color(0.6f, 0.7f, 0.8f);
+                allLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                allLabel.style.marginTop = 4;
+                _modifierListContainer.Add(allLabel);
+
+                _allModsThumbnail = CreateTrajectoryThumbnail(ThumbnailSize);
+                _modifierListContainer.Add(_allModsThumbnail);
             }
 
             ApplyLightTextTheme(_modifierListContainer);
@@ -858,6 +892,95 @@ namespace STGEngine.Editor.UI
             ForceApplyTheme(_root);
 
             _previewer.ForceRefresh();
+            RefreshThumbnails();
+        }
+
+        // ─── Trajectory Thumbnails ───
+
+        /// <summary>
+        /// Recompute and redraw all trajectory thumbnails.
+        /// Called on every data change (CommandStack state change).
+        /// </summary>
+        private void RefreshThumbnails()
+        {
+            if (_pattern?.Emitter == null) return;
+
+            float sampleDuration = Mathf.Max(10f, (_pattern.Duration > 0f ? _pattern.Duration : 5f) * 3f);
+            // Shorter duration for modifier thumbnails so the effect is more visible
+            float modSampleDuration = Mathf.Max(2f, _pattern.Duration > 0f ? _pattern.Duration : 3f);
+
+            // Emitter-only thumbnail
+            var emitterTrajs = TrajectoryThumbnailRenderer.ComputeEmitterOnly(_pattern, sampleDuration);
+            if (_emitterThumbnail != null && emitterTrajs != null && emitterTrajs.Count > 0)
+            {
+                _emitterThumbnail.userData = emitterTrajs;
+                _emitterThumbnail.MarkDirtyRepaint();
+            }
+
+            // Per-modifier thumbnails
+            if (_pattern.Modifiers != null)
+            {
+                for (int i = 0; i < _pattern.Modifiers.Count && i < _perModifierThumbnails.Count; i++)
+                {
+                    var mod = _pattern.Modifiers[i];
+                    var modTrajs = TrajectoryThumbnailRenderer.ComputeSingleBulletWithModifier(
+                        _pattern, mod, modSampleDuration);
+                    var thumb = _perModifierThumbnails[i];
+                    if (thumb != null && modTrajs != null && modTrajs.Count > 0)
+                    {
+                        thumb.userData = modTrajs;
+                        thumb.MarkDirtyRepaint();
+                    }
+                }
+            }
+
+            // All-bullets-all-modifiers thumbnail
+            if (_allModsThumbnail != null && _pattern.Modifiers != null && _pattern.Modifiers.Count > 0)
+            {
+                var allTrajs = TrajectoryThumbnailRenderer.ComputeAllBulletsAllModifiers(
+                    _pattern, modSampleDuration);
+                if (allTrajs != null && allTrajs.Count > 0)
+                {
+                    _allModsThumbnail.userData = allTrajs;
+                    _allModsThumbnail.MarkDirtyRepaint();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Create a trajectory thumbnail VisualElement with dark background.
+        /// Uses userData to store the trajectory data; generateVisualContent reads it.
+        /// </summary>
+        private static VisualElement CreateTrajectoryThumbnail(float size)
+        {
+            var thumb = new VisualElement();
+            thumb.style.width = size;
+            thumb.style.height = size;
+            thumb.style.marginTop = 4;
+            thumb.style.marginBottom = 4;
+            thumb.style.alignSelf = Align.Center;
+            thumb.style.backgroundColor = new Color(0.08f, 0.08f, 0.1f, 0.8f);
+            thumb.style.borderTopLeftRadius = thumb.style.borderTopRightRadius =
+                thumb.style.borderBottomLeftRadius = thumb.style.borderBottomRightRadius = 4;
+            thumb.style.borderTopWidth = thumb.style.borderBottomWidth =
+                thumb.style.borderLeftWidth = thumb.style.borderRightWidth = 1;
+            thumb.style.borderTopColor = thumb.style.borderBottomColor =
+                thumb.style.borderLeftColor = thumb.style.borderRightColor =
+                    new Color(0.3f, 0.3f, 0.4f, 0.6f);
+
+            thumb.generateVisualContent += ctx =>
+            {
+                if (thumb.userData is List<TrajectoryThumbnailRenderer.TrajPoint[]> trajs &&
+                    trajs.Count > 0)
+                {
+                    float w = thumb.resolvedStyle.width;
+                    float h = thumb.resolvedStyle.height;
+                    if (w > 0f && h > 0f)
+                        TrajectoryThumbnailRenderer.Draw(ctx.painter2D, w, h, trajs);
+                }
+            };
+
+            return thumb;
         }
 
         // ─── Helpers ───

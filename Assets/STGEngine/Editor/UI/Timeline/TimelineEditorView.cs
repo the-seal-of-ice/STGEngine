@@ -2597,6 +2597,7 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (_selectedEvent != null)
                 _playback.RefreshEvent(_selectedEvent);
+            _trackArea.InvalidateThumbnails();
         }
 
         /// <summary>

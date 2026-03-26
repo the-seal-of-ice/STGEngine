@@ -10,6 +10,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     /// <summary>
     /// ITimelineBlock wrapper for an EnemyInstance within a Wave.
     /// StartTime = SpawnDelay, Duration = estimated from path length or default.
+    /// Thumbnail: top-down (XZ) path polyline with time coloring.
     /// </summary>
     public class EnemyInstanceBlock : ITimelineBlock
     {
@@ -60,9 +61,73 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public object DataSource => _enemy;
 
-        public bool HasThumbnail => false;
-        public bool ThumbnailInline => false;
-        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight) { }
+        // ── Thumbnail: top-down path polyline ──
+
+        public bool HasThumbnail => _enemy.Path != null && _enemy.Path.Count >= 2;
+        public bool ThumbnailInline => true;
+
+        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
+        {
+            var path = _enemy.Path;
+            if (path == null || path.Count < 2) return;
+
+            float margin = 2f;
+            float drawW = blockWidth - margin * 2;
+            float drawH = blockHeight - margin * 2;
+            if (drawW < 4f || drawH < 4f) return;
+
+            // Top-down projection: X → screen X, Z → screen Y
+            float xMin = float.MaxValue, xMax = float.MinValue;
+            float zMin = float.MaxValue, zMax = float.MinValue;
+            float totalTime = path[path.Count - 1].Time;
+            if (totalTime < 0.001f) totalTime = 1f;
+
+            foreach (var kf in path)
+            {
+                if (kf.Position.x < xMin) xMin = kf.Position.x;
+                if (kf.Position.x > xMax) xMax = kf.Position.x;
+                if (kf.Position.z < zMin) zMin = kf.Position.z;
+                if (kf.Position.z > zMax) zMax = kf.Position.z;
+            }
+
+            float bw = xMax - xMin;
+            float bh = zMax - zMin;
+            if (bw < 0.01f) bw = 1f;
+            if (bh < 0.01f) bh = 1f;
+
+            float scale = Mathf.Min(drawW / bw, drawH / bh);
+            float offsetX = margin + (drawW - bw * scale) * 0.5f;
+            float offsetY = margin + (drawH - bh * scale) * 0.5f;
+
+            // Draw path segments with time coloring (blue → red)
+            painter.lineWidth = 1.5f;
+            for (int i = 0; i < path.Count - 1; i++)
+            {
+                float x0 = offsetX + (path[i].Position.x - xMin) * scale;
+                float y0 = offsetY + (path[i].Position.z - zMin) * scale;
+                float x1 = offsetX + (path[i + 1].Position.x - xMin) * scale;
+                float y1 = offsetY + (path[i + 1].Position.z - zMin) * scale;
+
+                float tMid = (path[i].Time + path[i + 1].Time) * 0.5f / totalTime;
+                painter.strokeColor = Color.Lerp(
+                    new Color(0.3f, 0.7f, 1f, 0.9f),  // Early: cyan-blue
+                    new Color(1f, 0.4f, 0.2f, 0.9f),  // Late: orange-red
+                    tMid);
+
+                painter.BeginPath();
+                painter.MoveTo(new Vector2(x0, y0));
+                painter.LineTo(new Vector2(x1, y1));
+                painter.Stroke();
+            }
+
+            // Draw start point marker (small filled circle)
+            float sx = offsetX + (path[0].Position.x - xMin) * scale;
+            float sy = offsetY + (path[0].Position.z - zMin) * scale;
+            painter.fillColor = new Color(0.3f, 1f, 0.3f, 0.9f); // Green start
+            painter.BeginPath();
+            painter.Arc(new Vector2(sx, sy), 2.5f, 0f, 360f);
+            painter.Fill();
+        }
     }
 
     /// <summary>
@@ -146,8 +211,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public void LoadPreview(TimelinePlaybackController playback)
         {
-            // Wave preview not implemented yet
-            playback?.LoadSegment(null);
+            // Wave layer shows enemy paths, not bullet patterns.
+            // Keep parent layer's playback state intact — do nothing here.
         }
 
         // ── Data access ──

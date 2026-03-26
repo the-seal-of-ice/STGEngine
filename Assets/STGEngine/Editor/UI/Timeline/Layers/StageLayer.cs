@@ -26,6 +26,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         private readonly CommandStack _commandStack;
         private readonly List<SegmentBlock> _blocks = new();
 
+        // Cache SpellCard TimeLimit to avoid repeated disk IO in BuildThumbnailBars
+        private readonly Dictionary<string, float> _spellCardTimeLimitCache = new();
+
         public StageLayer(Stage stage, STGCatalog catalog, PatternLibrary library, CommandStack commandStack)
         {
             _stage = stage;
@@ -340,34 +343,13 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             }
             else if (seg.Type == SegmentType.BossFight && _catalog != null)
             {
-                // Spell cards laid out sequentially
+                // Spell cards laid out sequentially (cached to avoid repeated disk IO)
                 float scOffset = 0f;
-                float totalScDur = 0f;
-                // First pass: compute total duration
-                foreach (var scId in seg.SpellCardIds)
-                {
-                    var path = _catalog.GetSpellCardPath(scId);
-                    if (!System.IO.File.Exists(path)) continue;
-                    try
-                    {
-                        var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
-                        totalScDur += sc.TimeLimit;
-                    }
-                    catch { }
-                }
-                float effectiveDur = totalScDur > 0f ? totalScDur : segDur;
 
-                // Second pass: build bars
                 foreach (var scId in seg.SpellCardIds)
                 {
-                    var path = _catalog.GetSpellCardPath(scId);
-                    if (!System.IO.File.Exists(path)) continue;
-                    SpellCard sc;
-                    try
-                    {
-                        sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
-                    }
-                    catch { continue; }
+                    float timeLimit = GetCachedSpellCardTimeLimit(scId);
+                    if (timeLimit <= 0f) continue;
 
                     int hash = scId?.GetHashCode() ?? 0;
                     float hue = 0.75f + Mathf.Abs(hash % 60) / 360f;
@@ -376,16 +358,42 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     bars.Add(new ThumbnailBar
                     {
                         NormalizedStart = Mathf.Clamp01(scOffset / segDur),
-                        NormalizedWidth = Mathf.Clamp01(sc.TimeLimit / segDur),
+                        NormalizedWidth = Mathf.Clamp01(timeLimit / segDur),
                         Color = color,
                         Row = 0
                     });
 
-                    scOffset += sc.TimeLimit;
+                    scOffset += timeLimit;
                 }
             }
 
             return bars;
+        }
+
+        private float GetCachedSpellCardTimeLimit(string scId)
+        {
+            if (_spellCardTimeLimitCache.TryGetValue(scId, out float cached))
+                return cached;
+
+            var path = _catalog.GetSpellCardPath(scId);
+            if (!System.IO.File.Exists(path))
+            {
+                _spellCardTimeLimitCache[scId] = 0f;
+                return 0f;
+            }
+
+            try
+            {
+                var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                float tl = sc.TimeLimit;
+                _spellCardTimeLimitCache[scId] = tl;
+                return tl;
+            }
+            catch
+            {
+                _spellCardTimeLimitCache[scId] = 0f;
+                return 0f;
+            }
         }
     }
 }
