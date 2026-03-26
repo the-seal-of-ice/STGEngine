@@ -339,6 +339,7 @@ namespace STGEngine.Editor.UI.Timeline
         public void SetCatalog(STGCatalog catalog)
         {
             _catalog = catalog;
+            _stageLayer?.SetCatalog(catalog);
         }
 
         /// <summary>

@@ -21,7 +21,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     public class StageLayer : ITimelineLayer
     {
         private readonly Stage _stage;
-        private readonly STGCatalog _catalog;
+        private STGCatalog _catalog;
         private readonly PatternLibrary _library;
         private readonly CommandStack _commandStack;
         private readonly List<SegmentBlock> _blocks = new();
@@ -193,6 +193,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         // ── Data access ──
 
         public Stage Stage => _stage;
+
+        /// <summary>Update catalog reference (may be null at construction, set later).</summary>
+        public void SetCatalog(STGCatalog catalog) => _catalog = catalog;
 
         // ── Segment operations (with Undo/Redo) ──
 
