@@ -223,7 +223,11 @@ namespace STGEngine.Editor.UI.Timeline
             var element = new VisualElement();
             element.style.position = Position.Absolute;
             element.style.height = TrackRowHeight - 6;
-            element.style.backgroundColor = blk.BlockColor;
+            // Lower opacity for blocks with thumbnails so child content is more visible
+            var bgColor = blk.BlockColor;
+            if (blk.HasThumbnail)
+                bgColor.a = 0.45f;
+            element.style.backgroundColor = bgColor;
             element.style.borderTopLeftRadius = element.style.borderTopRightRadius =
                 element.style.borderBottomLeftRadius = element.style.borderBottomRightRadius = 3;
             element.style.borderTopWidth = element.style.borderBottomWidth =
