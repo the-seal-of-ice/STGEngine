@@ -2306,9 +2306,10 @@ namespace STGEngine.Editor.UI.Timeline
             nameField.RegisterValueChangedCallback(e =>
             {
                 var cmd = new PropertyChangeCommand<string>(
-                    "Change Segment Name",
+                    "Rename Segment",
                     () => segment.Name, v => segment.Name = v, e.newValue);
                 _commandStack.Execute(cmd);
+                // Execute triggers OnCommandStateChanged → RebuildBlocks (updates label)
             });
             container.Add(nameField);
 
@@ -2354,7 +2355,13 @@ namespace STGEngine.Editor.UI.Timeline
             // Name
             var nameField = new TextField("Name") { value = sc.Name ?? "" };
             nameField.isDelayed = true;
-            nameField.RegisterValueChangedCallback(e => { sc.Name = e.newValue; });
+            nameField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<string>(
+                    "Rename SpellCard",
+                    () => sc.Name, v => sc.Name = v, e.newValue);
+                _commandStack.Execute(cmd);
+            });
             container.Add(nameField);
 
             // TimeLimit
@@ -2362,15 +2369,25 @@ namespace STGEngine.Editor.UI.Timeline
             tlField.isDelayed = true;
             tlField.RegisterValueChangedCallback(e =>
             {
-                sc.TimeLimit = Mathf.Max(1f, e.newValue);
-                _trackArea.RefreshBlockPositions();
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change SpellCard TimeLimit",
+                    () => sc.TimeLimit, v => sc.TimeLimit = v,
+                    Mathf.Max(1f, e.newValue));
+                _commandStack.Execute(cmd);
             });
             container.Add(tlField);
 
             // Health
             var hpField = new FloatField("Health") { value = sc.Health };
             hpField.isDelayed = true;
-            hpField.RegisterValueChangedCallback(e => { sc.Health = Mathf.Max(1f, e.newValue); });
+            hpField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change SpellCard Health",
+                    () => sc.Health, v => sc.Health = v,
+                    Mathf.Max(1f, e.newValue));
+                _commandStack.Execute(cmd);
+            });
             container.Add(hpField);
 
             // TransitionDuration
@@ -2378,8 +2395,11 @@ namespace STGEngine.Editor.UI.Timeline
             transField.isDelayed = true;
             transField.RegisterValueChangedCallback(e =>
             {
-                sc.TransitionDuration = Mathf.Max(0.1f, e.newValue);
-                _trackArea.RefreshBlockPositions();
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Transition Duration",
+                    () => sc.TransitionDuration, v => sc.TransitionDuration = v,
+                    Mathf.Max(0.1f, e.newValue));
+                _commandStack.Execute(cmd);
             });
             container.Add(transField);
 
@@ -2388,8 +2408,11 @@ namespace STGEngine.Editor.UI.Timeline
             deField.isDelayed = true;
             deField.RegisterValueChangedCallback(e =>
             {
-                sc.DesignEstimate = e.newValue;
-                _trackArea.RefreshBlockPositions();
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Design Estimate",
+                    () => sc.DesignEstimate, v => sc.DesignEstimate = v,
+                    e.newValue);
+                _commandStack.Execute(cmd);
             });
             container.Add(deField);
 
@@ -2433,8 +2456,11 @@ namespace STGEngine.Editor.UI.Timeline
             delayField.isDelayed = true;
             delayField.RegisterValueChangedCallback(e =>
             {
-                scp.Delay = Mathf.Max(0f, e.newValue);
-                _trackArea.RefreshBlockPositions();
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Pattern Delay",
+                    () => scp.Delay, v => scp.Delay = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
             });
             container.Add(delayField);
 
@@ -2443,25 +2469,49 @@ namespace STGEngine.Editor.UI.Timeline
             durField.isDelayed = true;
             durField.RegisterValueChangedCallback(e =>
             {
-                scp.Duration = Mathf.Max(0.1f, e.newValue);
-                _trackArea.RefreshBlockPositions();
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Pattern Duration",
+                    () => scp.Duration, v => scp.Duration = v,
+                    Mathf.Max(0.1f, e.newValue));
+                _commandStack.Execute(cmd);
             });
             container.Add(durField);
 
             // Offset X/Y/Z
             var ox = new FloatField("Offset X") { value = scp.Offset.x };
             ox.isDelayed = true;
-            ox.RegisterValueChangedCallback(e => { scp.Offset = new Vector3(e.newValue, scp.Offset.y, scp.Offset.z); });
+            ox.RegisterValueChangedCallback(e =>
+            {
+                var newOffset = new Vector3(e.newValue, scp.Offset.y, scp.Offset.z);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change Pattern Offset",
+                    () => scp.Offset, v => scp.Offset = v, newOffset);
+                _commandStack.Execute(cmd);
+            });
             container.Add(ox);
 
             var oy = new FloatField("Offset Y") { value = scp.Offset.y };
             oy.isDelayed = true;
-            oy.RegisterValueChangedCallback(e => { scp.Offset = new Vector3(scp.Offset.x, e.newValue, scp.Offset.z); });
+            oy.RegisterValueChangedCallback(e =>
+            {
+                var newOffset = new Vector3(scp.Offset.x, e.newValue, scp.Offset.z);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change Pattern Offset",
+                    () => scp.Offset, v => scp.Offset = v, newOffset);
+                _commandStack.Execute(cmd);
+            });
             container.Add(oy);
 
             var oz = new FloatField("Offset Z") { value = scp.Offset.z };
             oz.isDelayed = true;
-            oz.RegisterValueChangedCallback(e => { scp.Offset = new Vector3(scp.Offset.x, scp.Offset.y, e.newValue); });
+            oz.RegisterValueChangedCallback(e =>
+            {
+                var newOffset = new Vector3(scp.Offset.x, scp.Offset.y, e.newValue);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change Pattern Offset",
+                    () => scp.Offset, v => scp.Offset = v, newOffset);
+                _commandStack.Execute(cmd);
+            });
             container.Add(oz);
 
             _propertyContent.Add(container);
@@ -2488,8 +2538,11 @@ namespace STGEngine.Editor.UI.Timeline
             delayField.isDelayed = true;
             delayField.RegisterValueChangedCallback(e =>
             {
-                ei.SpawnDelay = Mathf.Max(0f, e.newValue);
-                _trackArea.RefreshBlockPositions();
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Spawn Delay",
+                    () => ei.SpawnDelay, v => ei.SpawnDelay = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
             });
             container.Add(delayField);
 
@@ -3139,7 +3192,9 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnCommandStateChanged()
         {
-            _trackArea.RefreshBlockPositions();
+            // Rebuild visual elements so labels, colors, and positions all update on undo/redo.
+            // GetAllBlocks() returns cached blocks (no disk IO), so this is safe.
+            _trackArea.RebuildBlocks();
         }
 
         /// <summary>
