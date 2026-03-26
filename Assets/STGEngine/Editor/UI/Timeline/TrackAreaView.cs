@@ -735,6 +735,20 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 // Reset visual feedback
                 _dragBlockInfo.Element.style.opacity = 1f;
+                _dragBlockInfo.Element.style.top = TrackPadding + _dragBlockInfo.Row * TrackRowHeight;
+
+                // Ignore if barely moved (treat as a click, not a reorder)
+                float dragDist = Mathf.Abs(e.mousePosition.x - _dragStartMouseX);
+                if (dragDist < 10f)
+                {
+                    // Not a real drag — just update positions and bail
+                    RecalcSequentialLayoutIfNeeded();
+                    UpdateAllBlockPositions();
+                    _dragMode = DragMode.None;
+                    _dragBlockInfo = default;
+                    StopEdgeScroll();
+                    return;
+                }
 
                 // Determine target index based on drop position.
                 // Build a "remaining blocks" layout (excluding the dragged block)
