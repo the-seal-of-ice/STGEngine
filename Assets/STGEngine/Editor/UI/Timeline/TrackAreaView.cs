@@ -242,6 +242,18 @@ namespace STGEngine.Editor.UI.Timeline
             label.style.whiteSpace = WhiteSpace.NoWrap;
             element.Add(label);
 
+            // Thumbnail (drawn first, underneath label and DesignEstimate line)
+            if (blk.HasThumbnail)
+            {
+                element.generateVisualContent += ctx =>
+                {
+                    float w = element.resolvedStyle.width;
+                    float h = element.resolvedStyle.height;
+                    if (w > 0f && h > 0f)
+                        blk.DrawThumbnail(ctx.painter2D, w, h);
+                };
+            }
+
             // DesignEstimate green line (drawn via generateVisualContent)
             float estimate = blk.DesignEstimate;
             if (estimate >= 0f && estimate < blk.Duration)

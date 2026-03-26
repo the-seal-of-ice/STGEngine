@@ -51,6 +51,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public float DesignEstimate { get => -1f; set { } } // ComputedEstimate in Step 2
 
         public object DataSource => _pattern;
+
+        // Thumbnail — will be implemented in step 2b (bullet trajectory lines)
+        public bool HasThumbnail => false;
+        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight) { }
     }
 
     /// <summary>

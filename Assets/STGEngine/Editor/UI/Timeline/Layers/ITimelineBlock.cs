@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace STGEngine.Editor.UI.Timeline.Layers
 {
@@ -38,5 +39,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>The underlying data object (TimelineEvent, SpellCard, TimelineSegment, etc.).</summary>
         object DataSource { get; }
+
+        // ── Thumbnail ──
+
+        /// <summary>Whether this block has a thumbnail to draw inside it.</summary>
+        bool HasThumbnail { get; }
+
+        /// <summary>
+        /// Draw a thumbnail inside the block using Painter2D.
+        /// Called via generateVisualContent. blockWidth/blockHeight are in pixels.
+        /// </summary>
+        void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight);
     }
 }

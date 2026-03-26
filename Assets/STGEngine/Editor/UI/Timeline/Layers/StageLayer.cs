@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Timeline;
+using STGEngine.Core.Serialization;
 using STGEngine.Editor.Commands;
 using STGEngine.Editor.UI.FileManager;
 using STGEngine.Runtime;
@@ -278,9 +279,110 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             float timeOffset = 0f;
             foreach (var seg in _stage.Segments)
             {
-                _blocks.Add(new SegmentBlock(seg, timeOffset));
+                var block = new SegmentBlock(seg, timeOffset);
+                block.SetThumbnailBars(BuildThumbnailBars(seg));
+                _blocks.Add(block);
                 timeOffset += seg.Duration;
             }
+        }
+
+        private List<ThumbnailBar> BuildThumbnailBars(TimelineSegment seg)
+        {
+            var bars = new List<ThumbnailBar>();
+            float segDur = seg.Duration;
+            if (segDur <= 0f) return bars;
+
+            if (seg.Type == SegmentType.MidStage)
+            {
+                // Row assignment: greedy non-overlapping
+                var sorted = new List<TimelineEvent>(seg.Events);
+                sorted.Sort((a, b) => a.StartTime.CompareTo(b.StartTime));
+                var rowEnds = new List<float>();
+
+                foreach (var evt in sorted)
+                {
+                    int row = -1;
+                    for (int r = 0; r < rowEnds.Count; r++)
+                    {
+                        if (evt.StartTime >= rowEnds[r]) { row = r; rowEnds[r] = evt.EndTime; break; }
+                    }
+                    if (row < 0) { row = rowEnds.Count; rowEnds.Add(evt.EndTime); }
+
+                    Color color;
+                    if (evt is SpawnWaveEvent sw)
+                    {
+                        int hash = sw.WaveId?.GetHashCode() ?? 0;
+                        float hue = 0.3f + Mathf.Abs(hash % 60) / 360f;
+                        color = Color.HSVToRGB(hue, 0.5f, 0.55f);
+                    }
+                    else if (evt is SpawnPatternEvent sp)
+                    {
+                        int hash = sp.PatternId?.GetHashCode() ?? 0;
+                        float hue = Mathf.Abs(hash % 360) / 360f;
+                        color = Color.HSVToRGB(hue, 0.5f, 0.6f);
+                    }
+                    else
+                    {
+                        color = new Color(0.4f, 0.4f, 0.4f);
+                    }
+
+                    bars.Add(new ThumbnailBar
+                    {
+                        NormalizedStart = Mathf.Clamp01(evt.StartTime / segDur),
+                        NormalizedWidth = Mathf.Clamp01(evt.Duration / segDur),
+                        Color = color,
+                        Row = row
+                    });
+                }
+            }
+            else if (seg.Type == SegmentType.BossFight && _catalog != null)
+            {
+                // Spell cards laid out sequentially
+                float scOffset = 0f;
+                float totalScDur = 0f;
+                // First pass: compute total duration
+                foreach (var scId in seg.SpellCardIds)
+                {
+                    var path = _catalog.GetSpellCardPath(scId);
+                    if (!System.IO.File.Exists(path)) continue;
+                    try
+                    {
+                        var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                        totalScDur += sc.TimeLimit;
+                    }
+                    catch { }
+                }
+                float effectiveDur = totalScDur > 0f ? totalScDur : segDur;
+
+                // Second pass: build bars
+                foreach (var scId in seg.SpellCardIds)
+                {
+                    var path = _catalog.GetSpellCardPath(scId);
+                    if (!System.IO.File.Exists(path)) continue;
+                    SpellCard sc;
+                    try
+                    {
+                        sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                    }
+                    catch { continue; }
+
+                    int hash = scId?.GetHashCode() ?? 0;
+                    float hue = 0.75f + Mathf.Abs(hash % 60) / 360f;
+                    var color = Color.HSVToRGB(hue % 1f, 0.45f, 0.55f);
+
+                    bars.Add(new ThumbnailBar
+                    {
+                        NormalizedStart = Mathf.Clamp01(scOffset / segDur),
+                        NormalizedWidth = Mathf.Clamp01(sc.TimeLimit / segDur),
+                        Color = color,
+                        Row = 0
+                    });
+
+                    scOffset += sc.TimeLimit;
+                }
+            }
+
+            return bars;
         }
     }
 }

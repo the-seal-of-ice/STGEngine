@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UIElements;
 using STGEngine.Core.Timeline;
 
 namespace STGEngine.Editor.UI.Timeline.Layers
@@ -76,5 +77,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         }
 
         public object DataSource => _event;
+
+        // Thumbnail — will be implemented in step 2b (bullet trajectory lines)
+        public bool HasThumbnail => false;
+        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight) { }
     }
 }

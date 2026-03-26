@@ -59,6 +59,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public float DesignEstimate { get => -1f; set { } }
 
         public object DataSource => _enemy;
+
+        // Thumbnail — will be implemented in step 2c (path lines)
+        public bool HasThumbnail => false;
+        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight) { }
     }
 
     /// <summary>
