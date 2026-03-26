@@ -2224,15 +2224,26 @@ namespace STGEngine.Editor.UI.Timeline
                 int fromIdx = ids.IndexOf(scBlock.SpellCardId);
                 if (fromIdx < 0) return;
 
-                // Walk SpellCard durations (ignoring transitions) to find target slot
+                // Walk SpellCard durations (including transitions) to find target slot.
+                // Visual layout: SC0 | Trans0 | SC1 | Trans1 | SC2
+                // accum must match the visual timeline positions.
                 int toIdx = ids.Count - 1; // default: end
                 float accum = 0f;
-                for (int i = 0; i < bfLayer.LoadedSpellCards.Count; i++)
+                int scCount = bfLayer.LoadedSpellCards.Count;
+                for (int i = 0; i < scCount; i++)
                 {
-                    if (i == fromIdx) continue; // skip self
-                    float mid = accum + bfLayer.LoadedSpellCards[i].TimeLimit * 0.5f;
+                    if (i == fromIdx)
+                    {
+                        // Skip the dragged card's visual width (SC + transition if not last)
+                        continue;
+                    }
+                    float scDur = bfLayer.LoadedSpellCards[i].TimeLimit;
+                    float mid = accum + scDur * 0.5f;
                     if (dropTime < mid) { toIdx = i; break; }
-                    accum += bfLayer.LoadedSpellCards[i].TimeLimit;
+                    accum += scDur;
+                    // Add transition duration (between spell cards, not after the last)
+                    if (i < scCount - 1)
+                        accum += bfLayer.LoadedSpellCards[i].TransitionDuration;
                 }
 
                 if (fromIdx == toIdx) return;
