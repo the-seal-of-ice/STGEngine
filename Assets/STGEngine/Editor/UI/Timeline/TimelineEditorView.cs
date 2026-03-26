@@ -1479,6 +1479,13 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (_navigationStack.Count == 0) return;
 
+            // Stop single previewer if leaving a PatternLayer
+            if (_currentLayer is PatternLayer && _singlePreviewer != null)
+            {
+                _singlePreviewer.Playback.Pause();
+                _singlePreviewer.Pattern = null;
+            }
+
             var entry = _navigationStack.Pop();
             _currentLayer = entry.Layer;
             WireLayerToTrackArea(_currentLayer);
@@ -1493,6 +1500,13 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         public void NavigateToDepth(int depth)
         {
+            // Stop single previewer if leaving a PatternLayer
+            if (_currentLayer is PatternLayer && _singlePreviewer != null)
+            {
+                _singlePreviewer.Playback.Pause();
+                _singlePreviewer.Pattern = null;
+            }
+
             while (_navigationStack.Count > depth && _navigationStack.Count > 0)
             {
                 var entry = _navigationStack.Pop();
@@ -2301,6 +2315,18 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Generic double-click: navigate into child layer
             NavigateTo(childLayer);
+
+            // Pattern layer: load single previewer for real-time bullet preview
+            if (childLayer is PatternLayer pl && _singlePreviewer != null)
+            {
+                var pattern = pl.Pattern;
+                if (pattern != null)
+                {
+                    _singlePreviewer.Pattern = pattern;
+                    _singlePreviewer.Playback.Seek(0f);
+                    _singlePreviewer.Playback.Play();
+                }
+            }
         }
 
         private void OnAddEventRequested(float atTime)
