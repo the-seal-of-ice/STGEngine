@@ -18,8 +18,8 @@ namespace STGEngine.Editor.UI.Timeline
         public event Action<ITimelineBlock> OnBlockValuesChanged;
         public event Action<ITimelineBlock> OnBlockDoubleClicked;
         public event Action<float> OnSeekRequested;
-        /// <summary>Raised when a block is dragged to a new position in a sequential layer. Args: fromIndex, toIndex.</summary>
-        public event Action<int, int> OnBlockReorderRequested;
+        /// <summary>Raised when a block is dragged to reorder in a sequential layer. Args: draggedBlock, dropTimeInSeconds.</summary>
+        public event Action<ITimelineBlock, float> OnBlockReorderRequested;
 
         // ─── Legacy events (kept for backward compat during migration) ───
         public event Action<TimelineEvent> OnEventSelected;
@@ -527,10 +527,10 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         StartDrag(DragMode.Move, info, e.mousePosition.x);
                     }
-                    else if (_layer != null && _layer.IsSequential)
+                    else if (_layer != null && _layer.IsSequential
+                             && !(blk is STGEngine.Editor.UI.Timeline.Layers.TransitionBlock))
                     {
-                        // Sequential mode: drag to reorder
-                        _reorderOriginalIndex = _blocks.IndexOf(info);
+                        // Sequential mode: drag to reorder (skip transition blocks)
                         StartDrag(DragMode.Reorder, info, e.mousePosition.x);
                     }
                     e.StopPropagation();
@@ -741,7 +741,6 @@ namespace STGEngine.Editor.UI.Timeline
                 float dragDist = Mathf.Abs(e.mousePosition.x - _dragStartMouseX);
                 if (dragDist < 10f)
                 {
-                    // Not a real drag — just update positions and bail
                     RecalcSequentialLayoutIfNeeded();
                     UpdateAllBlockPositions();
                     _dragMode = DragMode.None;
@@ -750,50 +749,9 @@ namespace STGEngine.Editor.UI.Timeline
                     return;
                 }
 
-                // Determine target index based on drop position.
-                // Build a "remaining blocks" layout (excluding the dragged block)
-                // and find which slot the drop point falls into.
                 float dropX = e.mousePosition.x + _scrollOffset;
                 float dropTime = dropX / _pixelsPerSecond;
-
-                var allBlocks = _layer.GetAllBlocks();
-                int fromIndex = _reorderOriginalIndex;
-
-                // Collect non-dragged blocks with their original indices
-                var others = new List<(int origIdx, float duration)>();
-                for (int i = 0; i < allBlocks.Count; i++)
-                {
-                    if (i == fromIndex) continue;
-                    others.Add((i, allBlocks[i].Duration));
-                }
-
-                // Find insertion slot: walk the remaining blocks' accumulated widths
-                int toIndex = fromIndex; // default: no move
-                float accum = 0f;
-                bool placed = false;
-                for (int s = 0; s < others.Count; s++)
-                {
-                    float mid = accum + others[s].duration * 0.5f;
-                    if (dropTime < mid)
-                    {
-                        toIndex = others[s].origIdx;
-                        placed = true;
-                        break;
-                    }
-                    accum += others[s].duration;
-                }
-                if (!placed && others.Count > 0)
-                {
-                    // Dropped past the last block → move to end
-                    toIndex = others[others.Count - 1].origIdx;
-                    // If dragged block was before this, target is the last position
-                    if (fromIndex < toIndex) toIndex = allBlocks.Count - 1;
-                }
-
-                if (fromIndex != toIndex)
-                {
-                    OnBlockReorderRequested?.Invoke(fromIndex, toIndex);
-                }
+                OnBlockReorderRequested?.Invoke(_dragBlockInfo.Block, dropTime);
             }
 
             _dragMode = DragMode.None;

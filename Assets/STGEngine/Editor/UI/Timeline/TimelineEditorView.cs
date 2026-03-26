@@ -2209,42 +2209,38 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
-        /// Handle block reorder in sequential layers (drag to rearrange).
-        /// Reorders the underlying data list and rebuilds the view.
+        /// Handle block reorder in sequential layers.
+        /// Receives the dragged block and the time position where it was dropped.
+        /// Figures out the target slot from the layer's data model.
         /// </summary>
-        private void OnBlockReorderRequested(int fromIndex, int toIndex)
+        private void OnBlockReorderRequested(ITimelineBlock draggedBlock, float dropTime)
         {
             if (_currentLayer is BossFightLayer bfLayer)
             {
+                // Only SpellCardBlocks can be reordered
+                if (draggedBlock is not SpellCardBlock scBlock) return;
+
                 var ids = bfLayer.Segment.SpellCardIds;
-                // fromIndex/toIndex are block indices (including TransitionBlocks).
-                // Map to SpellCard-only indices.
-                var allBlocks = bfLayer.GetAllBlocks();
-                if (fromIndex < 0 || fromIndex >= allBlocks.Count) return;
-                if (toIndex < 0 || toIndex >= allBlocks.Count) return;
+                int fromIdx = ids.IndexOf(scBlock.SpellCardId);
+                if (fromIdx < 0) return;
 
-                var fromBlock = allBlocks[fromIndex] as SpellCardBlock;
-                if (fromBlock == null) return; // Can't reorder transition blocks
+                // Walk SpellCard durations (ignoring transitions) to find target slot
+                int toIdx = ids.Count - 1; // default: end
+                float accum = 0f;
+                for (int i = 0; i < bfLayer.LoadedSpellCards.Count; i++)
+                {
+                    if (i == fromIdx) continue; // skip self
+                    float mid = accum + bfLayer.LoadedSpellCards[i].TimeLimit * 0.5f;
+                    if (dropTime < mid) { toIdx = i; break; }
+                    accum += bfLayer.LoadedSpellCards[i].TimeLimit;
+                }
 
-                // Map block indices to SpellCardIds indices
-                int fromScIdx = ids.IndexOf(fromBlock.SpellCardId);
-                if (fromScIdx < 0) return;
+                if (fromIdx == toIdx) return;
 
-                // Find target SC index: count SpellCardBlocks up to toIndex
-                int toScIdx = 0;
-                var toBlock = allBlocks[toIndex] as SpellCardBlock;
-                if (toBlock != null)
-                    toScIdx = ids.IndexOf(toBlock.SpellCardId);
-                else
-                    return; // dropped on transition, no move
-
-                if (fromScIdx == toScIdx) return;
-
-                // Remove from old position, insert at new position
-                var id = ids[fromScIdx];
-                ids.RemoveAt(fromScIdx);
-                // After removal, adjust target index if it was after the source
-                int insertIdx = toScIdx > fromScIdx ? toScIdx - 1 : toScIdx;
+                // Remove + insert
+                var id = ids[fromIdx];
+                ids.RemoveAt(fromIdx);
+                int insertIdx = toIdx > fromIdx ? toIdx - 1 : toIdx;
                 insertIdx = Mathf.Clamp(insertIdx, 0, ids.Count);
                 ids.Insert(insertIdx, id);
 
@@ -2257,19 +2253,31 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else if (_currentLayer is StageLayer stageLayer)
             {
+                if (draggedBlock is not SegmentBlock segBlock) return;
                 var segments = stageLayer.Stage.Segments;
-                if (fromIndex < 0 || fromIndex >= segments.Count) return;
-                if (toIndex < 0 || toIndex >= segments.Count) return;
-                if (fromIndex == toIndex) return;
+                var seg = segBlock.DataSource as TimelineSegment;
+                if (seg == null) return;
 
-                var seg = segments[fromIndex];
-                var removeCmd = ListCommand<TimelineSegment>.Remove(segments, fromIndex, "Reorder Segment (remove)");
-                _commandStack.Execute(removeCmd);
+                int fromIdx = segments.IndexOf(seg);
+                if (fromIdx < 0) return;
 
-                int insertIdx = toIndex > fromIndex ? toIndex - 1 : toIndex;
+                // Walk segment durations to find target slot
+                int toIdx = segments.Count - 1;
+                float accum = 0f;
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    if (i == fromIdx) continue;
+                    float mid = accum + segments[i].Duration * 0.5f;
+                    if (dropTime < mid) { toIdx = i; break; }
+                    accum += segments[i].Duration;
+                }
+
+                if (fromIdx == toIdx) return;
+
+                segments.RemoveAt(fromIdx);
+                int insertIdx = toIdx > fromIdx ? toIdx - 1 : toIdx;
                 insertIdx = Mathf.Clamp(insertIdx, 0, segments.Count);
-                var insertCmd = ListCommand<TimelineSegment>.Add(segments, seg, insertIdx, "Reorder Segment (insert)");
-                _commandStack.Execute(insertCmd);
+                segments.Insert(insertIdx, seg);
 
                 stageLayer.InvalidateBlocks();
                 _trackArea.RebuildBlocks();
