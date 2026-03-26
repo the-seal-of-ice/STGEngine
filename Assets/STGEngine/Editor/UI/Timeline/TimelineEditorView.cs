@@ -391,7 +391,7 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             seg.SpellCardIds.Add(spellCardId);
-            ShowBossFightSpellCards(seg);
+            ShowLayerSummary(_currentLayer);
             LoadBossFightPreview(seg);
             OnStageDataChanged();
         }
@@ -1008,7 +1008,7 @@ namespace STGEngine.Editor.UI.Timeline
                 var bfLayer = new BossFightLayer(segment, _catalog, _library);
                 _currentLayer = bfLayer;
                 WireLayerToTrackArea(bfLayer);
-                ShowBossFightSpellCards(segment);
+                ShowLayerSummary(bfLayer);
                 LoadBossFightPreview(segment);
             }
             else if (segment != null)
@@ -1359,7 +1359,7 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
             _breadcrumbSpellCard.text = !string.IsNullOrEmpty(sc.Name) ? sc.Name : spellCardId;
 
-            ShowSpellCardEditor(sc, spellCardId);
+            ShowLayerSummary(_currentLayer);
             OnSpellCardEditingChanged?.Invoke(sc);
 
             // Build temporary segment from spell card patterns for preview
@@ -1476,10 +1476,10 @@ namespace STGEngine.Editor.UI.Timeline
                 _currentLayer = entry.Layer;
             }
 
-            // Return to spell card list and reload BossFight preview
+            // Return to BossFight layer and reload preview
             if (_editingBossFightSegment != null)
             {
-                ShowBossFightSpellCards(_editingBossFightSegment);
+                ShowLayerSummary(_currentLayer);
                 LoadBossFightPreview(_editingBossFightSegment);
                 // LoadBossFightPreview already fires OnSpellCardEditingChanged with combined SC
             }
@@ -1521,6 +1521,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.SetLayer(layer);
             layer.LoadPreview(_playback);
             RebuildBreadcrumb();
+            ShowLayerSummary(layer);
         }
 
         /// <summary>
@@ -1536,6 +1537,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.SetLayer(_currentLayer);
             _currentLayer.LoadPreview(_playback);
             RebuildBreadcrumb();
+            ShowLayerSummary(_currentLayer);
         }
 
         /// <summary>
@@ -1557,6 +1559,7 @@ namespace STGEngine.Editor.UI.Timeline
                 _currentLayer.LoadPreview(_playback);
             }
             RebuildBreadcrumb();
+            ShowLayerSummary(_currentLayer);
         }
 
         /// <summary>
@@ -1594,7 +1597,7 @@ namespace STGEngine.Editor.UI.Timeline
                             var cmd = ListCommand<string>.Remove(
                                 seg.SpellCardIds, idx, "Delete Spell Card");
                             _commandStack.Execute(cmd);
-                            ShowBossFightSpellCards(seg);
+                            ShowLayerSummary(_currentLayer);
                             LoadBossFightPreview(seg);
                             OnStageDataChanged();
                         }
@@ -2272,6 +2275,21 @@ namespace STGEngine.Editor.UI.Timeline
             }
         }
 
+        // ─── Layer Summary (shown when no block is selected) ───
+
+        /// <summary>
+        /// Show a brief read-only summary of the current layer in the properties panel.
+        /// Displayed when entering a layer or after structural changes (no block selected).
+        /// </summary>
+        private void ShowLayerSummary(ITimelineLayer layer)
+        {
+            _propertyContent.Clear();
+            if (layer == null) return;
+
+            _propertyHeaderLabel.text = layer.DisplayName;
+            layer.BuildPropertiesPanel(_propertyContent, null);
+        }
+
         // ─── Per-Layer Editable Properties ───
 
         private void BuildSegmentProperties(TimelineSegment segment)
@@ -2537,7 +2555,7 @@ namespace STGEngine.Editor.UI.Timeline
                 bfLayer.InvalidateBlocks();
                 WireLayerToTrackArea(bfLayer);
                 _trackArea.RebuildBlocks();
-                ShowBossFightSpellCards(bfLayer.Segment);
+                ShowLayerSummary(_currentLayer);
                 LoadBossFightPreview(bfLayer.Segment);
             }
             else if (_currentLayer is StageLayer stageLayer)
@@ -2883,7 +2901,7 @@ namespace STGEngine.Editor.UI.Timeline
                     var bfLayer = new BossFightLayer(segment, _catalog, _library);
                     _currentLayer = bfLayer;
                     WireLayerToTrackArea(bfLayer);
-                    ShowBossFightSpellCards(segment);
+                    ShowLayerSummary(bfLayer);
                     LoadBossFightPreview(segment);
                 }
                 else
