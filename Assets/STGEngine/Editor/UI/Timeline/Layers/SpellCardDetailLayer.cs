@@ -81,8 +81,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (_trajectoryComputed) return;
             _trajectoryComputed = true;
-            _trajectories = TrajectoryThumbnailRenderer.Compute(_resolvedPattern,
-                _pattern.Duration > 0f ? _pattern.Duration : 5f);
+            float sampleDuration = Mathf.Max(10f, (_pattern.Duration > 0f ? _pattern.Duration : 5f) * 3f);
+            _trajectories = TrajectoryThumbnailRenderer.Compute(_resolvedPattern, sampleDuration);
         }
     }
 

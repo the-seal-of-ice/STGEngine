@@ -100,8 +100,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (_trajectoryComputed) return;
             _trajectoryComputed = true;
-            _trajectories = TrajectoryThumbnailRenderer.Compute(pattern,
-                _event.Duration > 0f ? _event.Duration : 5f);
+            float sampleDuration = Mathf.Max(10f, (_event.Duration > 0f ? _event.Duration : 5f) * 3f);
+            _trajectories = TrajectoryThumbnailRenderer.Compute(pattern, sampleDuration);
         }
     }
 
@@ -144,7 +144,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         }
 
         private const int MaxBullets = 12;
-        private const int TimeSteps = 10;
+        private const int TimeSteps = 16;
 
         /// <summary>
         /// Sample bullet trajectories from a pattern.
