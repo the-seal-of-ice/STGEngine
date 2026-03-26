@@ -21,6 +21,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         private readonly TimelineSegment _segment;
         private readonly STGCatalog _catalog;
         private readonly PatternLibrary _library;
+        private readonly string _contextId;
         private readonly List<ITimelineBlock> _blocks = new();
         private readonly List<SpellCard> _loadedSpellCards = new();
         private readonly List<string> _loadedSpellCardIds = new();
@@ -30,8 +31,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             _segment = segment;
             _catalog = catalog;
             _library = library;
+            _contextId = OverrideManager.SegmentContext(segment.Id);
             RebuildBlockList();
         }
+
+        /// <summary>Context ID for override resolution (= segment ID).</summary>
+        public string ContextId => _contextId;
 
         // ── Identity ──
 
@@ -83,7 +88,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 var sc = scBlock.DataSource as SpellCard;
                 if (sc != null)
-                    return new SpellCardDetailLayer(sc, scBlock.SpellCardId, _library);
+                {
+                    var scContext = OverrideManager.SpellCardContext(_segment.Id, scBlock.SpellCardId);
+                    return new SpellCardDetailLayer(sc, scBlock.SpellCardId, _library, scContext);
+                }
             }
             return null;
         }
@@ -97,10 +105,24 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 new("Add Spell Card", () => OnAddSpellCardRequested?.Invoke())
             };
 
-            if (selectedBlock is SpellCardBlock)
+            if (selectedBlock is SpellCardBlock scBlock)
             {
                 entries.Add(new ContextMenuEntry("Delete Selected Spell Card",
                     () => OnDeleteSpellCardRequested?.Invoke(selectedBlock), true));
+
+                // Override operations
+                if (scBlock.IsModified)
+                {
+                    entries.Add(new ContextMenuEntry("Revert to Original", () =>
+                    {
+                        OverrideManager.DeleteOverride(_contextId, scBlock.SpellCardId);
+                        OnOverrideChanged?.Invoke();
+                    }));
+                    entries.Add(new ContextMenuEntry("Save as New Template...", () =>
+                    {
+                        OnSaveAsNewTemplateRequested?.Invoke(scBlock.SpellCardId, "spellcard");
+                    }));
+                }
             }
 
             return entries;
@@ -153,6 +175,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public Action OnAddSpellCardRequested;
         public Action<ITimelineBlock> OnDeleteSpellCardRequested;
 
+        /// <summary>Raised when an override is reverted (deleted). UI should refresh.</summary>
+        public Action OnOverrideChanged;
+
+        /// <summary>Raised when "Save as New Template" is selected. Args: resourceId, resourceType.</summary>
+        public Action<string, string> OnSaveAsNewTemplateRequested;
+
         // ── Data access ──
 
         public TimelineSegment Segment => _segment;
@@ -174,7 +202,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             for (int i = 0; i < _segment.SpellCardIds.Count; i++)
             {
                 var scId = _segment.SpellCardIds[i];
-                var path = _catalog.GetSpellCardPath(scId);
+                var path = OverrideManager.ResolveSpellCardPath(_catalog, _contextId, scId);
                 if (!System.IO.File.Exists(path)) continue;
 
                 SpellCard sc;
@@ -191,8 +219,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 _loadedSpellCards.Add(sc);
                 _loadedSpellCardIds.Add(scId);
 
+                bool isModified = OverrideManager.HasOverride(_contextId, scId);
+
                 // SpellCard block
-                _blocks.Add(new SpellCardBlock(sc, scId, timeOffset));
+                _blocks.Add(new SpellCardBlock(sc, scId, timeOffset, isModified));
                 timeOffset += sc.TimeLimit;
 
                 // Transition block (between spell cards, not after the last one)

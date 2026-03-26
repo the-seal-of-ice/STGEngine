@@ -82,6 +82,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public object DataSource => _segment;
 
+        public bool IsModified => false;
+
         // ── Thumbnail ──
 
         /// <summary>

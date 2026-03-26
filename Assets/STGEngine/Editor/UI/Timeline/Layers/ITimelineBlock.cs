@@ -40,6 +40,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         /// <summary>The underlying data object (TimelineEvent, SpellCard, TimelineSegment, etc.).</summary>
         object DataSource { get; }
 
+        /// <summary>Whether this block uses an override (Modified) version instead of the original.</summary>
+        bool IsModified { get; }
+
         // ── Thumbnail ──
 
         /// <summary>Whether this block has a thumbnail to draw inside it.</summary>

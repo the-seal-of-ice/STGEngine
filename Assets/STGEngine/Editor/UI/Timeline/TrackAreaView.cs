@@ -311,6 +311,17 @@ namespace STGEngine.Editor.UI.Timeline
                 element.style.borderLeftWidth = element.style.borderRightWidth = 1;
             element.style.borderTopColor = element.style.borderBottomColor =
                 element.style.borderLeftColor = element.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+
+            // Modified (override) blocks: orange border highlight
+            if (blk.IsModified)
+            {
+                var modColor = new Color(1f, 0.65f, 0.2f, 0.9f);
+                element.style.borderTopColor = element.style.borderBottomColor =
+                    element.style.borderLeftColor = element.style.borderRightColor = modColor;
+                element.style.borderTopWidth = element.style.borderBottomWidth =
+                    element.style.borderLeftWidth = element.style.borderRightWidth = 2;
+            }
+
             element.style.overflow = Overflow.Hidden;
             element.style.paddingLeft = 4;
             element.style.justifyContent = Justify.Center;

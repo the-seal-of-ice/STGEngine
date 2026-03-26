@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Timeline;
+using STGEngine.Editor.UI.FileManager;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
 
@@ -22,6 +23,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public PatternLibrary Library { get; set; }
         /// <summary>Optional: set to enable double-click into Wave layers.</summary>
         public STGEngine.Editor.UI.FileManager.STGCatalog Catalog { get; set; }
+        /// <summary>Context ID for override resolution (= segment ID).</summary>
+        public string ContextId { get; set; }
 
         public MidStageLayer(TimelineSegment segment)
         {
@@ -72,7 +75,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             }
             else if (block?.DataSource is SpawnWaveEvent sw && Catalog != null)
             {
-                var path = Catalog.GetWavePath(sw.WaveId);
+                var path = !string.IsNullOrEmpty(ContextId)
+                    ? OverrideManager.ResolveWavePath(Catalog, ContextId, sw.WaveId)
+                    : Catalog.GetWavePath(sw.WaveId);
                 if (System.IO.File.Exists(path))
                 {
                     try

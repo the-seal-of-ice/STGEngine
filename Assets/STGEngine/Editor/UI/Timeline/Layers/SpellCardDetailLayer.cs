@@ -62,6 +62,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public float DesignEstimate { get => -1f; set { } }
         public object DataSource => _pattern;
 
+        public bool IsModified => false;
+
         // ── ITimelineBlock Thumbnail (emitter only) ──
 
         public bool HasThumbnail
@@ -169,13 +171,15 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         private readonly SpellCard _spellCard;
         private readonly string _spellCardId;
         private readonly PatternLibrary _library;
+        private readonly string _contextId;
         private readonly List<SpellCardPatternBlock> _blocks = new();
 
-        public SpellCardDetailLayer(SpellCard spellCard, string spellCardId, PatternLibrary library)
+        public SpellCardDetailLayer(SpellCard spellCard, string spellCardId, PatternLibrary library, string contextId = null)
         {
             _spellCard = spellCard;
             _spellCardId = spellCardId;
             _library = library;
+            _contextId = contextId;
             RebuildBlockList();
         }
 
@@ -183,6 +187,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public string LayerId => $"spellcard:{_spellCardId}";
         public string DisplayName => !string.IsNullOrEmpty(_spellCard.Name) ? _spellCard.Name : _spellCardId;
+
+        /// <summary>Context ID for override resolution (= "{segmentId}/{spellCardId}").</summary>
+        public string ContextId => _contextId;
 
         // ── Block data ──
 

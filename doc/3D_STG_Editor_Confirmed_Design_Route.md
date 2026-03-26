@@ -2353,3 +2353,121 @@ Editor/UI/Timeline/Layers/
 └── PatternLayer.cs
 ```
 
+### 9.12 Phase 5 Step 2：块内缩略图系统（已完成）
+
+> 为所有层级的 block 添加子层级内容的视觉缩略图，让用户不用点进去就能看到大概内容。
+
+#### 9.12.1 缩略图架构
+
+- `ITimelineBlock.HasThumbnail` / `ThumbnailInline` / `DrawThumbnail(Painter2D, w, h)` 接口
+- `IModifierThumbnailProvider` 接口：per-modifier 轨迹缩略图（3 个独立 icon）
+- `TrajectoryThumbnailRenderer` 静态工具类：ComputeEmitterOnly / ComputeSingleBulletWithModifier / ComputeAllBulletsAllModifiers
+- `ThumbnailBar` 结构体：颜色条缩略图数据
+
+#### 9.12.2 各 Block 缩略图实现
+
+| Block 类型 | 缩略图类型 | 渲染方式 |
+|---|---|---|
+| SegmentBlock | 子事件/符卡颜色条 | ThumbnailBar 列表，StageLayer.BuildThumbnailBars 预计算 |
+| EventBlock (Pattern) | 伪 3D 弹幕轨迹 | 斜正交投影 + 时间着色 + 深度着色，3 个 inline icon |
+| SpellCardBlock | 子 Pattern 颜色条 | ThumbnailBar 列表，按 Delay 排列 + Row 分配 |
+| SpellCardPatternBlock | 弹幕轨迹（同 EventBlock） | 复用 TrajectoryThumbnailRenderer |
+| EnemyInstanceBlock | XZ 俯视路径折线 | 时间着色（蓝→红）+ 绿色起点标记 |
+
+#### 9.12.3 TrackAreaView 缩略图渲染
+
+- 背景缩略图：`generateVisualContent` 回调，block 背景透明度降低（0.45）
+- Inline 缩略图：小 icon 在标签后，hover 弹出放大版（200×200px popup）
+- 修饰器缩略图：3 个独立 icon（发射器 / 单修饰器 / 全弹幕全修饰器）
+
+#### 9.12.4 性能优化
+
+- StageLayer BossFight 缩略图缓存：`Dictionary<string, float>` 避免重复磁盘 IO
+- 轨迹计算懒加载：`EnsureComputed()` 首次访问时计算
+- MaxBulletsDetailed = 48（发射器缩略图），MaxBullets = 12（timeline 小图）
+- 修饰器采样时长 `max(2, duration)` 比发射器短
+
+#### 9.12.5 UX 改进
+
+- 边缘自动滚动：30px 边缘阈值，200px/s 滚动速度，适用于 Scrub/Move/Resize
+- PatternEditorView 实时缩略图更新：OnPatternEditorChanged → InvalidateThumbnails → RebuildBlocks
+- SpellCardBlock 缩略图刷新链路自动工作（RebuildBlocks 创建新实例）
+
+### 9.13 Phase 5 Step 3：Modified/Override 机制（已完成）
+
+> 在 Timeline 层级中编辑引用资源时，不修改原始 YAML 文件，自动在 Modified/ 子目录下创建完整副本。
+
+#### 9.13.1 OverrideManager 核心类
+
+新文件：`Editor/UI/FileManager/OverrideManager.cs`
+
+- 静态工具类，管理 `STGData/Modified/` 目录下的覆盖文件
+- `GetOverridePath(contextId, resourceId)` → `Modified/{contextId}/{resourceId}.yaml`
+- `HasOverride(contextId, resourceId)` → 检查文件是否存在
+- `ResolveSpellCardPath/ResolvePatternPath/ResolveWavePath` → 先查 override，再 fallback 到 catalog
+- `SaveOverride(contextId, resourceId, yaml)` → 创建目录 + 写文件
+- `DeleteOverride(contextId, resourceId)` → 删除覆盖文件（还原为原始）
+- `SaveAsNewTemplate(catalog, contextId, resourceId, newId, resourceType)` → 复制到原始目录 + 注册 catalog
+- Context ID 辅助方法：`SegmentContext(segId)` / `SpellCardContext(segId, scId)`
+
+#### 9.13.2 资源加载路径拦截（4 个点）
+
+| 拦截点 | 原始路径 | Override 路径 |
+|---|---|---|
+| BossFightLayer.RebuildBlockList | `catalog.GetSpellCardPath(scId)` | `OverrideManager.ResolveSpellCardPath(catalog, segmentId, scId)` |
+| MidStageLayer.CreateChildLayer | `catalog.GetWavePath(waveId)` | `OverrideManager.ResolveWavePath(catalog, segmentId, waveId)` |
+| StageLayer.GetCachedSpellCardTimeLimit | `catalog.GetSpellCardPath(scId)` | `OverrideManager.ResolveSpellCardPath(catalog, segmentId, scId)` |
+| TimelineEditorView (3 处) | `catalog.GetSpellCardPath(scId)` | `OverrideManager.ResolveSpellCardPath(catalog, contextId, scId)` |
+
+#### 9.13.3 保存逻辑
+
+- `SaveCurrentSpellCard()` 检查 `_editingBossFightSegment != null`
+  - 有 → 保存到 `Modified/{segmentId}/{spellCardId}.yaml`（OverrideManager.SaveOverride）
+  - 无 → 保存到原始路径（直接编辑模式）
+
+#### 9.13.4 [M] 标记显示
+
+- `ITimelineBlock.IsModified` 接口属性（所有 Block 实现）
+- `SpellCardBlock` 构造时接收 `isModified` 参数，DisplayLabel 前缀 `[M]`
+- TrackAreaView：modified 块显示橙色边框（2px，`Color(1, 0.65, 0.2, 0.9)`）
+- 面包屑：SpellCard 层级有 override 时显示 `[M]` 前缀 + 橙色文字
+
+#### 9.13.5 还原/另存操作
+
+- BossFightLayer 右键菜单新增（仅 modified 块可见）：
+  - "Revert to Original" → `OverrideManager.DeleteOverride` + 刷新视图
+  - "Save as New Template..." → 弹出对话框输入新 ID → `OverrideManager.SaveAsNewTemplate`
+- `ShowSaveAsNewTemplateDialog` 模态对话框：输入新 ID，保存到原始目录并注册 catalog
+
+#### 9.13.6 Context ID 格式
+
+- BossFight 段内的 SpellCard：`contextId = segmentId`（如 `"segment_1"`）
+- SpellCard 内的 Pattern：`contextId = "{segmentId}/{spellCardId}"`（如 `"segment_1/spell_01"`）
+- MidStage 段内的 Wave：`contextId = segmentId`
+
+#### 9.13.7 新增/修改文件
+
+```
+新增:
+  Editor/UI/FileManager/OverrideManager.cs
+
+修改:
+  Editor/UI/Timeline/Layers/ITimelineBlock.cs      — 新增 IsModified 属性
+  Editor/UI/Timeline/Layers/BossFightLayer.cs       — contextId + override 解析 + 右键菜单
+  Editor/UI/Timeline/Layers/SpellCardDetailLayer.cs — contextId 参数
+  Editor/UI/Timeline/Layers/MidStageLayer.cs        — ContextId 属性 + override 解析
+  Editor/UI/Timeline/Layers/StageLayer.cs           — override-aware 缓存
+  Editor/UI/Timeline/Layers/SpellCardBlock.cs       — IsModified + [M] 标签
+  Editor/UI/Timeline/Layers/EventBlock.cs           — IsModified = false
+  Editor/UI/Timeline/Layers/SegmentBlock.cs         — IsModified = false
+  Editor/UI/Timeline/Layers/WaveLayer.cs            — IsModified = false (EnemyInstanceBlock)
+  Editor/UI/Timeline/TrackAreaView.cs               — 橙色边框渲染
+  Editor/UI/Timeline/TimelineEditorView.cs          — override 保存 + 面包屑 [M] + 对话框
+```
+
+#### 9.13.8 已知遗留项
+
+- Pattern 级别的 override（SpellCard 内的 Pattern 引用）尚未实现完整的保存链路（PatternLibrary.Resolve 仍走 Resources.LoadAll）
+- Wave 级别的 override 保存尚未实现（MidStage 层级的 Wave 编辑场景较少）
+- "Save as New Template" 后不自动替换当前引用（需手动更新 SpellCardIds）
+

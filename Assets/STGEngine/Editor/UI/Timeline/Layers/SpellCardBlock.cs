@@ -16,21 +16,33 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         private readonly SpellCard _spellCard;
         private readonly string _spellCardId;
         private float _startTime;
+        private readonly bool _isModified;
         private List<ThumbnailBar> _thumbnailBars;
 
-        public SpellCardBlock(SpellCard spellCard, string spellCardId, float startTime)
+        public SpellCardBlock(SpellCard spellCard, string spellCardId, float startTime, bool isModified = false)
         {
             _spellCard = spellCard;
             _spellCardId = spellCardId;
             _startTime = startTime;
+            _isModified = isModified;
             BuildThumbnailBars();
         }
 
         public string Id => _spellCardId;
 
-        public string DisplayLabel => !string.IsNullOrEmpty(_spellCard.Name)
-            ? _spellCard.Name
-            : _spellCardId;
+        public string DisplayLabel
+        {
+            get
+            {
+                var name = !string.IsNullOrEmpty(_spellCard.Name)
+                    ? _spellCard.Name
+                    : _spellCardId;
+                return _isModified ? $"[M] {name}" : name;
+            }
+        }
+
+        /// <summary>Whether this block uses an override (Modified) version.</summary>
+        public bool IsModified => _isModified;
 
         public float StartTime
         {
@@ -185,6 +197,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>Whether this is a transition block (for special rendering).</summary>
         public bool IsTransition => true;
+
+        public bool IsModified => false;
 
         // ── Thumbnail: diagonal hatch ──
 

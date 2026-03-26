@@ -61,6 +61,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public object DataSource => _enemy;
 
+        public bool IsModified => false;
+
         // ── Thumbnail: top-down path polyline ──
 
         public bool HasThumbnail => _enemy.Path != null && _enemy.Path.Count >= 2;

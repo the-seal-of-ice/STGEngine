@@ -515,9 +515,10 @@ namespace STGEngine.Editor.UI.Timeline
                     // Flatten spell card patterns into the overview
                     float scOffset = segmentOffset;
                     var localBossPath = new List<PathKeyframe>();
+                    var segContext = OverrideManager.SegmentContext(seg.Id);
                     foreach (var scId in seg.SpellCardIds)
                     {
-                        var path = _catalog.GetSpellCardPath(scId);
+                        var path = OverrideManager.ResolveSpellCardPath(_catalog, segContext, scId);
                         if (!System.IO.File.Exists(path)) continue;
 
                         SpellCard sc;
@@ -1046,10 +1047,11 @@ namespace STGEngine.Editor.UI.Timeline
 
             var combinedBossPath = new List<PathKeyframe>();
             float timeOffset = 0f;
+            var bfContext = OverrideManager.SegmentContext(segment.Id);
 
             foreach (var scId in segment.SpellCardIds)
             {
-                var path = _catalog.GetSpellCardPath(scId);
+                var path = OverrideManager.ResolveSpellCardPath(_catalog, bfContext, scId);
                 if (!System.IO.File.Exists(path)) continue;
 
                 SpellCard sc;
@@ -1314,8 +1316,9 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (_catalog == null) return;
 
-            // Load spell card from YAML
-            var path = _catalog.GetSpellCardPath(spellCardId);
+            // Load spell card from YAML (override-aware)
+            var contextId = OverrideManager.SegmentContext(segment.Id);
+            var path = OverrideManager.ResolveSpellCardPath(_catalog, contextId, spellCardId);
             if (!System.IO.File.Exists(path))
             {
                 Debug.LogWarning($"[TimelineEditor] SpellCard file not found: {path}");
@@ -1346,7 +1349,8 @@ namespace STGEngine.Editor.UI.Timeline
                     DisplayName = _currentLayer.DisplayName
                 });
             }
-            _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library);
+            _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library,
+                OverrideManager.SpellCardContext(segment.Id, spellCardId));
 
             // Update breadcrumb to layer 3
             _breadcrumbSep2.style.display = DisplayStyle.Flex;
@@ -1594,6 +1598,18 @@ namespace STGEngine.Editor.UI.Timeline
                         }
                     }
                 };
+                bfLayer.OnOverrideChanged = () =>
+                {
+                    // Refresh the BossFight view after override revert
+                    var seg = bfLayer.Segment;
+                    _trackArea.SetLayer(new BossFightLayer(seg, _catalog, _library));
+                    LoadBossFightPreview(seg);
+                    RebuildBreadcrumb();
+                };
+                bfLayer.OnSaveAsNewTemplateRequested = (resourceId, resourceType) =>
+                {
+                    ShowSaveAsNewTemplateDialog(bfLayer.ContextId, resourceId, resourceType);
+                };
             }
         }
 
@@ -1640,7 +1656,24 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 _breadcrumbSep2.style.display = DisplayStyle.Flex;
                 _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
-                _breadcrumbSpellCard.text = layers[2].DisplayName;
+
+                // Show [M] marker if the current SpellCard is an override
+                var displayName = layers[2].DisplayName;
+                if (layers[2].Layer is SpellCardDetailLayer scLayer &&
+                    !string.IsNullOrEmpty(scLayer.ContextId) &&
+                    _editingBossFightSegment != null &&
+                    OverrideManager.HasOverride(
+                        OverrideManager.SegmentContext(_editingBossFightSegment.Id),
+                        scLayer.SpellCardId))
+                {
+                    displayName = $"[M] {displayName}";
+                    _breadcrumbSpellCard.style.color = new Color(1f, 0.7f, 0.3f); // Orange for modified
+                }
+                else
+                {
+                    _breadcrumbSpellCard.style.color = new Color(0.5f, 0.8f, 1f);
+                }
+                _breadcrumbSpellCard.text = displayName;
             }
             else
             {
@@ -1653,12 +1686,24 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (_editingSpellCard == null || _editingSpellCardId == null || _catalog == null) return;
 
-            var path = _catalog.GetSpellCardPath(_editingSpellCardId);
             try
             {
-                YamlSerializer.SerializeSpellCardToFile(_editingSpellCard, path);
-                _catalog.AddOrUpdateSpellCard(_editingSpellCardId, _editingSpellCard.Name);
-                STGCatalog.Save(_catalog);
+                var yaml = YamlSerializer.SerializeSpellCard(_editingSpellCard);
+
+                // If editing within a BossFight segment context, save as override
+                if (_editingBossFightSegment != null)
+                {
+                    var contextId = OverrideManager.SegmentContext(_editingBossFightSegment.Id);
+                    OverrideManager.SaveOverride(contextId, _editingSpellCardId, yaml);
+                }
+                else
+                {
+                    // Direct editing (e.g. from PatternEdit mode) — save to original
+                    var path = _catalog.GetSpellCardPath(_editingSpellCardId);
+                    System.IO.File.WriteAllText(path, yaml);
+                    _catalog.AddOrUpdateSpellCard(_editingSpellCardId, _editingSpellCard.Name);
+                    STGCatalog.Save(_catalog);
+                }
             }
             catch (Exception e)
             {
@@ -1670,6 +1715,81 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Refresh spell card preview (patterns/timing may have changed)
             LoadSpellCardPreview(_editingSpellCard);
+        }
+
+        /// <summary>
+        /// Show a dialog to save an override as a new template with a user-specified ID.
+        /// </summary>
+        private void ShowSaveAsNewTemplateDialog(string contextId, string resourceId, string resourceType)
+        {
+            if (_catalog == null) return;
+
+            var dialog = new VisualElement();
+            dialog.style.position = Position.Absolute;
+            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
+            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            dialog.style.alignItems = Align.Center;
+            dialog.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 300;
+
+            var title = new Label("Save as New Template");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var desc = new Label($"Override: {resourceId} ({resourceType})");
+            desc.style.color = new Color(0.7f, 0.7f, 0.7f);
+            desc.style.marginBottom = 8;
+            panel.Add(desc);
+
+            var idField = new TextField("New ID:");
+            idField.value = $"{resourceId}_copy";
+            idField.style.marginBottom = 8;
+            panel.Add(idField);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var saveBtn = new Button(() =>
+            {
+                var newId = idField.value?.Trim();
+                if (string.IsNullOrEmpty(newId))
+                {
+                    Debug.LogWarning("[TimelineEditor] New ID cannot be empty.");
+                    return;
+                }
+
+                var result = OverrideManager.SaveAsNewTemplate(_catalog, contextId, resourceId, newId, resourceType);
+                if (result != null)
+                {
+                    Debug.Log($"[TimelineEditor] Saved as new template: {result}");
+                }
+                dialog.RemoveFromHierarchy();
+            }) { text = "Save" };
+            saveBtn.style.backgroundColor = new Color(0.2f, 0.5f, 0.3f);
+            saveBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+
+            var cancelBtn = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(saveBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            dialog.Add(panel);
+
+            Root.panel.visualTree.Add(dialog);
         }
 
         private void ShowSpellCardEditor(SpellCard sc, string scId)

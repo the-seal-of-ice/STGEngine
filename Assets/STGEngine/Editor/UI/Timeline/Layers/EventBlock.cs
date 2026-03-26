@@ -116,6 +116,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public object DataSource => _event;
 
+        public bool IsModified => false;
+
         // ── ITimelineBlock Thumbnail (emitter only) ──
 
         public bool HasThumbnail

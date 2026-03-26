@@ -348,7 +348,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
                 foreach (var scId in seg.SpellCardIds)
                 {
-                    float timeLimit = GetCachedSpellCardTimeLimit(scId);
+                    float timeLimit = GetCachedSpellCardTimeLimit(scId, seg.Id);
                     if (timeLimit <= 0f) continue;
 
                     int hash = scId?.GetHashCode() ?? 0;
@@ -370,15 +370,18 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             return bars;
         }
 
-        private float GetCachedSpellCardTimeLimit(string scId)
+        private float GetCachedSpellCardTimeLimit(string scId, string segmentId)
         {
-            if (_spellCardTimeLimitCache.TryGetValue(scId, out float cached))
+            // Cache key includes segment context for override-aware lookups
+            var cacheKey = $"{segmentId}/{scId}";
+            if (_spellCardTimeLimitCache.TryGetValue(cacheKey, out float cached))
                 return cached;
 
-            var path = _catalog.GetSpellCardPath(scId);
+            var contextId = OverrideManager.SegmentContext(segmentId);
+            var path = OverrideManager.ResolveSpellCardPath(_catalog, contextId, scId);
             if (!System.IO.File.Exists(path))
             {
-                _spellCardTimeLimitCache[scId] = 0f;
+                _spellCardTimeLimitCache[cacheKey] = 0f;
                 return 0f;
             }
 
@@ -386,12 +389,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
                 float tl = sc.TimeLimit;
-                _spellCardTimeLimitCache[scId] = tl;
+                _spellCardTimeLimitCache[cacheKey] = tl;
                 return tl;
             }
             catch
             {
-                _spellCardTimeLimitCache[scId] = 0f;
+                _spellCardTimeLimitCache[cacheKey] = 0f;
                 return 0f;
             }
         }
