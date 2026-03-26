@@ -9,8 +9,10 @@ using STGEngine.Editor.Commands;
 namespace STGEngine.Editor.UI.Timeline
 {
     /// <summary>
-    /// Left panel: displays the list of segments in a stage.
-    /// Supports selection, add, delete, and trigger condition editing.
+    /// [DEPRECATED] Left panel: displays the list of segments in a stage.
+    /// Replaced by StageLayer + TrackAreaView in the recursive Timeline architecture.
+    /// Kept temporarily for legacy compatibility; hidden (display:none) in TimelineEditorView.
+    /// Will be fully removed once all references are migrated.
     /// </summary>
     public class SegmentListView : IDisposable
     {

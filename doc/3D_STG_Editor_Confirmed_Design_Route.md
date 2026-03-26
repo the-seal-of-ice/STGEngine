@@ -2263,3 +2263,93 @@ URP Forward Lit pass，支持 GPU Instancing：
 - BossFight Segment 选中时 Properties 面板显示符卡列表管理 UI
 - SegmentListView 右键菜单支持 MidStage/BossFight 类型切换
 - 符卡列表支持添加/删除操作
+
+### 9.10 Phase 4b：符卡预览器 + BossFight 层级预览（已完成）
+
+- 符卡编辑模式弹幕预览（临时 Segment → PreviewerPool）
+- BossFight Segment 层级预览（所有符卡顺序拼接）
+- Boss 占位符同步 playback 时间
+- 添加/删除符卡实时刷新预览
+- 删除所有符卡时隐藏 Boss 占位符
+- 安全回退点：`git tag phase4-complete`（commit 8940633）
+
+### 9.11 Phase 5 Step 1：递归 Timeline 层级导航（已完成）
+
+> 将编辑器从"固定层级硬编码"重构为"统一递归 Timeline 层级架构"。
+> 详细设计见"待实现设计想法 > Step 1 确认设计"章节。
+
+#### 9.11.1 接口与数据模型
+
+- `ITimelineLayer` 接口：统一的层级抽象（LayerId, DisplayName, BlockCount, GetBlock, TotalDuration, IsSequential, CanAddBlock, CanDoubleClickEnter, CreateChildLayer, GetContextMenuEntries, BuildPropertiesPanel, LoadPreview）
+- `ITimelineBlock` 接口：块的统一抽象（Id, DisplayLabel, StartTime, Duration, BlockColor, CanMove, DesignEstimate, DataSource）
+- `ContextMenuEntry` 结构体：右键菜单项
+- 数据模型预留字段：SpellCard.DesignEstimate/TransitionDuration, TimelineSegment.DesignEstimate, SpawnPatternEvent.ComputedEffectiveDuration
+
+#### 9.11.2 Layer 实现类（6 个）
+
+| 类 | 层级 | 块类型 | 排列模式 |
+|----|------|--------|----------|
+| StageLayer | L0 | SegmentBlock | 顺序（拖拽重排序） |
+| MidStageLayer | L1a | EventBlock | 自由（可重叠） |
+| BossFightLayer | L1b | SpellCardBlock + TransitionBlock | 顺序 |
+| SpellCardDetailLayer | L2c | SpellCardPatternBlock | 自由 |
+| WaveLayer | L2b | EnemyInstanceBlock | 自由 |
+| PatternLayer | L2a | 无块（叶子层级） | — |
+
+#### 9.11.3 TrackAreaView 泛化
+
+- `SetSegment(TimelineSegment)` → `SetLayer(ITimelineLayer)` + legacy 桥接
+- `EventBlockInfo` → `BlockInfo`（持有 `ITimelineBlock`）
+- 颜色/标签从 `ITimelineBlock.BlockColor`/`DisplayLabel` 获取
+- 右键菜单从 `ITimelineLayer.GetContextMenuEntries()` 动态生成
+- 新增 `OnBlockDoubleClicked` 事件
+- 新增 `OverrideLayerReference()` 用于 BossFight 预览后恢复 layer
+- DesignEstimate 绿线 + 半透明区域渲染
+
+#### 9.11.4 TimelineEditorView 导航重构
+
+- `Stack<BreadcrumbEntry>` 导航栈 + `_currentLayer` 字段
+- `NavigateTo()` / `NavigateBack()` / `NavigateToDepth()` 统一导航方法
+- `WireLayerToTrackArea()` 连接 Layer 回调到 legacy 事件处理
+- `RebuildBreadcrumb()` 从导航栈动态更新面包屑
+- Stage 面包屑可点击返回 L0
+- 双击 Segment → 进入 MidStage/BossFight
+- 双击 Pattern/Wave 事件 → 进入 PatternLayer/WaveLayer
+
+#### 9.11.5 Stage 全局预览
+
+- `LoadStageOverviewPreview()`：拼接所有 Segment 的事件（MidStage 事件 + BossFight 符卡 pattern），按时间偏移合并为临时 segment
+- MidStage 事件按 segment Duration 截断（超出边界的事件被移除或截短）
+- `TimelinePlaybackController.IsEventActive()` 也做截断（`endTime = Min(evt.EndTime, Duration)`）
+
+#### 9.11.6 SegmentListView 废弃
+
+- SegmentListView 已隐藏（`display:none`），由 StageLayer + TrackAreaView 替代
+- Segment 增删/类型切换/触发条件循环 → StageLayer 右键菜单 + CommandStack Undo/Redo
+- 文件保留但标记为 DEPRECATED
+
+#### 9.11.7 已知遗留项
+
+- PatternLayer / WaveLayer 的预览播放未实现（需要 `_singlePreviewer` 和 `TimelinePlaybackController` 的深度协调）
+- 面包屑目前仍使用 3 个硬编码 Label（支持到 3 层），完全动态化留后续
+- BossFight 层的 TrackArea 显示符卡块，但属性面板仍走旧路径（ShowBossFightSpellCards）
+- 拖拽红线时自动滚动时间轴未实现
+
+#### 9.11.8 新增文件
+
+```
+Editor/UI/Timeline/Layers/
+├── ITimelineLayer.cs
+├── ITimelineBlock.cs
+├── ContextMenuEntry.cs
+├── EventBlock.cs
+├── MidStageLayer.cs
+├── SegmentBlock.cs
+├── StageLayer.cs
+├── SpellCardBlock.cs      (含 TransitionBlock)
+├── BossFightLayer.cs
+├── SpellCardDetailLayer.cs (含 SpellCardPatternBlock)
+├── WaveLayer.cs           (含 EnemyInstanceBlock)
+└── PatternLayer.cs
+```
+
