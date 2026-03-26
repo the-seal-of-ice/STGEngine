@@ -100,6 +100,16 @@ namespace STGEngine.Editor.UI.Timeline
             public string DisplayName;
         }
 
+        // Stage overview: boss placeholder time ranges for dynamic show/hide
+        private struct BossSegmentRange
+        {
+            public float StartTime;
+            public float EndTime;
+            public List<PathKeyframe> BossPath;
+        }
+        private List<BossSegmentRange> _stageOverviewBossRanges;
+        private bool _stageOverviewBossVisible;
+
         public TimelineEditorView(TimelinePlaybackController playback, PatternLibrary library,
             PatternPreviewer singlePreviewer)
         {
@@ -456,7 +466,7 @@ namespace STGEngine.Editor.UI.Timeline
                 Duration = _stageLayer?.TotalDuration ?? 30f
             };
 
-            var combinedBossPath = new List<PathKeyframe>();
+            var bossRanges = new List<BossSegmentRange>();
             float segmentOffset = 0f;
 
             foreach (var seg in _stage.Segments)
@@ -503,6 +513,7 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     // Flatten spell card patterns into the overview
                     float scOffset = segmentOffset;
+                    var localBossPath = new List<PathKeyframe>();
                     foreach (var scId in seg.SpellCardIds)
                     {
                         var path = _catalog.GetSpellCardPath(scId);
@@ -532,17 +543,29 @@ namespace STGEngine.Editor.UI.Timeline
                             });
                         }
 
-                        // Collect boss path keyframes with time offset
+                        // Collect boss path keyframes with local time offset
+                        float localTime = scOffset - segmentOffset;
                         foreach (var kf in sc.BossPath)
                         {
-                            combinedBossPath.Add(new PathKeyframe
+                            localBossPath.Add(new PathKeyframe
                             {
-                                Time = scOffset + kf.Time,
+                                Time = localTime + kf.Time,
                                 Position = kf.Position
                             });
                         }
 
                         scOffset += sc.TimeLimit;
+                    }
+
+                    // Record this BossFight segment's time range
+                    if (localBossPath.Count > 0)
+                    {
+                        bossRanges.Add(new BossSegmentRange
+                        {
+                            StartTime = segmentOffset,
+                            EndTime = segmentOffset + seg.Duration,
+                            BossPath = localBossPath
+                        });
                     }
                 }
 
@@ -552,20 +575,11 @@ namespace STGEngine.Editor.UI.Timeline
             tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
             _playback.LoadSegment(tempSegment);
 
-            // Show boss placeholder if any BossFight segments have paths
-            if (combinedBossPath.Count > 0)
-            {
-                var combinedSc = new SpellCard
-                {
-                    BossPath = combinedBossPath,
-                    TimeLimit = tempSegment.Duration
-                };
-                OnSpellCardEditingChanged?.Invoke(combinedSc);
-            }
-            else
-            {
-                OnSpellCardEditingChanged?.Invoke(null);
-            }
+            // Store boss ranges for dynamic show/hide in OnPlaybackTimeChanged
+            _stageOverviewBossRanges = bossRanges;
+            _stageOverviewBossVisible = false;
+            // Initially hide boss placeholder at Stage level — it will show dynamically
+            OnSpellCardEditingChanged?.Invoke(null);
         }
 
         private void LoadDefaultStage()
@@ -1482,6 +1496,10 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (layer == null) return;
 
+            // Clear stage overview boss tracking when leaving Stage level
+            _stageOverviewBossRanges = null;
+            _stageOverviewBossVisible = false;
+
             if (_currentLayer != null)
             {
                 _navigationStack.Push(new BreadcrumbEntry
@@ -2267,6 +2285,42 @@ namespace STGEngine.Editor.UI.Timeline
         {
             _trackArea.SetPlayTime(time);
             _timeLabel.text = $"{time:F2}s";
+
+            // Stage overview: dynamically show/hide Boss placeholder based on playhead position
+            if (_currentLayer is StageLayer && _stageOverviewBossRanges != null)
+            {
+                BossSegmentRange? activeRange = null;
+                foreach (var range in _stageOverviewBossRanges)
+                {
+                    if (time >= range.StartTime && time < range.EndTime)
+                    {
+                        activeRange = range;
+                        break;
+                    }
+                }
+
+                if (activeRange.HasValue)
+                {
+                    if (!_stageOverviewBossVisible)
+                    {
+                        var sc = new SpellCard
+                        {
+                            BossPath = activeRange.Value.BossPath,
+                            TimeLimit = activeRange.Value.EndTime - activeRange.Value.StartTime
+                        };
+                        OnSpellCardEditingChanged?.Invoke(sc);
+                        _stageOverviewBossVisible = true;
+                    }
+                }
+                else
+                {
+                    if (_stageOverviewBossVisible)
+                    {
+                        OnSpellCardEditingChanged?.Invoke(null);
+                        _stageOverviewBossVisible = false;
+                    }
+                }
+            }
         }
 
         private void OnPlayStateChanged(bool playing)
@@ -2290,6 +2344,10 @@ namespace STGEngine.Editor.UI.Timeline
             // Special handling: if entering a segment from StageLayer, use existing navigation
             if (block.DataSource is TimelineSegment segment)
             {
+                // Clear stage overview boss tracking
+                _stageOverviewBossRanges = null;
+                _stageOverviewBossVisible = false;
+
                 // Push StageLayer onto stack
                 _navigationStack.Push(new BreadcrumbEntry
                 {
