@@ -456,6 +456,7 @@ namespace STGEngine.Editor.UI.Timeline
                 Duration = _stageLayer?.TotalDuration ?? 30f
             };
 
+            var combinedBossPath = new List<PathKeyframe>();
             float segmentOffset = 0f;
 
             foreach (var seg in _stage.Segments)
@@ -531,6 +532,16 @@ namespace STGEngine.Editor.UI.Timeline
                             });
                         }
 
+                        // Collect boss path keyframes with time offset
+                        foreach (var kf in sc.BossPath)
+                        {
+                            combinedBossPath.Add(new PathKeyframe
+                            {
+                                Time = scOffset + kf.Time,
+                                Position = kf.Position
+                            });
+                        }
+
                         scOffset += sc.TimeLimit;
                     }
                 }
@@ -540,6 +551,21 @@ namespace STGEngine.Editor.UI.Timeline
 
             tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
             _playback.LoadSegment(tempSegment);
+
+            // Show boss placeholder if any BossFight segments have paths
+            if (combinedBossPath.Count > 0)
+            {
+                var combinedSc = new SpellCard
+                {
+                    BossPath = combinedBossPath,
+                    TimeLimit = tempSegment.Duration
+                };
+                OnSpellCardEditingChanged?.Invoke(combinedSc);
+            }
+            else
+            {
+                OnSpellCardEditingChanged?.Invoke(null);
+            }
         }
 
         private void LoadDefaultStage()
