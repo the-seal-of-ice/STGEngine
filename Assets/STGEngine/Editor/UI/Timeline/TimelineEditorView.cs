@@ -2446,11 +2446,16 @@ namespace STGEngine.Editor.UI.Timeline
                         BuildSpellCardBlockProperties(sc, scBlock.SpellCardId, bfLayer);
                     }
                 }
+                else if (block is TransitionBlock transBlock)
+                {
+                    _propertyContent.Clear();
+                    BuildTransitionBlockProperties(transBlock, bfLayer);
+                }
                 else
                 {
-                    // TransitionBlock or null — show layer summary
+                    // null — show layer summary
                     _propertyContent.Clear();
-                    _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+                    _currentLayer.BuildPropertiesPanel(_propertyContent, null);
                 }
             }
             else if (_currentLayer is SpellCardDetailLayer scLayer)
@@ -2677,6 +2682,46 @@ namespace STGEngine.Editor.UI.Timeline
             renameBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.2f);
             renameBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
             container.Add(renameBtn);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        private void BuildTransitionBlockProperties(TransitionBlock transBlock, BossFightLayer bfLayer)
+        {
+            var sc = transBlock.DataSource as SpellCard;
+            _propertyHeaderLabel.text = "Transition";
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            var desc = new Label("Bullet-clear + boss reposition between spell cards.");
+            desc.style.color = new Color(0.6f, 0.6f, 0.6f);
+            desc.style.whiteSpace = WhiteSpace.Normal;
+            desc.style.marginBottom = 8;
+            container.Add(desc);
+
+            if (sc != null)
+            {
+                var durField = new FloatField("Duration") { value = sc.TransitionDuration };
+                durField.isDelayed = true;
+                durField.RegisterValueChangedCallback(e =>
+                {
+                    var cmd = new PropertyChangeCommand<float>(
+                        "Change Transition Duration",
+                        () => sc.TransitionDuration, v => sc.TransitionDuration = v,
+                        Mathf.Max(0.1f, e.newValue));
+                    _commandStack.Execute(cmd);
+                    SaveSpellCardInContext(sc, transBlock.Id.Replace("_transition_", ""));
+                });
+                container.Add(durField);
+
+                var ownerLabel = new Label($"Owner: {sc.Name ?? "(unnamed)"}");
+                ownerLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
+                ownerLabel.style.marginTop = 4;
+                container.Add(ownerLabel);
+            }
 
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);
