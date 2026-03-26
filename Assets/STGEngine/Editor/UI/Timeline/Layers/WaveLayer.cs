@@ -179,7 +179,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         // ── Interaction ──
 
-        public bool CanAddBlock => false; // Adding enemies is done via Wave editor, not timeline
+        public bool CanAddBlock => true;
 
         public bool CanDoubleClickEnter(ITimelineBlock block) => false;
 
@@ -189,7 +189,18 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public IReadOnlyList<ContextMenuEntry> GetContextMenuEntries(float time, ITimelineBlock selectedBlock)
         {
-            return Array.Empty<ContextMenuEntry>();
+            var entries = new List<ContextMenuEntry>
+            {
+                new("Add Enemy", () => OnAddEnemyRequested?.Invoke())
+            };
+
+            if (selectedBlock != null)
+            {
+                entries.Add(new ContextMenuEntry("Delete Selected Enemy",
+                    () => OnDeleteEnemyRequested?.Invoke(selectedBlock), true));
+            }
+
+            return entries;
         }
 
         // ── Properties panel ──
@@ -226,6 +237,11 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public Wave Wave => _wave;
         public string WaveId => _waveId;
+
+        // ── Layer-specific events ──
+
+        public Action OnAddEnemyRequested;
+        public Action<ITimelineBlock> OnDeleteEnemyRequested;
 
         // ── Internal ──
 

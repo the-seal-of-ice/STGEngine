@@ -1619,6 +1619,65 @@ namespace STGEngine.Editor.UI.Timeline
                     ShowSaveAsNewTemplateDialog(bfLayer.ContextId, resourceId, resourceType);
                 };
             }
+            else if (layer is SpellCardDetailLayer scDetailLayer)
+            {
+                scDetailLayer.OnAddPatternRequested = time =>
+                {
+                    ShowPatternPickerForSpellCard(scDetailLayer);
+                };
+                scDetailLayer.OnDeletePatternRequested = blk =>
+                {
+                    if (blk?.DataSource is SpellCardPattern scp)
+                    {
+                        int idx = scDetailLayer.SpellCard.Patterns.IndexOf(scp);
+                        if (idx >= 0)
+                        {
+                            var cmd = ListCommand<SpellCardPattern>.Remove(
+                                scDetailLayer.SpellCard.Patterns, idx, "Delete Pattern from SpellCard");
+                            _commandStack.Execute(cmd);
+                            scDetailLayer.InvalidateBlocks();
+                            OnStageDataChanged();
+                            SaveSpellCardInContext(scDetailLayer.SpellCard, scDetailLayer.SpellCardId);
+                        }
+                    }
+                };
+            }
+            else if (layer is WaveLayer waveLayer)
+            {
+                waveLayer.OnAddEnemyRequested = () =>
+                {
+                    var enemy = new EnemyInstance
+                    {
+                        EnemyTypeId = "new_enemy",
+                        SpawnDelay = 0f,
+                        Path = new List<PathKeyframe>
+                        {
+                            new() { Time = 0f, Position = new Vector3(0, 5, 0) },
+                            new() { Time = 3f, Position = new Vector3(0, -5, 0) }
+                        }
+                    };
+                    var cmd = ListCommand<EnemyInstance>.Add(
+                        waveLayer.Wave.Enemies, enemy, -1, "Add Enemy");
+                    _commandStack.Execute(cmd);
+                    waveLayer.InvalidateBlocks();
+                    OnStageDataChanged();
+                };
+                waveLayer.OnDeleteEnemyRequested = blk =>
+                {
+                    if (blk?.DataSource is EnemyInstance ei)
+                    {
+                        int idx = waveLayer.Wave.Enemies.IndexOf(ei);
+                        if (idx >= 0)
+                        {
+                            var cmd = ListCommand<EnemyInstance>.Remove(
+                                waveLayer.Wave.Enemies, idx, "Delete Enemy");
+                            _commandStack.Execute(cmd);
+                            waveLayer.InvalidateBlocks();
+                            OnStageDataChanged();
+                        }
+                    }
+                };
+            }
         }
 
         /// <summary>
@@ -1723,6 +1782,160 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Refresh spell card preview (patterns/timing may have changed)
             LoadSpellCardPreview(_editingSpellCard);
+        }
+
+        /// <summary>
+        /// Save a SpellCard to disk (override or original) based on current editing context.
+        /// </summary>
+        private void SaveSpellCardInContext(SpellCard sc, string scId)
+        {
+            if (sc == null || scId == null || _catalog == null) return;
+            try
+            {
+                var yaml = YamlSerializer.SerializeSpellCard(sc);
+                if (_editingBossFightSegment != null)
+                {
+                    var contextId = OverrideManager.SegmentContext(_editingBossFightSegment.Id);
+                    OverrideManager.SaveOverride(contextId, scId, yaml);
+                }
+                else
+                {
+                    var path = _catalog.GetSpellCardPath(scId);
+                    System.IO.File.WriteAllText(path, yaml);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] Failed to save spell card '{scId}': {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Show a pattern picker popup for adding a pattern to a SpellCard.
+        /// </summary>
+        private void ShowPatternPickerForSpellCard(SpellCardDetailLayer scLayer)
+        {
+            if (_catalog == null) return;
+
+            var picker = new VisualElement();
+            picker.style.position = Position.Absolute;
+            picker.style.left = Length.Percent(30);
+            picker.style.top = Length.Percent(20);
+            picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
+            picker.style.borderTopWidth = picker.style.borderBottomWidth =
+                picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
+            picker.style.borderTopColor = picker.style.borderBottomColor =
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+            picker.style.paddingTop = picker.style.paddingBottom = 8;
+            picker.style.paddingLeft = picker.style.paddingRight = 12;
+            picker.style.borderTopLeftRadius = picker.style.borderTopRightRadius =
+                picker.style.borderBottomLeftRadius = picker.style.borderBottomRightRadius = 6;
+            picker.style.minWidth = 200;
+            picker.style.maxHeight = 300;
+
+            var title = new Label("Select Pattern");
+            title.style.fontSize = 12;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 6;
+            picker.Add(title);
+
+            foreach (var entry in _catalog.Patterns)
+            {
+                var label = entry.DisplayLabel;
+                var patId = entry.Id;
+                var btn = new Button(() =>
+                {
+                    picker.RemoveFromHierarchy();
+                    var scp = new SpellCardPattern
+                    {
+                        PatternId = patId,
+                        Delay = 0f,
+                        Duration = 5f,
+                        Offset = Vector3.zero
+                    };
+                    var cmd = ListCommand<SpellCardPattern>.Add(
+                        scLayer.SpellCard.Patterns, scp, -1, "Add Pattern to SpellCard");
+                    _commandStack.Execute(cmd);
+                    scLayer.InvalidateBlocks();
+                    OnStageDataChanged();
+                    SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+                }) { text = label };
+                btn.style.backgroundColor = new Color(0.25f, 0.2f, 0.3f);
+                btn.style.color = new Color(0.9f, 0.9f, 0.9f);
+                btn.style.marginBottom = 2;
+                picker.Add(btn);
+            }
+
+            var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginTop = 4;
+            picker.Add(cancelBtn);
+
+            Root.panel.visualTree.Add(picker);
+        }
+
+        /// <summary>
+        /// Show a modal dialog to rename a resource ID.
+        /// </summary>
+        private void ShowRenameIdDialog(string resourceType, string currentId, Action<string> onConfirm)
+        {
+            var dialog = new VisualElement();
+            dialog.style.position = Position.Absolute;
+            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
+            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            dialog.style.alignItems = Align.Center;
+            dialog.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 300;
+
+            var title = new Label($"Rename {resourceType} ID");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var idField = new TextField("New ID:") { value = currentId };
+            idField.style.marginBottom = 8;
+            panel.Add(idField);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var confirmBtn = new Button(() =>
+            {
+                var newId = idField.value?.Trim();
+                if (string.IsNullOrEmpty(newId) || newId == currentId)
+                {
+                    dialog.RemoveFromHierarchy();
+                    return;
+                }
+                onConfirm?.Invoke(newId);
+                dialog.RemoveFromHierarchy();
+            }) { text = "Rename" };
+            confirmBtn.style.backgroundColor = new Color(0.2f, 0.4f, 0.5f);
+            confirmBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+
+            var cancelBtn = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(confirmBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            dialog.Add(panel);
+
+            Root.panel.visualTree.Add(dialog);
         }
 
         /// <summary>
@@ -2352,15 +2565,21 @@ namespace STGEngine.Editor.UI.Timeline
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
 
+            // Helper: execute command + persist to disk
+            void ExecAndSave(ICommand cmd)
+            {
+                _commandStack.Execute(cmd);
+                SaveSpellCardInContext(sc, scId);
+            }
+
             // Name
             var nameField = new TextField("Name") { value = sc.Name ?? "" };
             nameField.isDelayed = true;
             nameField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<string>(
+                ExecAndSave(new PropertyChangeCommand<string>(
                     "Rename SpellCard",
-                    () => sc.Name, v => sc.Name = v, e.newValue);
-                _commandStack.Execute(cmd);
+                    () => sc.Name, v => sc.Name = v, e.newValue));
             });
             container.Add(nameField);
 
@@ -2369,11 +2588,10 @@ namespace STGEngine.Editor.UI.Timeline
             tlField.isDelayed = true;
             tlField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<float>(
+                ExecAndSave(new PropertyChangeCommand<float>(
                     "Change SpellCard TimeLimit",
                     () => sc.TimeLimit, v => sc.TimeLimit = v,
-                    Mathf.Max(1f, e.newValue));
-                _commandStack.Execute(cmd);
+                    Mathf.Max(1f, e.newValue)));
             });
             container.Add(tlField);
 
@@ -2382,11 +2600,10 @@ namespace STGEngine.Editor.UI.Timeline
             hpField.isDelayed = true;
             hpField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<float>(
+                ExecAndSave(new PropertyChangeCommand<float>(
                     "Change SpellCard Health",
                     () => sc.Health, v => sc.Health = v,
-                    Mathf.Max(1f, e.newValue));
-                _commandStack.Execute(cmd);
+                    Mathf.Max(1f, e.newValue)));
             });
             container.Add(hpField);
 
@@ -2395,11 +2612,10 @@ namespace STGEngine.Editor.UI.Timeline
             transField.isDelayed = true;
             transField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<float>(
+                ExecAndSave(new PropertyChangeCommand<float>(
                     "Change Transition Duration",
                     () => sc.TransitionDuration, v => sc.TransitionDuration = v,
-                    Mathf.Max(0.1f, e.newValue));
-                _commandStack.Execute(cmd);
+                    Mathf.Max(0.1f, e.newValue)));
             });
             container.Add(transField);
 
@@ -2408,11 +2624,10 @@ namespace STGEngine.Editor.UI.Timeline
             deField.isDelayed = true;
             deField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<float>(
+                ExecAndSave(new PropertyChangeCommand<float>(
                     "Change Design Estimate",
                     () => sc.DesignEstimate, v => sc.DesignEstimate = v,
-                    e.newValue);
-                _commandStack.Execute(cmd);
+                    e.newValue));
             });
             container.Add(deField);
 
@@ -2431,6 +2646,37 @@ namespace STGEngine.Editor.UI.Timeline
             editBtn.style.backgroundColor = new Color(0.25f, 0.3f, 0.45f);
             editBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
             container.Add(editBtn);
+
+            // Rename SpellCard ID
+            var renameBtn = new Button(() =>
+            {
+                ShowRenameIdDialog("SpellCard", scId, newId =>
+                {
+                    // Update catalog
+                    var entry = _catalog.FindSpellCard(scId);
+                    if (entry != null) entry.Id = newId;
+                    var oldPath = _catalog.GetSpellCardPath(scId);
+                    entry.File = $"SpellCards/{newId}.yaml";
+                    STGCatalog.Save(_catalog);
+
+                    // Rename file on disk
+                    var newPath = _catalog.GetSpellCardPath(newId);
+                    if (System.IO.File.Exists(oldPath) && !System.IO.File.Exists(newPath))
+                        System.IO.File.Move(oldPath, newPath);
+
+                    // Update all references in the segment
+                    var ids = bfLayer.Segment.SpellCardIds;
+                    int idx = ids.IndexOf(scId);
+                    if (idx >= 0) ids[idx] = newId;
+
+                    bfLayer.InvalidateBlocks();
+                    _trackArea.RebuildBlocks();
+                });
+            }) { text = "Rename ID..." };
+            renameBtn.style.marginTop = 4;
+            renameBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.2f);
+            renameBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            container.Add(renameBtn);
 
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);
@@ -2513,6 +2759,37 @@ namespace STGEngine.Editor.UI.Timeline
                 _commandStack.Execute(cmd);
             });
             container.Add(oz);
+
+            // Inline pattern editor if resolved
+            var resolvedPattern = _library?.Resolve(scp.PatternId);
+            if (resolvedPattern != null && _singlePreviewer != null)
+            {
+                var separator = new VisualElement();
+                separator.style.height = 1;
+                separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                separator.style.marginTop = 8;
+                separator.style.marginBottom = 4;
+                container.Add(separator);
+
+                var patternHeader = new Label("Pattern Parameters");
+                patternHeader.style.color = new Color(0.8f, 0.8f, 0.8f);
+                patternHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+                patternHeader.style.marginBottom = 4;
+                container.Add(patternHeader);
+
+                _singlePreviewer.Pattern = resolvedPattern;
+                _patternEditor = new PatternEditorView(_singlePreviewer);
+                _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
+                _patternEditor.SetPattern(resolvedPattern);
+                _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
+
+                var editorRoot = _patternEditor.Root;
+                editorRoot.style.width = Length.Percent(100);
+                editorRoot.style.minWidth = StyleKeyword.Auto;
+                editorRoot.style.maxWidth = StyleKeyword.Auto;
+                editorRoot.style.backgroundColor = Color.clear;
+                container.Add(editorRoot);
+            }
 
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);

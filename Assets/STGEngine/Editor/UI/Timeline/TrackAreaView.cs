@@ -195,6 +195,8 @@ namespace STGEngine.Editor.UI.Timeline
         public void RebuildBlocks()
         {
             DismissAllPopups();
+            RecalcSequentialLayoutIfNeeded();
+
             var toRemove = new List<VisualElement>();
             foreach (var child in _trackContent.Children())
             {
