@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
 using STGEngine.Runtime;
+using STGEngine.Runtime.Bullet;
 using STGEngine.Runtime.Preview;
 
 namespace STGEngine.Editor.UI.Timeline.Layers
@@ -14,10 +15,17 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     public class SpellCardPatternBlock : ITimelineBlock
     {
         private readonly SpellCardPattern _pattern;
+        private readonly BulletPattern _resolvedPattern;
 
-        public SpellCardPatternBlock(SpellCardPattern pattern)
+        // Cached trajectory data
+        private List<Vector2[]> _trajectoryLines;
+        private Rect _trajectoryBounds;
+        private bool _trajectoryComputed;
+
+        public SpellCardPatternBlock(SpellCardPattern pattern, BulletPattern resolvedPattern = null)
         {
             _pattern = pattern;
+            _resolvedPattern = resolvedPattern;
         }
 
         public string Id => _pattern.PatternId;
@@ -46,15 +54,111 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             }
         }
 
-        public bool CanMove => true; // Free-form within spell card timeline
+        public bool CanMove => true;
 
-        public float DesignEstimate { get => -1f; set { } } // ComputedEstimate in Step 2
+        public float DesignEstimate { get => -1f; set { } }
 
         public object DataSource => _pattern;
 
-        // Thumbnail — will be implemented in step 2b (bullet trajectory lines)
-        public bool HasThumbnail => false;
-        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight) { }
+        // ── Thumbnail ──
+
+        public bool HasThumbnail
+        {
+            get
+            {
+                if (_resolvedPattern != null)
+                {
+                    EnsureTrajectoryComputed();
+                    return _trajectoryLines != null && _trajectoryLines.Count > 0;
+                }
+                return false;
+            }
+        }
+
+        public void DrawThumbnail(Painter2D painter, float blockWidth, float blockHeight)
+        {
+            if (_trajectoryLines == null || _trajectoryLines.Count == 0) return;
+
+            float margin = 3f;
+            float labelSpace = 12f;
+            float drawW = blockWidth - margin * 2;
+            float drawH = blockHeight - labelSpace - margin;
+            if (drawW < 4f || drawH < 4f) return;
+
+            float bw = _trajectoryBounds.width;
+            float bh = _trajectoryBounds.height;
+            if (bw < 0.01f) bw = 1f;
+            if (bh < 0.01f) bh = 1f;
+
+            float scale = Mathf.Min(drawW / bw, drawH / bh);
+            float offsetX = margin + (drawW - bw * scale) * 0.5f;
+            float offsetY = labelSpace + (drawH - bh * scale) * 0.5f;
+
+            painter.strokeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
+            painter.lineWidth = 1f;
+
+            foreach (var line in _trajectoryLines)
+            {
+                if (line.Length < 2) continue;
+                painter.BeginPath();
+                for (int i = 0; i < line.Length; i++)
+                {
+                    float x = offsetX + (line[i].x - _trajectoryBounds.xMin) * scale;
+                    float y = offsetY + (line[i].y - _trajectoryBounds.yMin) * scale;
+                    if (i == 0) painter.MoveTo(new Vector2(x, y));
+                    else painter.LineTo(new Vector2(x, y));
+                }
+                painter.Stroke();
+            }
+        }
+
+        private void EnsureTrajectoryComputed()
+        {
+            if (_trajectoryComputed) return;
+            _trajectoryComputed = true;
+            if (_resolvedPattern?.Emitter == null) return;
+
+            int bulletCount = _resolvedPattern.Emitter.Count;
+            int maxBullets = Mathf.Min(bulletCount, 12);
+            int timeSteps = 8;
+            float duration = _pattern.Duration > 0f ? _pattern.Duration : 5f;
+
+            _trajectoryLines = new List<Vector2[]>(maxBullets);
+            float xMin = float.MaxValue, xMax = float.MinValue;
+            float yMin = float.MaxValue, yMax = float.MinValue;
+
+            int step = Mathf.Max(1, bulletCount / maxBullets);
+
+            for (int bi = 0; bi < bulletCount && _trajectoryLines.Count < maxBullets; bi += step)
+            {
+                var points = new Vector2[timeSteps];
+                for (int ti = 0; ti < timeSteps; ti++)
+                {
+                    float t = (ti / (float)(timeSteps - 1)) * duration;
+                    var states = BulletEvaluator.EvaluateAll(_resolvedPattern, t);
+                    if (bi < states.Count)
+                    {
+                        var pos = states[bi].Position;
+                        float px = pos.x;
+                        float py = -pos.z;
+                        points[ti] = new Vector2(px, py);
+                        if (px < xMin) xMin = px;
+                        if (px > xMax) xMax = px;
+                        if (py < yMin) yMin = py;
+                        if (py > yMax) yMax = py;
+                    }
+                    else
+                    {
+                        points[ti] = ti > 0 ? points[ti - 1] : Vector2.zero;
+                    }
+                }
+                _trajectoryLines.Add(points);
+            }
+
+            float pad = 0.5f;
+            _trajectoryBounds = new Rect(xMin - pad, yMin - pad,
+                (xMax - xMin) + pad * 2, (yMax - yMin) + pad * 2);
+        }
     }
 
     /// <summary>
@@ -185,7 +289,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
             foreach (var pattern in _spellCard.Patterns)
             {
-                _blocks.Add(new SpellCardPatternBlock(pattern));
+                var resolved = _library?.Resolve(pattern.PatternId);
+                _blocks.Add(new SpellCardPatternBlock(pattern, resolved));
             }
         }
     }
