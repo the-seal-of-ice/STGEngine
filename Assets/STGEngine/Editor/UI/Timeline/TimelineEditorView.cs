@@ -268,6 +268,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.OnAddWaveEventRequested += OnAddWaveEventRequested;
             _trackArea.OnBlockDoubleClicked += OnBlockDoubleClicked;
             _trackArea.OnBlockSelected += OnBlockSelectedGeneric;
+            _trackArea.OnBlockReorderRequested += OnBlockReorderRequested;
             _mainSplit.Add(_trackArea.Root);
 
             Root.Add(_mainSplit);
@@ -2205,6 +2206,75 @@ namespace STGEngine.Editor.UI.Timeline
             _selectedTimelineEvent = null;
 
             _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+        }
+
+        /// <summary>
+        /// Handle block reorder in sequential layers (drag to rearrange).
+        /// Reorders the underlying data list and rebuilds the view.
+        /// </summary>
+        private void OnBlockReorderRequested(int fromIndex, int toIndex)
+        {
+            if (_currentLayer is BossFightLayer bfLayer)
+            {
+                var ids = bfLayer.Segment.SpellCardIds;
+                // Filter: fromIndex/toIndex are block indices (including TransitionBlocks).
+                // Map to SpellCard-only indices.
+                var allBlocks = bfLayer.GetAllBlocks();
+                if (fromIndex < 0 || fromIndex >= allBlocks.Count) return;
+                if (toIndex < 0 || toIndex >= allBlocks.Count) return;
+
+                // Get the SpellCard IDs for the from/to blocks
+                var fromBlock = allBlocks[fromIndex] as SpellCardBlock;
+                var toBlock = allBlocks[toIndex] as SpellCardBlock;
+                if (fromBlock == null) return; // Can't reorder transition blocks
+
+                int fromScIdx = ids.IndexOf(fromBlock.SpellCardId);
+                if (fromScIdx < 0) return;
+
+                // Calculate target SC index
+                int toScIdx;
+                if (toBlock != null)
+                    toScIdx = ids.IndexOf(toBlock.SpellCardId);
+                else
+                    toScIdx = fromScIdx; // dropped on transition, no move
+
+                if (fromScIdx == toScIdx) return;
+
+                // Reorder via remove + insert (with undo)
+                var id = ids[fromScIdx];
+                var removeCmd = ListCommand<string>.Remove(ids, fromScIdx, "Reorder Spell Card (remove)");
+                _commandStack.Execute(removeCmd);
+
+                int insertIdx = toScIdx > fromScIdx ? toScIdx - 1 : toScIdx;
+                insertIdx = Mathf.Clamp(insertIdx, 0, ids.Count);
+                var insertCmd = ListCommand<string>.Add(ids, id, insertIdx, "Reorder Spell Card (insert)");
+                _commandStack.Execute(insertCmd);
+
+                // Rebuild
+                bfLayer.InvalidateBlocks();
+                _trackArea.RebuildBlocks();
+                ShowBossFightSpellCards(bfLayer.Segment);
+                LoadBossFightPreview(bfLayer.Segment);
+            }
+            else if (_currentLayer is StageLayer stageLayer)
+            {
+                var segments = stageLayer.Stage.Segments;
+                if (fromIndex < 0 || fromIndex >= segments.Count) return;
+                if (toIndex < 0 || toIndex >= segments.Count) return;
+                if (fromIndex == toIndex) return;
+
+                var seg = segments[fromIndex];
+                var removeCmd = ListCommand<TimelineSegment>.Remove(segments, fromIndex, "Reorder Segment (remove)");
+                _commandStack.Execute(removeCmd);
+
+                int insertIdx = toIndex > fromIndex ? toIndex - 1 : toIndex;
+                insertIdx = Mathf.Clamp(insertIdx, 0, segments.Count);
+                var insertCmd = ListCommand<TimelineSegment>.Add(segments, seg, insertIdx, "Reorder Segment (insert)");
+                _commandStack.Execute(insertCmd);
+
+                stageLayer.InvalidateBlocks();
+                _trackArea.RebuildBlocks();
+            }
         }
 
         private void OnEventSelected(TimelineEvent evt)

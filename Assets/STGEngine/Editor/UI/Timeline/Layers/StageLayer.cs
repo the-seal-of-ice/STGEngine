@@ -202,6 +202,19 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public Stage Stage => _stage;
 
+        /// <summary>
+        /// Recalculate StartTime for all segment blocks in sequential order.
+        /// </summary>
+        public void RecalcSequentialLayout()
+        {
+            float timeOffset = 0f;
+            foreach (var blk in _blocks)
+            {
+                blk.StartTime = timeOffset;
+                timeOffset += blk.Duration;
+            }
+        }
+
         /// <summary>Update catalog reference (may be null at construction, set later).</summary>
         public void SetCatalog(STGCatalog catalog) => _catalog = catalog;
 

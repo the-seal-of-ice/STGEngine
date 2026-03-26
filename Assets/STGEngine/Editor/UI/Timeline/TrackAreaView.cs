@@ -18,6 +18,8 @@ namespace STGEngine.Editor.UI.Timeline
         public event Action<ITimelineBlock> OnBlockValuesChanged;
         public event Action<ITimelineBlock> OnBlockDoubleClicked;
         public event Action<float> OnSeekRequested;
+        /// <summary>Raised when a block is dragged to a new position in a sequential layer. Args: fromIndex, toIndex.</summary>
+        public event Action<int, int> OnBlockReorderRequested;
 
         // ─── Legacy events (kept for backward compat during migration) ───
         public event Action<TimelineEvent> OnEventSelected;
@@ -49,11 +51,12 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly List<BlockInfo> _blocks = new();
         private ITimelineBlock _selectedBlock;
 
-        private enum DragMode { None, Move, Resize, Scrub }
+        private enum DragMode { None, Move, Resize, Scrub, Reorder }
         private DragMode _dragMode;
         private BlockInfo _dragBlockInfo;
         private float _dragStartMouseX;
         private float _dragStartValue;
+        private int _reorderOriginalIndex; // original index in _blocks for reorder drag
 
         private const float TrackRowHeight = 34f;
         private const float TrackPadding = 4f;
@@ -524,6 +527,12 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         StartDrag(DragMode.Move, info, e.mousePosition.x);
                     }
+                    else if (_layer != null && _layer.IsSequential)
+                    {
+                        // Sequential mode: drag to reorder
+                        _reorderOriginalIndex = _blocks.IndexOf(info);
+                        StartDrag(DragMode.Reorder, info, e.mousePosition.x);
+                    }
                     e.StopPropagation();
                 }
             });
@@ -653,7 +662,19 @@ namespace STGEngine.Editor.UI.Timeline
                 float newDuration = Mathf.Max(0.5f, snappedEnd - startTime);
                 blk.Duration = newDuration;
             }
+            else if (_dragMode == DragMode.Reorder)
+            {
+                // Visual feedback: offset the dragged block element horizontally
+                float left = blk.StartTime * _pixelsPerSecond - _scrollOffset + deltaX;
+                _dragBlockInfo.Element.style.left = left;
+                // Slight vertical lift to indicate dragging
+                _dragBlockInfo.Element.style.top = TrackPadding + _dragBlockInfo.Row * TrackRowHeight - 3;
+                _dragBlockInfo.Element.style.opacity = 0.7f;
+                UpdateEdgeScroll(e.mousePosition);
+                return; // skip normal position update
+            }
 
+            RecalcSequentialLayoutIfNeeded();
             UpdateAllBlockPositions();
             OnBlockValuesChanged?.Invoke(blk);
             // Legacy bridge
@@ -708,6 +729,35 @@ namespace STGEngine.Editor.UI.Timeline
                     // Legacy bridge for property panel sync:
                     if (blk.DataSource is TimelineEvent resizeEvt)
                         OnEventValuesChanged?.Invoke(resizeEvt);
+                }
+            }
+            else if (_dragMode == DragMode.Reorder)
+            {
+                // Reset visual feedback
+                _dragBlockInfo.Element.style.opacity = 1f;
+
+                // Determine target index based on drop position
+                float dropX = e.mousePosition.x + _scrollOffset;
+                float dropTime = dropX / _pixelsPerSecond;
+
+                // Find which position the block should be inserted at
+                var allBlocks = _layer.GetAllBlocks();
+                int fromIndex = _reorderOriginalIndex;
+                int toIndex = allBlocks.Count - 1;
+
+                // Walk through blocks to find where dropTime falls
+                float accum = 0f;
+                for (int i = 0; i < allBlocks.Count; i++)
+                {
+                    if (i == fromIndex) { accum += allBlocks[i].Duration; continue; }
+                    float mid = accum + allBlocks[i].Duration * 0.5f;
+                    if (dropTime < mid) { toIndex = i; break; }
+                    accum += allBlocks[i].Duration;
+                }
+
+                if (fromIndex != toIndex)
+                {
+                    OnBlockReorderRequested?.Invoke(fromIndex, toIndex);
                 }
             }
 
@@ -1007,10 +1057,29 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>
         /// Update visual positions of all blocks without rebuilding the block list.
         /// Use this for property changes (undo/redo) that don't alter the block structure.
+        /// For sequential layers, recalculates StartTime from accumulated Duration.
         /// </summary>
         public void RefreshBlockPositions()
         {
+            RecalcSequentialLayoutIfNeeded();
             UpdateAllBlockPositions();
+        }
+
+        /// <summary>
+        /// If the current layer is sequential, recalculate all block StartTimes
+        /// from their Durations (so transitions stay aligned after resize).
+        /// </summary>
+        private void RecalcSequentialLayoutIfNeeded()
+        {
+            if (_layer == null || !_layer.IsSequential) return;
+
+            float timeOffset = 0f;
+            var allBlocks = _layer.GetAllBlocks();
+            for (int i = 0; i < allBlocks.Count; i++)
+            {
+                allBlocks[i].StartTime = timeOffset;
+                timeOffset += allBlocks[i].Duration;
+            }
         }
 
         private void UpdateAllBlockPositions()

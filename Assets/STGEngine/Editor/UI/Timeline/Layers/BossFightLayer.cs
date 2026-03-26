@@ -195,6 +195,20 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public IReadOnlyList<SpellCard> LoadedSpellCards => _loadedSpellCards;
         public IReadOnlyList<string> LoadedSpellCardIds => _loadedSpellCardIds;
 
+        /// <summary>
+        /// Recalculate StartTime for all blocks in sequential order.
+        /// Call after any Duration change to keep transitions aligned.
+        /// </summary>
+        public void RecalcSequentialLayout()
+        {
+            float timeOffset = 0f;
+            foreach (var blk in _blocks)
+            {
+                blk.StartTime = timeOffset;
+                timeOffset += blk.Duration;
+            }
+        }
+
         // ── Internal ──
 
         private void RebuildBlockList()
