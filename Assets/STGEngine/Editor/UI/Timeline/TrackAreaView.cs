@@ -223,14 +223,19 @@ namespace STGEngine.Editor.UI.Timeline
             // Restore visual selection highlight after rebuild
             if (_selectedBlock != null)
             {
+                bool found = false;
                 foreach (var b in _blocks)
                 {
                     if (b.Block.Id == _selectedBlock.Id)
                     {
+                        _selectedBlock = b.Block;
                         ApplySelectionStyle(b.Element, true);
+                        found = true;
                         break;
                     }
                 }
+                if (!found)
+                    _selectedBlock = null;
             }
 
             UpdateAllBlockPositions();

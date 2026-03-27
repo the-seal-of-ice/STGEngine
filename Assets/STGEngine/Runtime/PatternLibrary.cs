@@ -106,7 +106,7 @@ namespace STGEngine.Runtime
             // Scan legacy DefaultPatterns/ directory (backward compat)
             ScanResourceFolder("DefaultPatterns");
 
-            Debug.Log($"[PatternLibrary] Loaded {_cache.Count} patterns.");
+
         }
 
         private void ScanResourceFolder(string resourcePath)

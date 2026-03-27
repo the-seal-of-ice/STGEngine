@@ -1,15 +1,11 @@
 id: grunt_a
 name: 小兵A
 health: 10
-speed: 2
 scale: 1
 patterns:
-- pattern_id: demo_ring_wave
+- pattern_id: demo_ring_split
   delay: 0
   duration: 5
-pattern_ids:
-- demo_ring_wave
-fire_delay: 0.5
-pattern_duration: 5
+  offset: {x: 0, y: 0, z: 0}
 color: {r: 1, g: 0.5, b: 0.5, a: 1}
 mesh_type: Diamond

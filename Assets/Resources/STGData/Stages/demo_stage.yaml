@@ -7,48 +7,12 @@ segments:
   type: mid_stage
   duration: 15
   events:
-  - type: spawn_pattern
-    id: evt_001
-    start_time: 0
-    duration: 5
-    pattern_id: demo_ring_wave
-    spawn_position: {x: 0, y: 5, z: 0}
-  - type: spawn_pattern
-    id: evt_002
-    start_time: 7.76826
-    duration: 8.702371
-    pattern_id: demo_cone_bounce
-    spawn_position: {x: -2, y: 5, z: 0}
-  - type: spawn_pattern
-    id: evt_003
-    start_time: 3.249371
-    duration: 5
-    pattern_id: demo_sphere_homing
-    spawn_position: {x: 2, y: 5, z: 0}
-  - type: spawn_pattern
-    id: evt_761cc6
-    start_time: 7.79495
-    duration: 8.754399
-    pattern_id: demo_cone_bounce
-    spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_wave
     id: wevt_7b8fe4
-    start_time: 0
+    start_time: 0.01483307
     duration: 10
     wave_id: wave_01
     spawn_offset: {x: 0, y: 0, z: 0}
-  - type: spawn_pattern
-    id: evt_08b5d1
-    start_time: 0
-    duration: 5
-    pattern_id: demo_sphere_homing
-    spawn_position: {x: 0, y: 5, z: 0}
-  - type: spawn_pattern
-    id: evt_56d844
-    start_time: 7
-    duration: 5
-    pattern_id: demo_sphere_homing
-    spawn_position: {x: 0, y: 5, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight

@@ -207,7 +207,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 if (File.Exists(path))
                 {
                     var enemyType = YamlSerializer.DeserializeEnemyTypeFromFile(path);
-                    return new EnemyTypeLayer(enemyType, ei.EnemyTypeId, Catalog);
+                    return new EnemyTypeLayer(enemyType, ei.EnemyTypeId, Catalog)
+                    {
+                        SourceInstance = ei
+                    };
                 }
             }
             return null;

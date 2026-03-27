@@ -23,16 +23,18 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     {
         private readonly EnemyPattern _pattern;
         private readonly BulletPattern _resolvedPattern;
+        private readonly int _index;
         private bool _trajectoryComputed;
         private List<TrajectoryThumbnailRenderer.TrajPoint[]> _emitterTrajectories;
 
-        public EnemyPatternBlock(EnemyPattern pattern, BulletPattern resolvedPattern = null)
+        public EnemyPatternBlock(EnemyPattern pattern, int index, BulletPattern resolvedPattern = null)
         {
             _pattern = pattern;
+            _index = index;
             _resolvedPattern = resolvedPattern;
         }
 
-        public string Id => _pattern.PatternId;
+        public string Id => $"{_pattern.PatternId}_{_index}";
         public string DisplayLabel => _pattern.PatternId;
 
         public float StartTime
@@ -106,7 +108,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     /// Timeline layer for an EnemyType's pattern timeline.
     /// Blocks = EnemyPattern (free-form by Delay, can overlap).
     /// Double-click a pattern block → PatternLayer.
-    /// Properties panel shows EnemyType stats (Name/Health/Speed/Scale/FireDelay/Color/MeshType).
+    /// Properties panel shows EnemyType stats (Name/Health/Scale/Color/MeshType).
     /// </summary>
     public class EnemyTypeLayer : ITimelineLayer
     {
@@ -141,7 +143,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         // ── Timeline parameters ──
 
-        public float TotalDuration => _enemyType.PatternDuration;
+        public float TotalDuration => Mathf.Max(10f, _enemyType.PatternDuration + 5f);
         public bool IsSequential => false;
 
         // ── Interaction ──
@@ -275,27 +277,6 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             });
             wrapper.Add(healthField);
 
-            // ── Speed ──
-            var speedField = new FloatField("Speed") { value = _enemyType.Speed };
-            speedField.isDelayed = true;
-            speedField.RegisterValueChangedCallback(e =>
-            {
-                float val = Mathf.Max(0.1f, e.newValue);
-                if (commandStack != null)
-                {
-                    var cmd = new PropertyChangeCommand<float>(
-                        "Change EnemyType Speed",
-                        () => _enemyType.Speed, v => _enemyType.Speed = v, val);
-                    commandStack.Execute(cmd);
-                }
-                else
-                {
-                    _enemyType.Speed = val;
-                }
-                OnEnemyTypeChanged?.Invoke();
-            });
-            wrapper.Add(speedField);
-
             // ── Scale ──
             var scaleField = new FloatField("Scale") { value = _enemyType.Scale };
             scaleField.isDelayed = true;
@@ -316,27 +297,6 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 OnEnemyTypeChanged?.Invoke();
             });
             wrapper.Add(scaleField);
-
-            // ── FireDelay ──
-            var fireDelayField = new FloatField("Fire Delay") { value = _enemyType.FireDelay };
-            fireDelayField.isDelayed = true;
-            fireDelayField.RegisterValueChangedCallback(e =>
-            {
-                float val = Mathf.Max(0f, e.newValue);
-                if (commandStack != null)
-                {
-                    var cmd = new PropertyChangeCommand<float>(
-                        "Change EnemyType FireDelay",
-                        () => _enemyType.FireDelay, v => _enemyType.FireDelay = v, val);
-                    commandStack.Execute(cmd);
-                }
-                else
-                {
-                    _enemyType.FireDelay = val;
-                }
-                OnEnemyTypeChanged?.Invoke();
-            });
-            wrapper.Add(fireDelayField);
 
             // ── Color (foldout with swatch + RGBA fields) ──
             var colorFoldout = new Foldout { text = "Color", value = false };
@@ -464,13 +424,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 var pattern = _library?.Resolve(ep.PatternId);
                 if (pattern == null) continue;
 
+                // Compute spawn position: enemy path position at pattern start + offset
+                var enemyPos = EvaluateEnemyPath(SourceInstance?.Path, ep.Delay);
+
                 tempSegment.Events.Add(new SpawnPatternEvent
                 {
-                    Id = $"_et_evt_{ep.PatternId}_{ep.Delay:F0}",
+                    Id = $"_et_evt_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
                     StartTime = ep.Delay,
                     Duration = ep.Duration,
                     PatternId = ep.PatternId,
-                    SpawnPosition = Vector3.zero,
+                    SpawnPosition = enemyPos + ep.Offset,
                     ResolvedPattern = pattern
                 });
             }
@@ -483,6 +446,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public EnemyType EnemyType => _enemyType;
         public string EnemyTypeId => _enemyTypeId;
         public STGCatalog Catalog => _catalog;
+
+        /// <summary>The EnemyInstance that entered this layer. Used for path-based preview positioning.</summary>
+        public EnemyInstance SourceInstance { get; set; }
 
         /// <summary>Pattern library for resolving pattern IDs. Set by WireLayerToTrackArea.</summary>
         public PatternLibrary Library
@@ -513,14 +479,36 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             _blocks.Clear();
             if (_enemyType?.Patterns == null) return;
 
-            foreach (var ep in _enemyType.Patterns)
+            for (int i = 0; i < _enemyType.Patterns.Count; i++)
             {
+                var ep = _enemyType.Patterns[i];
                 var resolved = _library?.Resolve(ep.PatternId);
-                _blocks.Add(new EnemyPatternBlock(ep, resolved));
+                _blocks.Add(new EnemyPatternBlock(ep, i, resolved));
             }
         }
 
         // ── Helpers ──
+
+        /// <summary>
+        /// Evaluate enemy path position at a given time via linear interpolation.
+        /// Returns Vector3.zero if path is null or empty.
+        /// </summary>
+        public static Vector3 EvaluateEnemyPath(List<PathKeyframe> path, float time)
+        {
+            if (path == null || path.Count == 0) return Vector3.zero;
+            if (path.Count == 1 || time <= path[0].Time) return path[0].Position;
+            if (time >= path[path.Count - 1].Time) return path[path.Count - 1].Position;
+
+            for (int i = 0; i < path.Count - 1; i++)
+            {
+                if (time >= path[i].Time && time <= path[i + 1].Time)
+                {
+                    float t = (time - path[i].Time) / (path[i + 1].Time - path[i].Time);
+                    return Vector3.Lerp(path[i].Position, path[i + 1].Position, t);
+                }
+            }
+            return path[path.Count - 1].Position;
+        }
 
         private static string ColorToHex(Color c)
         {

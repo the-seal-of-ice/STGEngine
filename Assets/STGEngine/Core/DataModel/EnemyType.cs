@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using YamlDotNet.Serialization;
 
@@ -14,11 +13,14 @@ namespace STGEngine.Core.DataModel
         /// <summary>Referenced BulletPattern file ID.</summary>
         public string PatternId { get; set; } = "";
 
-        /// <summary>Delay after FireDelay before this pattern activates (seconds).</summary>
+        /// <summary>Delay before this pattern activates (seconds).</summary>
         public float Delay { get; set; }
 
         /// <summary>How long this pattern runs (seconds). 0 = use pattern's own duration.</summary>
         public float Duration { get; set; } = 5f;
+
+        /// <summary>Spawn position offset relative to enemy position.</summary>
+        public Vector3 Offset { get; set; }
     }
 
     /// <summary>
@@ -36,9 +38,6 @@ namespace STGEngine.Core.DataModel
         /// <summary>Hit points.</summary>
         public float Health { get; set; } = 10f;
 
-        /// <summary>Movement speed along path (units/sec).</summary>
-        public float Speed { get; set; } = 2f;
-
         /// <summary>Visual scale multiplier.</summary>
         public float Scale { get; set; } = 1f;
 
@@ -47,22 +46,7 @@ namespace STGEngine.Core.DataModel
         /// <summary>Pattern slots this enemy fires (timeline-based).</summary>
         public List<EnemyPattern> Patterns { get; set; } = new();
 
-        /// <summary>Legacy convenience: flat list of pattern IDs (read-only projection).</summary>
-        [YamlIgnore]
-        public List<string> PatternIds
-        {
-            get => Patterns.Select(p => p.PatternId).ToList();
-            set
-            {
-                Patterns = value?.Select(id => new EnemyPattern { PatternId = id }).ToList()
-                           ?? new List<EnemyPattern>();
-            }
-        }
-
-        /// <summary>Delay after spawn before first shot (seconds).</summary>
-        public float FireDelay { get; set; } = 0.5f;
-
-        /// <summary>Total pattern timeline duration (seconds).</summary>
+        /// <summary>Total pattern timeline duration (seconds). Computed, not serialized.</summary>
         [YamlIgnore]
         public float PatternDuration
         {

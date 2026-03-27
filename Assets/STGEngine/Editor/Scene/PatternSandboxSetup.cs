@@ -567,7 +567,7 @@ namespace STGEngine.Editor.Scene
                 {
                     var pattern = YamlSerializer.Deserialize(yamlAsset.text);
                     _editorView?.SetPattern(pattern);
-                    Debug.Log($"[SandboxSetup] Loaded demo pattern: {patternName}");
+
                     return;
                 }
                 catch (System.Exception e)

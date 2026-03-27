@@ -417,6 +417,10 @@ namespace STGEngine.Editor.UI.Timeline
         {
             _catalog = catalog;
             _stageLayer?.SetCatalog(catalog);
+
+            // Refresh preview now that catalog is available (wave expansion needs it)
+            if (_currentLayer != null)
+                LoadPreviewForLayer(_currentLayer);
         }
 
         /// <summary>
@@ -669,6 +673,7 @@ namespace STGEngine.Editor.UI.Timeline
                         {
                             if (sw.StartTime >= seg.Duration) continue;
                             float clampedDur = Mathf.Min(sw.Duration, seg.Duration - sw.StartTime);
+                            // Keep the wave event for placeholder rendering
                             tempSegment.Events.Add(new SpawnWaveEvent
                             {
                                 Id = $"_so_{seg.Id}_{sw.Id}",
@@ -677,6 +682,8 @@ namespace STGEngine.Editor.UI.Timeline
                                 WaveId = sw.WaveId,
                                 SpawnOffset = sw.SpawnOffset
                             });
+                            // Expand wave → enemy → pattern for bullet preview
+                            tempSegment.Events.AddRange(ExpandWaveEvent(sw, segmentOffset, seg.Id));
                         }
                     }
                 }
@@ -1262,7 +1269,7 @@ namespace STGEngine.Editor.UI.Timeline
                 _currentLayer = midLayer;
                 WireLayerToTrackArea(midLayer);
                 _trackArea.SetLayer(midLayer);
-                _playback.LoadSegment(segment);
+                LoadMidStagePreview(segment);
                 OnSpellCardEditingChanged?.Invoke(null);
                 NotifyWavePlaceholders();
             }
@@ -1712,6 +1719,49 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// Build a preview segment for a MidStage that includes expanded wave patterns.
+        /// Copies all SpawnPatternEvents directly, and expands SpawnWaveEvents into
+        /// SpawnPatternEvents via the Wave → EnemyInstance → EnemyType → EnemyPattern chain.
+        /// </summary>
+        private void LoadMidStagePreview(TimelineSegment segment)
+        {
+            var tempSegment = new TimelineSegment
+            {
+                Id = $"_mid_{segment.Id}",
+                Name = segment.Name,
+                Type = SegmentType.MidStage,
+                Duration = segment.Duration
+            };
+
+            foreach (var evt in segment.Events)
+            {
+                if (evt is SpawnPatternEvent sp)
+                {
+                    var pattern = sp.ResolvedPattern ?? _library?.Resolve(sp.PatternId);
+                    if (pattern == null) continue;
+                    tempSegment.Events.Add(new SpawnPatternEvent
+                    {
+                        Id = sp.Id,
+                        StartTime = sp.StartTime,
+                        Duration = sp.Duration,
+                        PatternId = sp.PatternId,
+                        SpawnPosition = sp.SpawnPosition,
+                        ResolvedPattern = pattern
+                    });
+                }
+                else if (evt is SpawnWaveEvent sw)
+                {
+                    // Keep wave event for placeholder rendering
+                    tempSegment.Events.Add(sw);
+                    // Expand into pattern events for bullet preview
+                    tempSegment.Events.AddRange(ExpandWaveEvent(sw, 0f, segment.Id));
+                }
+            }
+
+            _playback.LoadSegment(tempSegment);
+        }
+
+        /// <summary>
         /// <summary>
         /// Clamp events in a temporary segment so none exceed the segment's Duration.
         /// Events that start after Duration are removed.
@@ -1908,6 +1958,10 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 LoadSpellCardPreview(scLayer.SpellCard);
             }
+            else if (layer is MidStageLayer midLayer && midLayer.Segment != null)
+            {
+                LoadMidStagePreview(midLayer.Segment);
+            }
             else
             {
                 layer.LoadPreview(_playback);
@@ -2061,7 +2115,6 @@ namespace STGEngine.Editor.UI.Timeline
                             var cmd = ListCommand<EnemyPattern>.Remove(
                                 etLayer.EnemyType.Patterns, idx, "Delete Pattern from EnemyType");
                             _commandStack.Execute(cmd);
-                            etLayer.InvalidateBlocks();
                             SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
                         }
                     }
@@ -2394,6 +2447,60 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// Expand a SpawnWaveEvent into SpawnPatternEvents by resolving
+        /// Wave → EnemyInstance → EnemyType → EnemyPattern chain.
+        /// Each enemy's patterns are offset by the enemy's SpawnDelay + path position.
+        /// </summary>
+        private List<SpawnPatternEvent> ExpandWaveEvent(SpawnWaveEvent sw, float timeOffset, string segmentId = null)
+        {
+            var result = new List<SpawnPatternEvent>();
+            if (_catalog == null || _library == null) return result;
+
+            // Resolve wave (override first, then catalog fallback)
+            // Override contextId = "{segmentId}/{eventId}" (per-event-instance isolation)
+            string waveContextId = !string.IsNullOrEmpty(segmentId) ? $"{segmentId}/{sw.Id}" : null;
+            var wavePath = OverrideManager.ResolveWavePath(_catalog, waveContextId, sw.WaveId);
+            if (string.IsNullOrEmpty(wavePath) || !System.IO.File.Exists(wavePath)) return result;
+            Wave wave;
+            try { wave = YamlSerializer.DeserializeWaveFromFile(wavePath); }
+            catch { return result; }
+            if (wave?.Enemies == null) return result;
+
+            foreach (var ei in wave.Enemies)
+            {
+                // Resolve enemy type
+                var etPath = _catalog.GetEnemyTypePath(ei.EnemyTypeId);
+                if (string.IsNullOrEmpty(etPath) || !System.IO.File.Exists(etPath)) continue;
+                EnemyType enemyType;
+                try { enemyType = YamlSerializer.DeserializeEnemyTypeFromFile(etPath); }
+                catch { continue; }
+                if (enemyType?.Patterns == null || enemyType.Patterns.Count == 0) continue;
+
+                float enemyStart = timeOffset + sw.StartTime + ei.SpawnDelay;
+
+                foreach (var ep in enemyType.Patterns)
+                {
+                    var pattern = _library.Resolve(ep.PatternId);
+                    if (pattern == null) continue;
+
+                    // Enemy position at pattern fire time (relative to enemy spawn)
+                    var enemyPos = EnemyTypeLayer.EvaluateEnemyPath(ei.Path, ep.Delay);
+
+                    result.Add(new SpawnPatternEvent
+                    {
+                        Id = $"_wave_{sw.WaveId}_{ei.EnemyTypeId}_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                        StartTime = enemyStart + ep.Delay,
+                        Duration = ep.Duration,
+                        PatternId = ep.PatternId,
+                        SpawnPosition = sw.SpawnOffset + enemyPos + ep.Offset,
+                        ResolvedPattern = pattern
+                    });
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Build WavePlaceholderData from the current layer context and fire OnWaveEditingChanged.
         /// - WaveLayer: single wave, no offset
         /// - MidStageLayer: all SpawnWaveEvents in the segment, each with its StartTime offset
@@ -2589,9 +2696,7 @@ namespace STGEngine.Editor.UI.Timeline
                     var cmd = ListCommand<EnemyPattern>.Add(
                         etLayer.EnemyType.Patterns, newEp, desc: "Add Pattern to EnemyType");
                     _commandStack.Execute(cmd);
-                    etLayer.InvalidateBlocks();
                     SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
-                    _trackArea.RebuildBlocks();
                 })
                 { text = pid };
                 btn.style.backgroundColor = new Color(0.25f, 0.25f, 0.25f);
@@ -2769,7 +2874,53 @@ namespace STGEngine.Editor.UI.Timeline
             if (layer is EnemyTypeLayer etLayer)
             {
                 _propertyHeaderLabel.text = $"EnemyType: {etLayer.DisplayName}";
-                etLayer.BuildEnemyTypePropertiesPanel(_propertyContent, _commandStack);
+
+                var container = new VisualElement();
+                container.style.paddingTop = 4;
+                container.style.paddingLeft = 8;
+                container.style.paddingRight = 8;
+
+                // If we have a source EnemyInstance, show its path keyframe editor first
+                if (etLayer.SourceInstance != null)
+                {
+                    var ei = etLayer.SourceInstance;
+
+                    var instanceHeader = new Label($"Enemy Instance: {ei.EnemyTypeId}");
+                    instanceHeader.style.color = new Color(1f, 0.7f, 0.5f);
+                    instanceHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    instanceHeader.style.marginBottom = 4;
+                    container.Add(instanceHeader);
+
+                    // SpawnDelay (read-only info in this context)
+                    var delayInfo = new Label($"Spawn Delay: {ei.SpawnDelay:F1}s");
+                    delayInfo.style.color = new Color(0.6f, 0.6f, 0.6f);
+                    delayInfo.style.marginBottom = 4;
+                    container.Add(delayInfo);
+
+                    // Path keyframe editor — find parent WaveLayer for save callback
+                    WaveLayer parentWave = null;
+                    foreach (var entry in _navigationStack)
+                    {
+                        if (entry.Layer is WaveLayer wl) { parentWave = wl; break; }
+                    }
+                    if (parentWave != null)
+                    {
+                        if (ei.Path == null) ei.Path = new List<PathKeyframe>();
+                        BuildEnemyPathEditor(container, ei, parentWave);
+                    }
+
+                    var separator = new VisualElement();
+                    separator.style.height = 1;
+                    separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                    separator.style.marginTop = 10;
+                    separator.style.marginBottom = 6;
+                    container.Add(separator);
+                }
+
+                // EnemyType stats panel
+                etLayer.BuildEnemyTypePropertiesPanel(container, _commandStack);
+
+                _propertyContent.Add(container);
                 ApplyLightTextTheme(_propertyContent);
                 return;
             }
@@ -3171,6 +3322,40 @@ namespace STGEngine.Editor.UI.Timeline
             // Path editor
             BuildEnemyPathEditor(container, ei, waveLayer);
 
+            // ── Append EnemyType stats below path editor ──
+            if (_catalog != null)
+            {
+                var etPath = _catalog.GetEnemyTypePath(ei.EnemyTypeId);
+                if (System.IO.File.Exists(etPath))
+                {
+                    var enemyType = YamlSerializer.DeserializeEnemyTypeFromFile(etPath);
+
+                    var separator = new VisualElement();
+                    separator.style.height = 1;
+                    separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                    separator.style.marginTop = 10;
+                    separator.style.marginBottom = 6;
+                    container.Add(separator);
+
+                    var etHeader = new Label("EnemyType Properties");
+                    etHeader.style.color = new Color(0.85f, 0.85f, 0.85f);
+                    etHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    etHeader.style.marginBottom = 4;
+                    container.Add(etHeader);
+
+                    // Reuse EnemyTypeLayer's panel builder (read-only, no commandStack)
+                    var tempLayer = new EnemyTypeLayer(enemyType, ei.EnemyTypeId, _catalog);
+                    tempLayer.OnEnemyTypeChanged = () =>
+                    {
+                        var savePath = _catalog.GetEnemyTypePath(ei.EnemyTypeId);
+                        YamlSerializer.SerializeEnemyTypeToFile(enemyType, savePath);
+                        _catalog.AddOrUpdateEnemyType(ei.EnemyTypeId, enemyType.Name);
+                        STGCatalog.Save(_catalog);
+                    };
+                    tempLayer.BuildEnemyTypePropertiesPanel(container, _commandStack);
+                }
+            }
+
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);
         }
@@ -3217,6 +3402,46 @@ namespace STGEngine.Editor.UI.Timeline
                 SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
             });
             container.Add(durField);
+
+            // Offset X/Y/Z
+            var epOx = new FloatField("Offset X") { value = ep.Offset.x };
+            epOx.isDelayed = true;
+            epOx.RegisterValueChangedCallback(e =>
+            {
+                var newOffset = new Vector3(e.newValue, ep.Offset.y, ep.Offset.z);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change EnemyPattern Offset",
+                    () => ep.Offset, v => ep.Offset = v, newOffset);
+                _commandStack.Execute(cmd);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+            });
+            container.Add(epOx);
+
+            var epOy = new FloatField("Offset Y") { value = ep.Offset.y };
+            epOy.isDelayed = true;
+            epOy.RegisterValueChangedCallback(e =>
+            {
+                var newOffset = new Vector3(ep.Offset.x, e.newValue, ep.Offset.z);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change EnemyPattern Offset",
+                    () => ep.Offset, v => ep.Offset = v, newOffset);
+                _commandStack.Execute(cmd);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+            });
+            container.Add(epOy);
+
+            var epOz = new FloatField("Offset Z") { value = ep.Offset.z };
+            epOz.isDelayed = true;
+            epOz.RegisterValueChangedCallback(e =>
+            {
+                var newOffset = new Vector3(ep.Offset.x, ep.Offset.y, e.newValue);
+                var cmd = new PropertyChangeCommand<Vector3>(
+                    "Change EnemyPattern Offset",
+                    () => ep.Offset, v => ep.Offset = v, newOffset);
+                _commandStack.Execute(cmd);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+            });
+            container.Add(epOz);
 
             // Inline pattern editor if resolved
             var resolvedPattern = _library?.Resolve(ep.PatternId);
@@ -3831,7 +4056,7 @@ namespace STGEngine.Editor.UI.Timeline
                     if (midLayer != null)
                         WireLayerToTrackArea(midLayer);
                     _trackArea.SetLayer(childLayer);
-                    _playback.LoadSegment(segment);
+                    LoadMidStagePreview(segment);
                     OnSpellCardEditingChanged?.Invoke(null);
                 }
 
@@ -4110,6 +4335,10 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnCommandStateChanged()
         {
+            // Ensure layer's internal block list is up-to-date before visual rebuild
+            if (_currentLayer is EnemyTypeLayer etl)
+                etl.InvalidateBlocks();
+
             // Rebuild visual elements so labels, colors, and positions all update on undo/redo.
             _trackArea.RebuildBlocks();
 
