@@ -74,14 +74,19 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (block?.DataSource is SpawnPatternEvent sp && Library != null)
             {
-                var pattern = Library.Resolve(sp.PatternId);
+                // Clone to avoid mutating the shared cache instance
+                var pattern = Library.ResolveClone(sp.PatternId);
                 if (pattern != null)
                     return new PatternLayer(pattern, sp.PatternId);
             }
             else if (block?.DataSource is SpawnWaveEvent sw && Catalog != null)
             {
-                var path = !string.IsNullOrEmpty(ContextId)
-                    ? OverrideManager.ResolveWavePath(Catalog, ContextId, sw.WaveId)
+                // Override context = segmentId/eventId (per-instance, not per-segment)
+                var eventContextId = !string.IsNullOrEmpty(ContextId)
+                    ? $"{ContextId}/{sw.Id}"
+                    : null;
+                var path = !string.IsNullOrEmpty(eventContextId)
+                    ? OverrideManager.ResolveWavePath(Catalog, eventContextId, sw.WaveId)
                     : Catalog.GetWavePath(sw.WaveId);
                 if (System.IO.File.Exists(path))
                 {
@@ -89,9 +94,14 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     {
                         var wave = Core.Serialization.YamlSerializer.DeserializeWave(
                             System.IO.File.ReadAllText(path));
-                        return new WaveLayer(wave, sw.WaveId);
+                        var waveLayer = new WaveLayer(wave, sw.WaveId);
+                        waveLayer.ContextId = eventContextId;
+                        return waveLayer;
                     }
-                    catch { }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning($"[MidStageLayer] Failed to load wave '{sw.WaveId}' from '{path}': {e.Message}");
+                    }
                 }
             }
             return null;

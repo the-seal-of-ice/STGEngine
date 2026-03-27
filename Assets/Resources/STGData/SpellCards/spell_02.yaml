@@ -9,6 +9,10 @@ patterns:
   delay: 6
   duration: 10
   offset: {x: 0, y: -1, z: 0}
+- pattern_id: demo_sphere_homing
+  delay: 0
+  duration: 5
+  offset: {x: 0, y: 0, z: 0}
 boss_path:
 - time: 0
   position: {x: 0, y: 7, z: 0}

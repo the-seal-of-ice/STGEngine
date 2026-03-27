@@ -512,7 +512,7 @@ namespace STGEngine.Editor.UI.Timeline
                 element.generateVisualContent += ctx => DrawDesignEstimateLine(ctx, blk);
             }
 
-            // Resize handle
+            // Resize handle — hide for blocks with read-only Duration (e.g. path-derived)
             var resizeHandle = new VisualElement();
             resizeHandle.style.position = Position.Absolute;
             resizeHandle.style.right = 0;
@@ -520,6 +520,9 @@ namespace STGEngine.Editor.UI.Timeline
             resizeHandle.style.bottom = 0;
             resizeHandle.style.width = 6;
             resizeHandle.style.backgroundColor = new Color(1f, 1f, 1f, 0.15f);
+            bool canResize = CanResizeDuration(blk);
+            if (!canResize)
+                resizeHandle.style.display = DisplayStyle.None;
             element.Add(resizeHandle);
 
             var info = new BlockInfo
@@ -652,20 +655,25 @@ namespace STGEngine.Editor.UI.Timeline
 
             if (_dragMode == DragMode.Move)
             {
+                float maxTime = _layer?.TotalDuration ?? float.MaxValue;
                 float rawStart = Mathf.Max(0f, _dragStartValue + deltaTime);
                 float duration = blk.Duration;
                 float rawEnd = rawStart + duration;
 
+                // Clamp so block end doesn't exceed layer duration
+                if (rawEnd > maxTime)
+                    rawStart = Mathf.Max(0f, maxTime - duration);
+
                 float snappedStart = SnapTime(rawStart);
-                float snappedEnd = SnapTime(rawEnd);
+                float snappedEnd = SnapTime(rawStart + duration);
 
                 bool startSnapped = Mathf.Abs(snappedStart - rawStart) > 0.0001f;
-                bool endSnapped = Mathf.Abs(snappedEnd - rawEnd) > 0.0001f;
+                bool endSnapped = Mathf.Abs(snappedEnd - (rawStart + duration)) > 0.0001f;
 
                 float newStart;
                 if (startSnapped && endSnapped)
                 {
-                    newStart = Mathf.Abs(snappedStart - rawStart) <= Mathf.Abs(snappedEnd - rawEnd)
+                    newStart = Mathf.Abs(snappedStart - rawStart) <= Mathf.Abs(snappedEnd - (rawStart + duration))
                         ? snappedStart
                         : Mathf.Max(0f, snappedEnd - duration);
                 }
@@ -676,14 +684,20 @@ namespace STGEngine.Editor.UI.Timeline
                 else
                     newStart = rawStart;
 
+                // Final clamp: ensure block stays within [0, maxTime]
+                newStart = Mathf.Clamp(newStart, 0f, Mathf.Max(0f, maxTime - duration));
                 blk.StartTime = newStart;
             }
             else if (_dragMode == DragMode.Resize)
             {
+                float maxTime = _layer?.TotalDuration ?? float.MaxValue;
                 float rawDuration = Mathf.Max(0.5f, _dragStartValue + deltaTime);
                 float startTime = blk.StartTime;
+                // Clamp duration so block end doesn't exceed layer duration
+                float maxDuration = Mathf.Max(0.5f, maxTime - startTime);
+                rawDuration = Mathf.Min(rawDuration, maxDuration);
                 float snappedEnd = SnapTime(startTime + rawDuration);
-                float newDuration = Mathf.Max(0.5f, snappedEnd - startTime);
+                float newDuration = Mathf.Clamp(snappedEnd - startTime, 0.5f, maxDuration);
                 blk.Duration = newDuration;
             }
             else if (_dragMode == DragMode.Reorder)
@@ -1212,6 +1226,21 @@ namespace STGEngine.Editor.UI.Timeline
             UpdateAllBlockPositions();
             UpdatePlayhead();
             _rulerArea.MarkDirtyRepaint();
+        }
+
+        /// <summary>
+        /// Test whether a block's Duration is writable.
+        /// Tries setting Duration to a probe value; if the getter doesn't reflect
+        /// the change, the setter is a no-op and resize should be disabled.
+        /// </summary>
+        private static bool CanResizeDuration(ITimelineBlock blk)
+        {
+            float original = blk.Duration;
+            float probe = original + 1f;
+            blk.Duration = probe;
+            bool writable = Mathf.Abs(blk.Duration - probe) < 0.001f;
+            blk.Duration = original; // restore
+            return writable;
         }
     }
 }

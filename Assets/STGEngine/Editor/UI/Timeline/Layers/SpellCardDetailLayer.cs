@@ -224,7 +224,14 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public ITimelineLayer CreateChildLayer(ITimelineBlock block)
         {
-            // PatternLayer will be implemented in step 1g
+            if (block is SpellCardPatternBlock scpBlock && scpBlock.DataSource is SpellCardPattern scp)
+            {
+                // Clone to avoid mutating the shared cache instance
+                var resolved = _library?.ResolveClone(scp.PatternId);
+                if (resolved != null)
+                    return new PatternLayer(resolved, scp.PatternId);
+                Debug.LogWarning($"[SpellCardDetailLayer] Cannot resolve pattern '{scp.PatternId}' — library missing or pattern not found.");
+            }
             return null;
         }
 

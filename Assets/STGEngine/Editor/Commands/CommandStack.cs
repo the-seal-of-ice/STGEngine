@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace STGEngine.Editor.Commands
 {
@@ -16,6 +17,15 @@ namespace STGEngine.Editor.Commands
 
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
+
+        public int UndoCount => _undoStack.Count;
+        public int RedoCount => _redoStack.Count;
+
+        /// <summary>Undo history from oldest (index 0) to newest.</summary>
+        public IReadOnlyList<ICommand> UndoHistory => _undoStack.Reverse().ToList();
+
+        /// <summary>Redo history from oldest (index 0) to newest.</summary>
+        public IReadOnlyList<ICommand> RedoHistory => _redoStack.Reverse().ToList();
 
         /// <summary>Execute a command and push it onto the undo stack.</summary>
         public void Execute(ICommand command)

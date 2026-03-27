@@ -1,9 +1,11 @@
-id: new_enemy
-name: New Enemy
+id: new_enemy_3
+name: New Enemy Type
 health: 10
 speed: 2
 scale: 1
+patterns: []
 pattern_ids: []
 fire_delay: 0.5
+pattern_duration: 10
 color: {r: 1, g: 1, b: 1, a: 1}
-mesh_type: Sphere
+mesh_type: Diamond

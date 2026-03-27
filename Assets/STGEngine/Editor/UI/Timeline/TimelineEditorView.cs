@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
@@ -8,6 +9,7 @@ using STGEngine.Core.Timeline;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.Commands;
 using STGEngine.Editor.UI;
+using STGEngine.Editor.UI.AssetLibrary;
 using STGEngine.Editor.UI.FileManager;
 using STGEngine.Editor.UI.Timeline.Layers;
 using STGEngine.Runtime;
@@ -15,6 +17,19 @@ using STGEngine.Runtime.Preview;
 
 namespace STGEngine.Editor.UI.Timeline
 {
+    /// <summary>
+    /// Data for spawning enemy placeholders in the 3D viewport.
+    /// Each entry represents one Wave with a time offset (for MidStage/Stage overview).
+    /// </summary>
+    public class WavePlaceholderData
+    {
+        public Wave Wave;
+        /// <summary>Time offset within the parent segment/stage (seconds).</summary>
+        public float TimeOffset;
+        /// <summary>World-space offset applied to all enemy positions.</summary>
+        public Vector3 SpawnOffset;
+    }
+
     /// <summary>
     /// Main timeline editor view. Composes breadcrumb, toolbar, segment list,
     /// track area, and property panel into a unified editing experience.
@@ -33,6 +48,16 @@ namespace STGEngine.Editor.UI.Timeline
         /// Null = exited editing.
         /// </summary>
         public Action<SpellCard> OnSpellCardEditingChanged;
+
+        /// <summary>
+        /// Fired when entering/exiting wave editing or navigating to a layer with wave data.
+        /// Non-null list = show enemy placeholders for these waves.
+        /// Null = hide all enemy placeholders.
+        /// </summary>
+        public Action<List<WavePlaceholderData>> OnWaveEditingChanged;
+
+        /// <summary>Fired when the current layer changes (navigation). Used to refresh asset library button states.</summary>
+        public Action OnLayerChanged;
 
         private readonly TimelinePlaybackController _playback;
         private readonly PatternLibrary _library;
@@ -53,6 +78,8 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly Label _breadcrumbSegment;
         private readonly Label _breadcrumbSep2;
         private readonly Label _breadcrumbSpellCard;
+        private readonly Label _breadcrumbSep3;
+        private readonly Label _breadcrumbDetail;
         private readonly VisualElement _toolbar;
         private readonly VisualElement _mainSplit;
         private readonly VisualElement _propertyPanel;
@@ -92,7 +119,16 @@ namespace STGEngine.Editor.UI.Timeline
 
         // ── Recursive navigation stack ──
         private readonly Stack<BreadcrumbEntry> _navigationStack = new();
-        private ITimelineLayer _currentLayer;
+        private ITimelineLayer _currentLayerBacking;
+        private ITimelineLayer _currentLayer
+        {
+            get => _currentLayerBacking;
+            set
+            {
+                _currentLayerBacking = value;
+                OnLayerChanged?.Invoke();
+            }
+        }
 
         public struct BreadcrumbEntry
         {
@@ -109,6 +145,18 @@ namespace STGEngine.Editor.UI.Timeline
         }
         private List<BossSegmentRange> _stageOverviewBossRanges;
         private bool _stageOverviewBossVisible;
+
+        // ── Clipboard ──
+        private (Type blockType, object yamlData)? _clipboard;
+
+        // ── Undo/Redo toolbar buttons ──
+        private Button _undoBtn;
+        private Button _redoBtn;
+
+        // ── Command history panel ──
+        private VisualElement _historyPanel;
+        private ScrollView _historyScroll;
+        private bool _historyVisible;
 
         public TimelineEditorView(TimelinePlaybackController playback, PatternLibrary library,
             PatternPreviewer singlePreviewer)
@@ -156,6 +204,7 @@ namespace STGEngine.Editor.UI.Timeline
                         // LoadStageOverviewPreview handles OnSpellCardEditingChanged internally
                         LoadStageOverviewPreview();
                         RebuildBreadcrumb();
+                        NotifyWavePlaceholders();
                     }
                 }
             });
@@ -186,6 +235,20 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbSpellCard.style.display = DisplayStyle.None;
             _breadcrumbBar.Add(_breadcrumbSpellCard);
 
+            // Fourth-level breadcrumb (Pattern detail) — hidden by default
+            _breadcrumbSep3 = new Label(">");
+            _breadcrumbSep3.style.color = new Color(0.5f, 0.5f, 0.5f);
+            _breadcrumbSep3.style.marginLeft = 4;
+            _breadcrumbSep3.style.marginRight = 4;
+            _breadcrumbSep3.style.display = DisplayStyle.None;
+            _breadcrumbBar.Add(_breadcrumbSep3);
+
+            _breadcrumbDetail = new Label("");
+            _breadcrumbDetail.style.color = new Color(0.5f, 1f, 0.7f);
+            _breadcrumbDetail.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _breadcrumbDetail.style.display = DisplayStyle.None;
+            _breadcrumbBar.Add(_breadcrumbDetail);
+
             // Make segment label clickable to navigate back
             _breadcrumbSegment.RegisterCallback<ClickEvent>(_ =>
             {
@@ -193,6 +256,13 @@ namespace STGEngine.Editor.UI.Timeline
                     ExitSpellCardEditing();
                 else if (_navigationStack.Count > 1)
                     NavigateToDepth(1);
+            });
+
+            // Make SpellCard label clickable to navigate back to SpellCard layer
+            _breadcrumbSpellCard.RegisterCallback<ClickEvent>(_ =>
+            {
+                if (_navigationStack.Count > 2)
+                    NavigateToDepth(2);
             });
 
             // Spacer to push seed controls to the right
@@ -329,6 +399,11 @@ namespace STGEngine.Editor.UI.Timeline
             _playback.OnPlayStateChanged += OnPlayStateChanged;
             _commandStack.OnStateChanged += OnCommandStateChanged;
 
+            // ── Keyboard shortcuts ──
+            Root.focusable = true;
+            Root.RegisterCallback<AttachToPanelEvent>(_ => Root.Focus());
+            Root.RegisterCallback<KeyDownEvent>(OnKeyDown);
+
             // Register delayed theme override on Root — ensures inline styles survive
             // even if Unity Runtime Theme USS re-applies after attach.
             RegisterThemeOverride(Root);
@@ -351,10 +426,57 @@ namespace STGEngine.Editor.UI.Timeline
         public void AddPatternEventFromLibrary(string patternId)
         {
             if (_stage == null) return;
-            // Only works when viewing a MidStage segment
-            if (_currentLayer is not MidStageLayer) return;
+
+            // Patterns can be added to MidStageLayer or SpellCardDetailLayer
+            if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                // Delegate to the SpellCardDetail pattern picker flow
+                var scp = new SpellCardPattern
+                {
+                    PatternId = patternId,
+                    Delay = 0f,
+                    Duration = 5f,
+                    Offset = Vector3.zero
+                };
+                float layerDur = scLayer.TotalDuration;
+                if (scp.Delay + scp.Duration > layerDur && layerDur > 0)
+                {
+                    ShowDurationOverflowDialog(scp.Duration, layerDur, scp.Delay, trimmedDur =>
+                    {
+                        scp.Duration = trimmedDur;
+                        var cmd = ListCommand<SpellCardPattern>.Add(
+                            scLayer.SpellCard.Patterns, scp, -1, "Add Pattern to SpellCard");
+                        _commandStack.Execute(cmd);
+                        scLayer.InvalidateBlocks();
+                        OnStageDataChanged();
+                        SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+                    });
+                    return;
+                }
+                var cmd2 = ListCommand<SpellCardPattern>.Add(
+                    scLayer.SpellCard.Patterns, scp, -1, "Add Pattern to SpellCard");
+                _commandStack.Execute(cmd2);
+                scLayer.InvalidateBlocks();
+                OnStageDataChanged();
+                SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+                return;
+            }
+
+            if (_currentLayer is not MidStageLayer midLayer) return;
 
             float atTime = _playback.CurrentTime;
+            var pattern = _library.Resolve(patternId);
+            float defaultDur = pattern?.Duration ?? 5f;
+            float layerTotal = _currentLayer.TotalDuration;
+
+            if (atTime + defaultDur > layerTotal && layerTotal > 0)
+            {
+                ShowDurationOverflowDialog(defaultDur, layerTotal, atTime, trimmedDur =>
+                {
+                    CreateEventWithPatternAndDuration(patternId, atTime, trimmedDur);
+                });
+                return;
+            }
             CreateEventWithPattern(patternId, atTime);
         }
 
@@ -368,6 +490,33 @@ namespace STGEngine.Editor.UI.Timeline
             if (_currentLayer is not MidStageLayer) return;
 
             float atTime = _playback.CurrentTime;
+
+            // Try to get wave duration for overflow check
+            float defaultDur = 10f;
+            if (_catalog != null)
+            {
+                var wavePath = _catalog.GetWavePath(waveId);
+                if (System.IO.File.Exists(wavePath))
+                {
+                    try
+                    {
+                        var wave = YamlSerializer.DeserializeWave(
+                            System.IO.File.ReadAllText(wavePath));
+                        defaultDur = wave.Duration;
+                    }
+                    catch { }
+                }
+            }
+
+            float layerTotal = _currentLayer.TotalDuration;
+            if (atTime + defaultDur > layerTotal && layerTotal > 0)
+            {
+                ShowDurationOverflowDialog(defaultDur, layerTotal, atTime, trimmedDur =>
+                {
+                    CreateEventWithWaveAndDuration(waveId, atTime, trimmedDur);
+                });
+                return;
+            }
             CreateEventWithWave(waveId, atTime);
         }
 
@@ -394,6 +543,23 @@ namespace STGEngine.Editor.UI.Timeline
             ShowLayerSummary(_currentLayer);
             LoadBossFightPreview(seg);
             OnStageDataChanged();
+        }
+
+        /// <summary>
+        /// Check whether the current layer can accept an asset of the given category.
+        /// Used by AssetLibraryPanel to enable/disable "Add to Timeline" buttons.
+        /// </summary>
+        public bool CanAcceptAsset(AssetCategory category)
+        {
+            return category switch
+            {
+                AssetCategory.Patterns => _currentLayer is MidStageLayer
+                                       || _currentLayer is SpellCardDetailLayer,
+                AssetCategory.Waves    => _currentLayer is MidStageLayer,
+                AssetCategory.SpellCards => _currentLayer is BossFightLayer
+                                        || _editingBossFightSegment != null,
+                _ => false
+            };
         }
 
         public void Dispose()
@@ -442,6 +608,7 @@ namespace STGEngine.Editor.UI.Timeline
                 _trackArea.SetLayer(_stageLayer);
                 LoadStageOverviewPreview();
                 OnStageDataChanged();
+                NotifyWavePlaceholders();
             };
             _stageLayer.OnDeleteSegmentRequested = blk =>
             {
@@ -451,6 +618,7 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.SetLayer(_stageLayer);
             // Build a combined segment covering all segments so playback shows bullets at Stage level
             LoadStageOverviewPreview();
+            NotifyWavePlaceholders();
         }
 
         /// <summary>
@@ -518,17 +686,25 @@ namespace STGEngine.Editor.UI.Timeline
                     float scOffset = segmentOffset;
                     var localBossPath = new List<PathKeyframe>();
                     var segContext = OverrideManager.SegmentContext(seg.Id);
+
+                    // Load all spell cards for this segment
+                    var segCards = new List<SpellCard>();
                     foreach (var scId in seg.SpellCardIds)
                     {
                         var path = OverrideManager.ResolveSpellCardPath(_catalog, segContext, scId);
-                        if (!System.IO.File.Exists(path)) continue;
-
-                        SpellCard sc;
+                        if (!System.IO.File.Exists(path)) { segCards.Add(null); continue; }
                         try
                         {
-                            sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                            segCards.Add(YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path)));
                         }
-                        catch { continue; }
+                        catch { segCards.Add(null); }
+                    }
+
+                    for (int ci = 0; ci < segCards.Count; ci++)
+                    {
+                        var sc = segCards[ci];
+                        if (sc == null) continue;
+                        var scId = seg.SpellCardIds[ci];
 
                         foreach (var scp in sc.Patterns)
                         {
@@ -559,6 +735,40 @@ namespace STGEngine.Editor.UI.Timeline
                         }
 
                         scOffset += sc.TimeLimit;
+
+                        // Insert transition path to next SC
+                        if (ci < segCards.Count - 1 && sc.TransitionDuration > 0f)
+                        {
+                            float transDur = sc.TransitionDuration;
+                            var endPos = sc.BossPath != null && sc.BossPath.Count > 0
+                                ? sc.BossPath[sc.BossPath.Count - 1].Position
+                                : new Vector3(0, 6, 0);
+
+                            // Find next valid SC's start position
+                            var startPos = new Vector3(0, 6, 0);
+                            for (int ni = ci + 1; ni < segCards.Count; ni++)
+                            {
+                                if (segCards[ni]?.BossPath != null && segCards[ni].BossPath.Count > 0)
+                                {
+                                    startPos = segCards[ni].BossPath[0].Position;
+                                    break;
+                                }
+                            }
+
+                            float localTransStart = scOffset - segmentOffset;
+                            localBossPath.Add(new PathKeyframe
+                            {
+                                Time = localTransStart,
+                                Position = endPos
+                            });
+                            localBossPath.Add(new PathKeyframe
+                            {
+                                Time = localTransStart + transDur,
+                                Position = startPos
+                            });
+
+                            scOffset += transDur;
+                        }
                     }
 
                     // Record this BossFight segment's time range
@@ -739,6 +949,32 @@ namespace STGEngine.Editor.UI.Timeline
             fitBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
             fitBtn.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
             _toolbar.Add(fitBtn);
+
+            // ── Undo / Redo / History ──
+            _undoBtn = new Button(OnUndoClicked) { text = "\u21b6" };
+            _undoBtn.style.width = 28;
+            _undoBtn.style.color = Lt;
+            _undoBtn.style.backgroundColor = BtnBg;
+            _undoBtn.style.marginLeft = 8;
+            _undoBtn.tooltip = "Undo (Ctrl+Z)";
+            _undoBtn.SetEnabled(false);
+            _toolbar.Add(_undoBtn);
+
+            _redoBtn = new Button(OnRedoClicked) { text = "\u21b7" };
+            _redoBtn.style.width = 28;
+            _redoBtn.style.color = Lt;
+            _redoBtn.style.backgroundColor = BtnBg;
+            _redoBtn.tooltip = "Redo (Ctrl+Y)";
+            _redoBtn.SetEnabled(false);
+            _toolbar.Add(_redoBtn);
+
+            var historyBtn = new Button(ToggleHistoryPanel) { text = "History" };
+            historyBtn.style.width = 52;
+            historyBtn.style.color = Lt;
+            historyBtn.style.backgroundColor = BtnBg;
+            historyBtn.style.marginLeft = 2;
+            historyBtn.tooltip = "Command History";
+            _toolbar.Add(historyBtn);
 
             var saveBtn = new Button(OnSaveStage) { text = "Save" };
             saveBtn.style.width = 44;
@@ -985,8 +1221,6 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnSegmentSelected(TimelineSegment segment)
         {
-            _breadcrumbSegment.text = segment?.Name ?? "\u2014";
-
             // Exit spell card editing if active
             if (_editingSpellCard != null)
             {
@@ -998,41 +1232,60 @@ namespace STGEngine.Editor.UI.Timeline
                 OnSpellCardEditingChanged?.Invoke(null);
             }
 
-            // Reset navigation stack to root (Stage level)
+            // Reset navigation stack; push StageLayer as root so breadcrumb shows Stage > Segment
             _navigationStack.Clear();
-            _currentLayer = null;
+            if (_stageLayer != null)
+            {
+                _navigationStack.Push(new BreadcrumbEntry
+                {
+                    Layer = _stageLayer,
+                    DisplayName = _stageLayer.DisplayName
+                });
+            }
+
+            // Clear stage overview boss tracking when entering a segment
+            _stageOverviewBossRanges = null;
+            _stageOverviewBossVisible = false;
 
             if (segment != null && segment.Type == SegmentType.BossFight)
             {
-                // Create BossFightLayer for navigation tracking
                 var bfLayer = new BossFightLayer(segment, _catalog, _library);
                 _currentLayer = bfLayer;
                 WireLayerToTrackArea(bfLayer);
-                ShowLayerSummary(bfLayer);
+                _trackArea.SetLayer(bfLayer);
                 LoadBossFightPreview(segment);
+                NotifyWavePlaceholders();
             }
             else if (segment != null)
             {
-                // Create MidStageLayer and navigate to it
                 var midLayer = new MidStageLayer(segment);
                 _currentLayer = midLayer;
                 WireLayerToTrackArea(midLayer);
                 _trackArea.SetLayer(midLayer);
                 _playback.LoadSegment(segment);
-                // Hide boss placeholder when switching to MidStage
                 OnSpellCardEditingChanged?.Invoke(null);
+                NotifyWavePlaceholders();
             }
             else
             {
-                _trackArea.SetSegment(null);
+                // No segment selected — return to Stage level
+                _navigationStack.Clear();
+                _currentLayer = _stageLayer;
+                if (_stageLayer != null)
+                    _trackArea.SetLayer(_stageLayer);
                 _playback.LoadSegment(null);
                 OnSpellCardEditingChanged?.Invoke(null);
+                NotifyWavePlaceholders();
             }
+
+            RebuildBreadcrumb();
+            ShowLayerSummary(_currentLayer);
         }
 
         /// <summary>
         /// Build a combined temporary segment from all spell cards in a BossFight segment.
-        /// Spell cards are laid out sequentially: SC1 at t=0, SC2 at t=SC1.TimeLimit, etc.
+        /// Spell cards are laid out sequentially: SC1 at t=0, Transition, SC2 at t=SC1.TimeLimit+TransitionDuration, etc.
+        /// Transition periods insert boss reposition keyframes (lerp from SC_n end → SC_n+1 start).
         /// Also builds a combined BossPath and notifies the placeholder.
         /// </summary>
         private void LoadBossFightPreview(TimelineSegment segment)
@@ -1051,21 +1304,27 @@ namespace STGEngine.Editor.UI.Timeline
             float timeOffset = 0f;
             var bfContext = OverrideManager.SegmentContext(segment.Id);
 
+            // Load all spell cards first so we can reference next SC's start position
+            var loadedCards = new List<(string id, SpellCard sc)>();
             foreach (var scId in segment.SpellCardIds)
             {
                 var path = OverrideManager.ResolveSpellCardPath(_catalog, bfContext, scId);
                 if (!System.IO.File.Exists(path)) continue;
 
-                SpellCard sc;
                 try
                 {
-                    sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                    var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                    loadedCards.Add((scId, sc));
                 }
                 catch (Exception e)
                 {
                     Debug.LogWarning($"[BossFightPreview] Failed to load '{scId}': {e.Message}");
-                    continue;
                 }
+            }
+
+            for (int ci = 0; ci < loadedCards.Count; ci++)
+            {
+                var (scId, sc) = loadedCards[ci];
 
                 // Add patterns with time offset
                 foreach (var scp in sc.Patterns)
@@ -1098,6 +1357,39 @@ namespace STGEngine.Editor.UI.Timeline
                 }
 
                 timeOffset += sc.TimeLimit;
+
+                // Insert transition path: lerp from this SC's end position to next SC's start position
+                if (ci < loadedCards.Count - 1 && sc.TransitionDuration > 0f)
+                {
+                    float transDur = sc.TransitionDuration;
+
+                    // End position of current SC
+                    var endPos = sc.BossPath != null && sc.BossPath.Count > 0
+                        ? sc.BossPath[sc.BossPath.Count - 1].Position
+                        : new Vector3(0, 6, 0);
+
+                    // Start position of next SC
+                    var nextSc = loadedCards[ci + 1].sc;
+                    var startPos = nextSc.BossPath != null && nextSc.BossPath.Count > 0
+                        ? nextSc.BossPath[0].Position
+                        : new Vector3(0, 6, 0);
+
+                    // Transition start keyframe (at current SC end position)
+                    combinedBossPath.Add(new PathKeyframe
+                    {
+                        Time = timeOffset,
+                        Position = endPos
+                    });
+
+                    // Transition end keyframe (at next SC start position)
+                    combinedBossPath.Add(new PathKeyframe
+                    {
+                        Time = timeOffset + transDur,
+                        Position = startPos
+                    });
+
+                    timeOffset += transDur;
+                }
             }
 
             tempSegment.Duration = timeOffset > 0f ? timeOffset : segment.Duration;
@@ -1342,7 +1634,9 @@ namespace STGEngine.Editor.UI.Timeline
             _editingSpellCardId = spellCardId;
             _editingBossFightSegment = segment;
 
-            // Push current layer onto navigation stack
+            // ── NavigateTo 7-step sequence (memorix #74) ──
+
+            // 1. Push current layer onto navigation stack
             if (_currentLayer != null)
             {
                 _navigationStack.Push(new BreadcrumbEntry
@@ -1351,24 +1645,34 @@ namespace STGEngine.Editor.UI.Timeline
                     DisplayName = _currentLayer.DisplayName
                 });
             }
+
+            // 2. Set _currentLayer
             _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library,
                 OverrideManager.SpellCardContext(segment.Id, spellCardId));
 
-            // Update breadcrumb to layer 3
-            _breadcrumbSep2.style.display = DisplayStyle.Flex;
-            _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
-            _breadcrumbSpellCard.text = !string.IsNullOrEmpty(sc.Name) ? sc.Name : spellCardId;
+            // 3. WireLayerToTrackArea (binds Add/Delete callbacks)
+            WireLayerToTrackArea(_currentLayer);
 
-            ShowLayerSummary(_currentLayer);
-            OnSpellCardEditingChanged?.Invoke(sc);
+            // 4. _trackArea.SetLayer (sets correct layer for context menu & interaction)
+            _trackArea.SetLayer(_currentLayer);
 
-            // Build temporary segment from spell card patterns for preview
+            // 5. LoadPreview (build temporary segment for playback)
             LoadSpellCardPreview(sc);
+
+            // 6. RebuildBreadcrumb
+            RebuildBreadcrumb();
+
+            // 7. ShowLayerSummary
+            ShowLayerSummary(_currentLayer);
+
+            OnSpellCardEditingChanged?.Invoke(sc);
         }
 
         /// <summary>
         /// Construct a temporary TimelineSegment from SpellCard.Patterns
-        /// and load it into the playback controller + track area for preview.
+        /// and load it into the playback controller for preview.
+        /// NOTE: Does NOT call _trackArea.SetSegment — the caller is responsible
+        /// for setting the correct layer on TrackArea (step 4 of NavigateTo sequence).
         /// </summary>
         private void LoadSpellCardPreview(SpellCard sc)
         {
@@ -1404,7 +1708,6 @@ namespace STGEngine.Editor.UI.Timeline
                 tempSegment.Events.Add(evt);
             }
 
-            _trackArea.SetSegment(tempSegment);
             _playback.LoadSegment(tempSegment);
         }
 
@@ -1485,7 +1788,7 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else
             {
-                _trackArea.SetSegment(null);
+                _trackArea.SetLayer(null);
                 _playback.LoadSegment(null);
                 OnSpellCardEditingChanged?.Invoke(null);
             }
@@ -1519,9 +1822,12 @@ namespace STGEngine.Editor.UI.Timeline
             _currentLayer = layer;
             WireLayerToTrackArea(layer);
             _trackArea.SetLayer(layer);
-            layer.LoadPreview(_playback);
+            LoadPreviewForLayer(layer);
             RebuildBreadcrumb();
             ShowLayerSummary(layer);
+
+            // Notify wave/enemy placeholders for current layer context
+            NotifyWavePlaceholders();
         }
 
         /// <summary>
@@ -1531,13 +1837,23 @@ namespace STGEngine.Editor.UI.Timeline
         {
             if (_navigationStack.Count == 0) return;
 
+            // Clear SpellCard editing context when leaving SpellCardDetailLayer or deeper
+            if (_currentLayer is SpellCardDetailLayer or PatternLayer)
+            {
+                _editingSpellCard = null;
+                _editingSpellCardId = null;
+                _editingBossFightSegment = null;
+            }
+
             var entry = _navigationStack.Pop();
             _currentLayer = entry.Layer;
             WireLayerToTrackArea(_currentLayer);
             _trackArea.SetLayer(_currentLayer);
-            _currentLayer.LoadPreview(_playback);
+            LoadPreviewForLayer(_currentLayer);
             RebuildBreadcrumb();
             ShowLayerSummary(_currentLayer);
+
+            NotifyWavePlaceholders();
         }
 
         /// <summary>
@@ -1546,6 +1862,14 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         public void NavigateToDepth(int depth)
         {
+            // Clear SpellCard editing context when navigating above SpellCard level
+            if (_currentLayer is SpellCardDetailLayer or PatternLayer)
+            {
+                _editingSpellCard = null;
+                _editingSpellCardId = null;
+                _editingBossFightSegment = null;
+            }
+
             while (_navigationStack.Count > depth && _navigationStack.Count > 0)
             {
                 var entry = _navigationStack.Pop();
@@ -1556,10 +1880,38 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 WireLayerToTrackArea(_currentLayer);
                 _trackArea.SetLayer(_currentLayer);
-                _currentLayer.LoadPreview(_playback);
+                LoadPreviewForLayer(_currentLayer);
             }
             RebuildBreadcrumb();
             ShowLayerSummary(_currentLayer);
+
+            NotifyWavePlaceholders();
+        }
+
+        /// <summary>
+        /// Load the correct preview for a layer. BossFightLayer and StageLayer need
+        /// special handling because their LoadPreview implementations are stubs
+        /// (they require catalog/library context to build combined preview segments).
+        /// All other layers use the standard ITimelineLayer.LoadPreview path.
+        /// </summary>
+        private void LoadPreviewForLayer(ITimelineLayer layer)
+        {
+            if (layer is BossFightLayer bfLayer)
+            {
+                LoadBossFightPreview(bfLayer.Segment);
+            }
+            else if (layer is StageLayer)
+            {
+                LoadStageOverviewPreview();
+            }
+            else if (layer is SpellCardDetailLayer scLayer && scLayer.SpellCard != null)
+            {
+                LoadSpellCardPreview(scLayer.SpellCard);
+            }
+            else
+            {
+                layer.LoadPreview(_playback);
+            }
         }
 
         /// <summary>
@@ -1572,6 +1924,7 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 midLayer.Library = _library;
                 midLayer.Catalog = _catalog;
+                midLayer.ContextId = midLayer.Segment?.Id;
                 midLayer.OnAddPatternRequested = time => OnAddEventRequested(time);
                 midLayer.OnAddWaveRequested = time => OnAddWaveEventRequested(time);
                 midLayer.OnDeleteRequested = blk =>
@@ -1644,23 +1997,26 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else if (layer is WaveLayer waveLayer)
             {
+                // Inject catalog for EnemyType name resolution
+                waveLayer.Catalog = _catalog;
+
+                // ContextId is set by MidStageLayer.CreateChildLayer (per-event instance).
+                // Only set here as fallback if not already set (e.g. direct navigation).
+                if (string.IsNullOrEmpty(waveLayer.ContextId))
+                {
+                    foreach (var entry in _navigationStack)
+                    {
+                        if (entry.Layer is MidStageLayer parentMid)
+                        {
+                            waveLayer.ContextId = parentMid.ContextId;
+                            break;
+                        }
+                    }
+                }
+
                 waveLayer.OnAddEnemyRequested = () =>
                 {
-                    var enemy = new EnemyInstance
-                    {
-                        EnemyTypeId = "new_enemy",
-                        SpawnDelay = 0f,
-                        Path = new List<PathKeyframe>
-                        {
-                            new() { Time = 0f, Position = new Vector3(0, 5, 0) },
-                            new() { Time = 3f, Position = new Vector3(0, -5, 0) }
-                        }
-                    };
-                    var cmd = ListCommand<EnemyInstance>.Add(
-                        waveLayer.Wave.Enemies, enemy, -1, "Add Enemy");
-                    _commandStack.Execute(cmd);
-                    waveLayer.InvalidateBlocks();
-                    OnStageDataChanged();
+                    ShowEnemyTypePicker(waveLayer);
                 };
                 waveLayer.OnDeleteEnemyRequested = blk =>
                 {
@@ -1674,10 +2030,174 @@ namespace STGEngine.Editor.UI.Timeline
                             _commandStack.Execute(cmd);
                             waveLayer.InvalidateBlocks();
                             OnStageDataChanged();
+                            SaveWaveData(waveLayer);
+                        }
+                    }
+                };
+                waveLayer.OnWavePropertiesChanged = () =>
+                {
+                    SaveWaveData(waveLayer);
+                    _trackArea.RebuildBlocks();
+                };
+            }
+            else if (layer is EnemyTypeLayer etLayer)
+            {
+                etLayer.Library = _library;
+                etLayer.OnEnemyTypeChanged = () =>
+                {
+                    SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                };
+                etLayer.OnAddPatternRequested = () =>
+                {
+                    ShowPatternPickerForEnemyType(etLayer);
+                };
+                etLayer.OnDeletePatternRequested = blk =>
+                {
+                    if (blk?.DataSource is EnemyPattern ep)
+                    {
+                        int idx = etLayer.EnemyType.Patterns.IndexOf(ep);
+                        if (idx >= 0)
+                        {
+                            var cmd = ListCommand<EnemyPattern>.Remove(
+                                etLayer.EnemyType.Patterns, idx, "Delete Pattern from EnemyType");
+                            _commandStack.Execute(cmd);
+                            etLayer.InvalidateBlocks();
+                            SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
                         }
                     }
                 };
             }
+        }
+
+        private void ShowRenameIdDialog(string resourceType, string currentId, Action<string> onConfirm)
+        {
+            var dialog = new VisualElement();
+            dialog.style.position = Position.Absolute;
+            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
+            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            dialog.style.alignItems = Align.Center;
+            dialog.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 300;
+
+            var title = new Label($"Rename {resourceType} ID");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var idField = new TextField("New ID:") { value = currentId };
+            idField.style.marginBottom = 8;
+            panel.Add(idField);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var confirmBtn = new Button(() =>
+            {
+                var newId = idField.value?.Trim();
+                if (string.IsNullOrEmpty(newId) || newId == currentId)
+                {
+                    dialog.RemoveFromHierarchy();
+                    return;
+                }
+                onConfirm?.Invoke(newId);
+                dialog.RemoveFromHierarchy();
+            }) { text = "Rename" };
+            confirmBtn.style.backgroundColor = new Color(0.2f, 0.4f, 0.5f);
+            confirmBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+
+            var cancelBtn = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(confirmBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            dialog.Add(panel);
+
+            Root.panel.visualTree.Add(dialog);
+        }
+
+        private void ShowSaveAsNewTemplateDialog(string contextId, string resourceId, string resourceType)
+        {
+            if (_catalog == null) return;
+
+            var dialog = new VisualElement();
+            dialog.style.position = Position.Absolute;
+            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
+            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            dialog.style.alignItems = Align.Center;
+            dialog.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 300;
+
+            var title = new Label("Save as New Template");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var desc = new Label($"Override: {resourceId} ({resourceType})");
+            desc.style.color = new Color(0.7f, 0.7f, 0.7f);
+            desc.style.marginBottom = 8;
+            panel.Add(desc);
+
+            var idField = new TextField("New ID:");
+            idField.value = $"{resourceId}_copy";
+            idField.style.marginBottom = 8;
+            panel.Add(idField);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var saveBtn = new Button(() =>
+            {
+                var newId = idField.value?.Trim();
+                if (string.IsNullOrEmpty(newId))
+                {
+                    Debug.LogWarning("[TimelineEditor] New ID cannot be empty.");
+                    return;
+                }
+
+                var result = OverrideManager.SaveAsNewTemplate(_catalog, contextId, resourceId, newId, resourceType);
+                if (result != null)
+                {
+                    Debug.Log($"[TimelineEditor] Saved as new template: {result}");
+                }
+                dialog.RemoveFromHierarchy();
+            }) { text = "Save" };
+            saveBtn.style.backgroundColor = new Color(0.2f, 0.5f, 0.3f);
+            saveBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+
+            var cancelBtn2 = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn2.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn2.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn2.style.marginLeft = 8;
+
+            btnRow.Add(saveBtn);
+            btnRow.Add(cancelBtn2);
+            panel.Add(btnRow);
+            dialog.Add(panel);
+
+            Root.panel.visualTree.Add(dialog);
         }
 
         /// <summary>
@@ -1747,6 +2267,19 @@ namespace STGEngine.Editor.UI.Timeline
                 _breadcrumbSep2.style.display = DisplayStyle.None;
                 _breadcrumbSpellCard.style.display = DisplayStyle.None;
             }
+
+            // Fourth level: Pattern detail (e.g. PatternLayer from SpellCard)
+            if (layers.Count >= 4)
+            {
+                _breadcrumbSep3.style.display = DisplayStyle.Flex;
+                _breadcrumbDetail.style.display = DisplayStyle.Flex;
+                _breadcrumbDetail.text = layers[3].DisplayName;
+            }
+            else
+            {
+                _breadcrumbSep3.style.display = DisplayStyle.None;
+                _breadcrumbDetail.style.display = DisplayStyle.None;
+            }
         }
 
         private void SaveCurrentSpellCard()
@@ -1808,6 +2341,141 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 Debug.LogError($"[TimelineEditor] Failed to save spell card '{scId}': {e.Message}");
             }
+        }
+
+        /// <summary>
+        /// Save a Wave to disk using the Override mechanism.
+        /// If a contextId is set, saves to Modified/{contextId}/{waveId}.yaml (preserving the original template).
+        /// Otherwise saves directly to the original file.
+        /// </summary>
+        private void SaveWaveData(WaveLayer waveLayer)
+        {
+            if (waveLayer?.Wave == null || _catalog == null) return;
+            try
+            {
+                var yaml = YamlSerializer.SerializeWave(waveLayer.Wave);
+                var contextId = waveLayer.ContextId;
+                if (!string.IsNullOrEmpty(contextId))
+                {
+                    OverrideManager.SaveOverride(contextId, waveLayer.WaveId, yaml);
+                }
+                else
+                {
+                    var path = _catalog.GetWavePath(waveLayer.WaveId);
+                    System.IO.File.WriteAllText(path, yaml);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] Failed to save wave '{waveLayer.WaveId}': {e.Message}");
+            }
+
+            // Notify placeholders of wave data changes
+            NotifyWavePlaceholders();
+        }
+
+        /// <summary>
+        /// Save an EnemyType to disk and update the catalog.
+        /// </summary>
+        private void SaveEnemyType(EnemyType enemyType, string enemyTypeId)
+        {
+            if (_catalog == null || enemyType == null) return;
+            try
+            {
+                var path = _catalog.GetEnemyTypePath(enemyTypeId);
+                YamlSerializer.SerializeEnemyTypeToFile(enemyType, path);
+                _catalog.AddOrUpdateEnemyType(enemyTypeId, enemyType.Name);
+                STGCatalog.Save(_catalog);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] Failed to save EnemyType '{enemyTypeId}': {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Build WavePlaceholderData from the current layer context and fire OnWaveEditingChanged.
+        /// - WaveLayer: single wave, no offset
+        /// - MidStageLayer: all SpawnWaveEvents in the segment, each with its StartTime offset
+        /// - StageLayer: all waves across all MidStage segments, with cumulative segment offsets
+        /// - Other layers: null (hide placeholders)
+        /// Called internally on navigation changes, and can be called externally after event subscription.
+        /// </summary>
+        public void NotifyWavePlaceholders()
+        {
+            if (OnWaveEditingChanged == null) return;
+
+            if (_currentLayer is WaveLayer wl)
+            {
+                var list = new List<WavePlaceholderData>
+                {
+                    new() { Wave = wl.Wave, TimeOffset = 0f, SpawnOffset = Vector3.zero }
+                };
+                OnWaveEditingChanged.Invoke(list);
+            }
+            else if (_currentLayer is MidStageLayer midLayer)
+            {
+                var list = BuildWavePlaceholdersForSegment(midLayer.Segment, 0f);
+                OnWaveEditingChanged.Invoke(list.Count > 0 ? list : null);
+            }
+            else if (_currentLayer is StageLayer && _stage != null)
+            {
+                var list = new List<WavePlaceholderData>();
+                float segOffset = 0f;
+                foreach (var seg in _stage.Segments)
+                {
+                    if (seg.Type == SegmentType.MidStage)
+                        list.AddRange(BuildWavePlaceholdersForSegment(seg, segOffset));
+                    segOffset += seg.Duration;
+                }
+                OnWaveEditingChanged.Invoke(list.Count > 0 ? list : null);
+            }
+            else
+            {
+                OnWaveEditingChanged.Invoke(null);
+            }
+        }
+
+        /// <summary>
+        /// Load all waves from SpawnWaveEvents in a segment and build placeholder data.
+        /// </summary>
+        private List<WavePlaceholderData> BuildWavePlaceholdersForSegment(
+            TimelineSegment segment, float segmentOffset)
+        {
+            var result = new List<WavePlaceholderData>();
+            if (segment == null || _catalog == null) return result;
+
+            var segContext = OverrideManager.SegmentContext(segment.Id);
+
+            foreach (var evt in segment.Events)
+            {
+                if (evt is SpawnWaveEvent sw)
+                {
+                    try
+                    {
+                        var eventContextId = $"{segment.Id}/{sw.Id}";
+                        var path = OverrideManager.ResolveWavePath(_catalog, eventContextId, sw.WaveId);
+                        if (!System.IO.File.Exists(path))
+                            path = _catalog.GetWavePath(sw.WaveId);
+                        if (!System.IO.File.Exists(path)) continue;
+
+                        var wave = YamlSerializer.DeserializeWave(
+                            System.IO.File.ReadAllText(path));
+                        result.Add(new WavePlaceholderData
+                        {
+                            Wave = wave,
+                            TimeOffset = segmentOffset + sw.StartTime,
+                            SpawnOffset = sw.SpawnOffset
+                        });
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[TimelineEditor] Failed to load wave '{sw.WaveId}' for placeholder: {e.Message}");
+                    }
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -1877,512 +2545,56 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
-        /// Show a modal dialog to rename a resource ID.
+        /// Show a pattern picker popup for adding a pattern to an EnemyType.
         /// </summary>
-        private void ShowRenameIdDialog(string resourceType, string currentId, Action<string> onConfirm)
+        private void ShowPatternPickerForEnemyType(EnemyTypeLayer etLayer)
         {
-            var dialog = new VisualElement();
-            dialog.style.position = Position.Absolute;
-            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
-            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
-            dialog.style.alignItems = Align.Center;
-            dialog.style.justifyContent = Justify.Center;
-
-            var panel = new VisualElement();
-            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
-            panel.style.paddingTop = panel.style.paddingBottom = 12;
-            panel.style.paddingLeft = panel.style.paddingRight = 16;
-            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
-                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
-            panel.style.width = 300;
-
-            var title = new Label($"Rename {resourceType} ID");
-            title.style.fontSize = 14;
-            title.style.color = new Color(0.9f, 0.9f, 0.9f);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 8;
-            panel.Add(title);
-
-            var idField = new TextField("New ID:") { value = currentId };
-            idField.style.marginBottom = 8;
-            panel.Add(idField);
-
-            var btnRow = new VisualElement();
-            btnRow.style.flexDirection = FlexDirection.Row;
-            btnRow.style.justifyContent = Justify.FlexEnd;
-
-            var confirmBtn = new Button(() =>
+            var patternIds = new List<string>(_library.PatternIds);
+            if (patternIds.Count == 0)
             {
-                var newId = idField.value?.Trim();
-                if (string.IsNullOrEmpty(newId) || newId == currentId)
-                {
-                    dialog.RemoveFromHierarchy();
-                    return;
-                }
-                onConfirm?.Invoke(newId);
-                dialog.RemoveFromHierarchy();
-            }) { text = "Rename" };
-            confirmBtn.style.backgroundColor = new Color(0.2f, 0.4f, 0.5f);
-            confirmBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
-
-            var cancelBtn = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
-            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
-            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
-            cancelBtn.style.marginLeft = 8;
-
-            btnRow.Add(confirmBtn);
-            btnRow.Add(cancelBtn);
-            panel.Add(btnRow);
-            dialog.Add(panel);
-
-            Root.panel.visualTree.Add(dialog);
-        }
-
-        /// <summary>
-        /// Show a dialog to save an override as a new template with a user-specified ID.
-        /// </summary>
-        private void ShowSaveAsNewTemplateDialog(string contextId, string resourceId, string resourceType)
-        {
-            if (_catalog == null) return;
-
-            var dialog = new VisualElement();
-            dialog.style.position = Position.Absolute;
-            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
-            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
-            dialog.style.alignItems = Align.Center;
-            dialog.style.justifyContent = Justify.Center;
-
-            var panel = new VisualElement();
-            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
-            panel.style.paddingTop = panel.style.paddingBottom = 12;
-            panel.style.paddingLeft = panel.style.paddingRight = 16;
-            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
-                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
-            panel.style.width = 300;
-
-            var title = new Label("Save as New Template");
-            title.style.fontSize = 14;
-            title.style.color = new Color(0.9f, 0.9f, 0.9f);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 8;
-            panel.Add(title);
-
-            var desc = new Label($"Override: {resourceId} ({resourceType})");
-            desc.style.color = new Color(0.7f, 0.7f, 0.7f);
-            desc.style.marginBottom = 8;
-            panel.Add(desc);
-
-            var idField = new TextField("New ID:");
-            idField.value = $"{resourceId}_copy";
-            idField.style.marginBottom = 8;
-            panel.Add(idField);
-
-            var btnRow = new VisualElement();
-            btnRow.style.flexDirection = FlexDirection.Row;
-            btnRow.style.justifyContent = Justify.FlexEnd;
-
-            var saveBtn = new Button(() =>
-            {
-                var newId = idField.value?.Trim();
-                if (string.IsNullOrEmpty(newId))
-                {
-                    Debug.LogWarning("[TimelineEditor] New ID cannot be empty.");
-                    return;
-                }
-
-                var result = OverrideManager.SaveAsNewTemplate(_catalog, contextId, resourceId, newId, resourceType);
-                if (result != null)
-                {
-                    Debug.Log($"[TimelineEditor] Saved as new template: {result}");
-                }
-                dialog.RemoveFromHierarchy();
-            }) { text = "Save" };
-            saveBtn.style.backgroundColor = new Color(0.2f, 0.5f, 0.3f);
-            saveBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
-
-            var cancelBtn = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
-            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
-            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
-            cancelBtn.style.marginLeft = 8;
-
-            btnRow.Add(saveBtn);
-            btnRow.Add(cancelBtn);
-            panel.Add(btnRow);
-            dialog.Add(panel);
-
-            Root.panel.visualTree.Add(dialog);
-        }
-
-        private void ShowSpellCardEditor(SpellCard sc, string scId)
-        {
-            _propertyContent.Clear();
-            _propertyHeaderLabel.text = $"SpellCard: {scId}";
-
-            var container = new VisualElement();
-            container.style.paddingTop = 4;
-            container.style.paddingLeft = 8;
-            container.style.paddingRight = 8;
-
-            // ── Back button ──
-            var backBtn = new Button(() => ExitSpellCardEditing())
-            { text = "\u25c0 Back to Spell Card List" };
-            backBtn.style.height = 22;
-            backBtn.style.marginBottom = 8;
-            backBtn.style.backgroundColor = new Color(0.25f, 0.25f, 0.3f);
-            backBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
-            backBtn.style.borderTopWidth = backBtn.style.borderBottomWidth =
-                backBtn.style.borderLeftWidth = backBtn.style.borderRightWidth = 0;
-            container.Add(backBtn);
-
-            // ── Name ──
-            var nameField = new TextField("Name") { value = sc.Name };
-            nameField.isDelayed = true;
-            nameField.RegisterValueChangedCallback(e =>
-            {
-                sc.Name = e.newValue;
-                _breadcrumbSpellCard.text = e.newValue;
-                SaveCurrentSpellCard();
-            });
-            container.Add(nameField);
-
-            // ── Health ──
-            var healthField = new FloatField("Health") { value = sc.Health };
-            healthField.isDelayed = true;
-            healthField.RegisterValueChangedCallback(e =>
-            {
-                sc.Health = Mathf.Max(1f, e.newValue);
-                SaveCurrentSpellCard();
-            });
-            container.Add(healthField);
-
-            // ── Time Limit ──
-            var timeLimitField = new FloatField("Time Limit") { value = sc.TimeLimit };
-            timeLimitField.isDelayed = true;
-            timeLimitField.RegisterValueChangedCallback(e =>
-            {
-                sc.TimeLimit = Mathf.Max(1f, e.newValue);
-                SaveCurrentSpellCard();
-            });
-            container.Add(timeLimitField);
-
-            // ── Boss Path ──
-            var pathHeader = new Label("Boss Path");
-            pathHeader.style.color = new Color(0.85f, 0.85f, 0.85f);
-            pathHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-            pathHeader.style.marginTop = 10;
-            pathHeader.style.marginBottom = 4;
-            container.Add(pathHeader);
-
-            BuildPathKeyframeList(container, sc.BossPath, "boss-path");
-
-            // ── Patterns ──
-            var patternsHeader = new Label("Patterns");
-            patternsHeader.style.color = new Color(0.85f, 0.85f, 0.85f);
-            patternsHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
-            patternsHeader.style.marginTop = 10;
-            patternsHeader.style.marginBottom = 4;
-            container.Add(patternsHeader);
-
-            BuildSpellCardPatternList(container, sc);
-
-            _propertyContent.Add(container);
-            ApplyLightTextTheme(container);
-        }
-
-        private void BuildPathKeyframeList(VisualElement parent, List<PathKeyframe> keyframes, string context)
-        {
-            for (int i = 0; i < keyframes.Count; i++)
-            {
-                int idx = i;
-                var kf = keyframes[i];
-
-                var wrapper = new VisualElement();
-                wrapper.style.marginBottom = 3;
-                wrapper.style.backgroundColor = new Color(0.16f, 0.16f, 0.2f);
-                wrapper.style.borderTopLeftRadius = wrapper.style.borderTopRightRadius =
-                    wrapper.style.borderBottomLeftRadius = wrapper.style.borderBottomRightRadius = 3;
-                wrapper.style.paddingLeft = 6;
-                wrapper.style.paddingRight = 4;
-                wrapper.style.paddingTop = 2;
-                wrapper.style.paddingBottom = 2;
-
-                // Detail panel (hidden by default)
-                var detail = new VisualElement();
-                detail.style.display = DisplayStyle.None;
-                detail.style.paddingTop = 4;
-                detail.style.paddingBottom = 2;
-
-                // Summary row: clickable button showing T + position
-                var summaryRow = new VisualElement();
-                summaryRow.style.flexDirection = FlexDirection.Row;
-                summaryRow.style.alignItems = Align.Center;
-                summaryRow.style.height = 22;
-
-                var expandLabel = new Label("\u25b6");
-                expandLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
-                expandLabel.style.fontSize = 10;
-                expandLabel.style.width = 14;
-                summaryRow.Add(expandLabel);
-
-                var summaryText = new Label($"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})");
-                summaryText.style.color = new Color(0.85f, 0.85f, 0.85f);
-                summaryText.style.fontSize = 11;
-                summaryText.style.flexGrow = 1;
-                summaryRow.Add(summaryText);
-
-                var delBtn = new Button(() =>
-                {
-                    keyframes.RemoveAt(idx);
-                    SaveCurrentSpellCard();
-                    ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
-                })
-                { text = "\u2715" };
-                delBtn.style.width = 18;
-                delBtn.style.height = 16;
-                delBtn.style.fontSize = 9;
-                delBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
-                delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
-                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
-                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
-                summaryRow.Add(delBtn);
-
-                // Toggle expand/collapse on click
-                bool expanded = false;
-                summaryRow.RegisterCallback<ClickEvent>(evt =>
-                {
-                    // Ignore if click was on the delete button
-                    if (evt.target is Button) return;
-
-                    expanded = !expanded;
-                    detail.style.display = expanded ? DisplayStyle.Flex : DisplayStyle.None;
-                    expandLabel.text = expanded ? "\u25bc" : "\u25b6";
-                });
-
-                wrapper.Add(summaryRow);
-
-                // ── Detail fields (each on its own line) ──
-                var timeField = new FloatField("Time") { value = kf.Time };
-                timeField.isDelayed = true;
-                timeField.RegisterValueChangedCallback(e =>
-                {
-                    kf.Time = Mathf.Max(0f, e.newValue);
-                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
-                    SaveCurrentSpellCard();
-                });
-                detail.Add(timeField);
-
-                var xField = new FloatField("X") { value = kf.Position.x };
-                xField.isDelayed = true;
-                xField.RegisterValueChangedCallback(e =>
-                {
-                    kf.Position = new Vector3(e.newValue, kf.Position.y, kf.Position.z);
-                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
-                    SaveCurrentSpellCard();
-                });
-                detail.Add(xField);
-
-                var yField = new FloatField("Y") { value = kf.Position.y };
-                yField.isDelayed = true;
-                yField.RegisterValueChangedCallback(e =>
-                {
-                    kf.Position = new Vector3(kf.Position.x, e.newValue, kf.Position.z);
-                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
-                    SaveCurrentSpellCard();
-                });
-                detail.Add(yField);
-
-                var zField = new FloatField("Z") { value = kf.Position.z };
-                zField.isDelayed = true;
-                zField.RegisterValueChangedCallback(e =>
-                {
-                    kf.Position = new Vector3(kf.Position.x, kf.Position.y, e.newValue);
-                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
-                    SaveCurrentSpellCard();
-                });
-                detail.Add(zField);
-
-                wrapper.Add(detail);
-                parent.Add(wrapper);
+                Debug.LogWarning("[TimelineEditor] No patterns available in library.");
+                return;
             }
-
-            var addKfBtn = new Button(() =>
-            {
-                float lastTime = keyframes.Count > 0 ? keyframes[keyframes.Count - 1].Time + 5f : 0f;
-                keyframes.Add(new PathKeyframe { Time = lastTime, Position = new Vector3(0, 6, 0) });
-                SaveCurrentSpellCard();
-                ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
-            })
-            { text = "+ Add Keyframe" };
-            addKfBtn.style.height = 20;
-            addKfBtn.style.marginTop = 2;
-            addKfBtn.style.backgroundColor = new Color(0.2f, 0.25f, 0.35f);
-            addKfBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
-            addKfBtn.style.borderTopWidth = addKfBtn.style.borderBottomWidth =
-                addKfBtn.style.borderLeftWidth = addKfBtn.style.borderRightWidth = 0;
-            parent.Add(addKfBtn);
-        }
-
-        private void BuildSpellCardPatternList(VisualElement parent, SpellCard sc)
-        {
-            for (int i = 0; i < sc.Patterns.Count; i++)
-            {
-                int idx = i;
-                var scp = sc.Patterns[i];
-
-                var block = new VisualElement();
-                block.style.backgroundColor = new Color(0.18f, 0.18f, 0.22f);
-                block.style.borderTopLeftRadius = block.style.borderTopRightRadius =
-                    block.style.borderBottomLeftRadius = block.style.borderBottomRightRadius = 3;
-                block.style.paddingTop = 4;
-                block.style.paddingBottom = 4;
-                block.style.paddingLeft = 6;
-                block.style.paddingRight = 6;
-                block.style.marginBottom = 4;
-
-                // Header row: pattern ID + delete
-                var headerRow = new VisualElement();
-                headerRow.style.flexDirection = FlexDirection.Row;
-                headerRow.style.alignItems = Align.Center;
-                headerRow.style.marginBottom = 2;
-
-                var patLabel = new Label($"Pattern: {scp.PatternId}");
-                patLabel.style.color = new Color(0.5f, 0.8f, 1f);
-                patLabel.style.flexGrow = 1;
-                patLabel.style.fontSize = 11;
-                headerRow.Add(patLabel);
-
-                var delBtn = new Button(() =>
-                {
-                    sc.Patterns.RemoveAt(idx);
-                    SaveCurrentSpellCard();
-                    ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
-                })
-                { text = "\u2715" };
-                delBtn.style.width = 18;
-                delBtn.style.height = 16;
-                delBtn.style.fontSize = 9;
-                delBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
-                delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
-                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
-                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
-                headerRow.Add(delBtn);
-                block.Add(headerRow);
-
-                // Delay
-                var delayField = new FloatField("Delay") { value = scp.Delay };
-                delayField.isDelayed = true;
-                delayField.RegisterValueChangedCallback(e =>
-                {
-                    scp.Delay = Mathf.Max(0f, e.newValue);
-                    SaveCurrentSpellCard();
-                });
-                block.Add(delayField);
-
-                // Duration
-                var durField = new FloatField("Duration") { value = scp.Duration };
-                durField.isDelayed = true;
-                durField.RegisterValueChangedCallback(e =>
-                {
-                    scp.Duration = Mathf.Max(0.1f, e.newValue);
-                    SaveCurrentSpellCard();
-                });
-                block.Add(durField);
-
-                // Offset
-                var offRow = new VisualElement();
-                offRow.style.flexDirection = FlexDirection.Row;
-                offRow.style.alignItems = Align.Center;
-
-                var offLabel = new Label("Offset");
-                offLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
-                offLabel.style.width = 45;
-                offLabel.style.fontSize = 11;
-                offRow.Add(offLabel);
-
-                var ox = new FloatField() { value = scp.Offset.x };
-                ox.isDelayed = true;
-                ox.style.width = 50;
-                var oy = new FloatField() { value = scp.Offset.y };
-                oy.isDelayed = true;
-                oy.style.width = 50;
-                var oz = new FloatField() { value = scp.Offset.z };
-                oz.isDelayed = true;
-                oz.style.width = 50;
-
-                Action updateOff = () =>
-                {
-                    scp.Offset = new Vector3(ox.value, oy.value, oz.value);
-                    SaveCurrentSpellCard();
-                };
-                ox.RegisterValueChangedCallback(_ => updateOff());
-                oy.RegisterValueChangedCallback(_ => updateOff());
-                oz.RegisterValueChangedCallback(_ => updateOff());
-
-                offRow.Add(ox);
-                offRow.Add(oy);
-                offRow.Add(oz);
-                block.Add(offRow);
-
-                parent.Add(block);
-            }
-
-            // Add pattern button — pick from catalog
-            var addPatBtn = new Button(() => ShowPatternPickerForSpellCard(sc))
-            { text = "+ Add Pattern" };
-            addPatBtn.style.height = 20;
-            addPatBtn.style.marginTop = 2;
-            addPatBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
-            addPatBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
-            addPatBtn.style.borderTopWidth = addPatBtn.style.borderBottomWidth =
-                addPatBtn.style.borderLeftWidth = addPatBtn.style.borderRightWidth = 0;
-            parent.Add(addPatBtn);
-        }
-
-        private void ShowPatternPickerForSpellCard(SpellCard sc)
-        {
-            if (_catalog == null) return;
 
             var picker = new VisualElement();
             picker.style.position = Position.Absolute;
             picker.style.left = Length.Percent(30);
-            picker.style.top = Length.Percent(20);
+            picker.style.top = Length.Percent(30);
             picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
             picker.style.borderTopWidth = picker.style.borderBottomWidth =
                 picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
             picker.style.borderTopColor = picker.style.borderBottomColor =
-                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.3f, 0.5f, 0.8f);
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
             picker.style.paddingTop = picker.style.paddingBottom = 8;
             picker.style.paddingLeft = picker.style.paddingRight = 12;
-            picker.style.minWidth = 220;
+            picker.style.minWidth = 200;
 
-            var title = new Label("Add Pattern to Spell Card");
-            title.style.color = new Color(0.5f, 0.8f, 1f);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 8;
-            picker.Add(title);
+            var pickerTitle = new Label("Select Pattern");
+            pickerTitle.style.color = new Color(0.9f, 0.9f, 0.9f);
+            pickerTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            pickerTitle.style.marginBottom = 8;
+            picker.Add(pickerTitle);
 
-            foreach (var entry in _catalog.Patterns)
+            foreach (var pid in patternIds)
             {
-                string label = !string.IsNullOrEmpty(entry.Name)
-                    ? $"{entry.Name}  ({entry.Id})"
-                    : entry.Id;
-
-                var pid = entry.Id;
                 var btn = new Button(() =>
                 {
                     picker.RemoveFromHierarchy();
-                    sc.Patterns.Add(new SpellCardPattern
+                    var newEp = new EnemyPattern
                     {
                         PatternId = pid,
                         Delay = 0f,
-                        Duration = 5f,
-                        Offset = Vector3.zero
-                    });
-                    SaveCurrentSpellCard();
-                    ShowSpellCardEditor(_editingSpellCard, _editingSpellCardId);
+                        Duration = 5f
+                    };
+                    var cmd = ListCommand<EnemyPattern>.Add(
+                        etLayer.EnemyType.Patterns, newEp, desc: "Add Pattern to EnemyType");
+                    _commandStack.Execute(cmd);
+                    etLayer.InvalidateBlocks();
+                    SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                    _trackArea.RebuildBlocks();
                 })
-                { text = label };
-                btn.style.backgroundColor = new Color(0.2f, 0.25f, 0.3f);
+                { text = pid };
+                btn.style.backgroundColor = new Color(0.25f, 0.25f, 0.25f);
                 btn.style.color = new Color(0.9f, 0.9f, 0.9f);
                 btn.style.marginBottom = 2;
                 picker.Add(btn);
@@ -2396,6 +2608,10 @@ namespace STGEngine.Editor.UI.Timeline
 
             Root.panel.visualTree.Add(picker);
         }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  Property Panel Builders (Phase 5/6)
+        // ═══════════════════════════════════════════════════════════════════
 
         /// <summary>
         /// Generic block selection handler. Routes to the appropriate existing
@@ -2422,7 +2638,6 @@ namespace STGEngine.Editor.UI.Timeline
 
             if (_currentLayer is StageLayer)
             {
-                // Stage level: show segment properties
                 if (block?.DataSource is TimelineSegment segment)
                 {
                     _propertyContent.Clear();
@@ -2432,11 +2647,11 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     _propertyContent.Clear();
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                    ApplyLightTextTheme(_propertyContent);
                 }
             }
             else if (_currentLayer is BossFightLayer bfLayer)
             {
-                // BossFight level: selecting a SpellCard block shows its editable properties
                 if (block is SpellCardBlock scBlock)
                 {
                     var sc = scBlock.DataSource as SpellCard;
@@ -2453,14 +2668,13 @@ namespace STGEngine.Editor.UI.Timeline
                 }
                 else
                 {
-                    // null — show layer summary
                     _propertyContent.Clear();
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                    ApplyLightTextTheme(_propertyContent);
                 }
             }
             else if (_currentLayer is SpellCardDetailLayer scLayer)
             {
-                // SpellCard detail level: selecting a pattern block shows its editable properties
                 if (block?.DataSource is SpellCardPattern scp)
                 {
                     _propertyContent.Clear();
@@ -2470,11 +2684,11 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     _propertyContent.Clear();
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                    ApplyLightTextTheme(_propertyContent);
                 }
             }
             else if (_currentLayer is WaveLayer waveLayer)
             {
-                // Wave level: selecting an enemy block shows its editable properties
                 if (block?.DataSource is EnemyInstance ei)
                 {
                     _propertyContent.Clear();
@@ -2484,12 +2698,30 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     _propertyContent.Clear();
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
+                    ApplyLightTextTheme(_propertyContent);
+                }
+            }
+            else if (_currentLayer is PatternLayer)
+            {
+                ShowLayerSummary(_currentLayer);
+            }
+            else if (_currentLayer is EnemyTypeLayer etLayer2)
+            {
+                if (block?.DataSource is EnemyPattern ep)
+                {
+                    _propertyContent.Clear();
+                    BuildEnemyPatternProperties(ep, etLayer2);
+                }
+                else
+                {
+                    ShowLayerSummary(_currentLayer);
                 }
             }
             else
             {
                 _propertyContent.Clear();
                 _currentLayer.BuildPropertiesPanel(_propertyContent, block);
+                ApplyLightTextTheme(_propertyContent);
             }
         }
 
@@ -2502,13 +2734,81 @@ namespace STGEngine.Editor.UI.Timeline
         private void ShowLayerSummary(ITimelineLayer layer)
         {
             _propertyContent.Clear();
+
+            // Clean up previous pattern editor and previewer
+            if (_patternEditor != null)
+            {
+                _patternEditor.Commands.OnStateChanged -= OnPatternEditorChanged;
+                _patternEditor.Dispose();
+                if (_singlePreviewer != null)
+                    _singlePreviewer.Pattern = null;
+            }
+            _patternEditor = null;
+
             if (layer == null) return;
 
             _propertyHeaderLabel.text = layer.DisplayName;
+
+            if (layer is PatternLayer patLayer && patLayer.Pattern != null && _singlePreviewer != null)
+            {
+                BuildPatternLayerProperties(patLayer);
+                return;
+            }
+
+            if (layer is SpellCardDetailLayer scDetailLayer)
+            {
+                BossFightLayer parentBf = null;
+                foreach (var entry in _navigationStack)
+                {
+                    if (entry.Layer is BossFightLayer bf) { parentBf = bf; break; }
+                }
+                BuildSpellCardBlockProperties(scDetailLayer.SpellCard, scDetailLayer.SpellCardId, parentBf);
+                return;
+            }
+
+            if (layer is EnemyTypeLayer etLayer)
+            {
+                _propertyHeaderLabel.text = $"EnemyType: {etLayer.DisplayName}";
+                etLayer.BuildEnemyTypePropertiesPanel(_propertyContent, _commandStack);
+                ApplyLightTextTheme(_propertyContent);
+                return;
+            }
+
             layer.BuildPropertiesPanel(_propertyContent, null);
+            ApplyLightTextTheme(_propertyContent);
         }
 
         // ─── Per-Layer Editable Properties ───
+
+        private void BuildPatternLayerProperties(PatternLayer patLayer)
+        {
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            var patternHeader = new Label($"Pattern: {patLayer.PatternId}");
+            patternHeader.style.color = new Color(0.7f, 0.85f, 1f);
+            patternHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+            patternHeader.style.marginBottom = 4;
+            container.Add(patternHeader);
+
+            _singlePreviewer.Pattern = patLayer.Pattern;
+            _patternEditor = new PatternEditorView(_singlePreviewer);
+            _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
+            _patternEditor.SetPattern(patLayer.Pattern);
+            _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
+
+            var editorRoot = _patternEditor.Root;
+            editorRoot.style.width = Length.Percent(100);
+            editorRoot.style.minWidth = StyleKeyword.Auto;
+            editorRoot.style.maxWidth = StyleKeyword.Auto;
+            editorRoot.style.backgroundColor = Color.clear;
+            container.Add(editorRoot);
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
 
         private void BuildSegmentProperties(TimelineSegment segment)
         {
@@ -2868,14 +3168,243 @@ namespace STGEngine.Editor.UI.Timeline
             });
             container.Add(delayField);
 
-            // Path points count
-            var pathLabel = new Label($"Path points: {ei.Path?.Count ?? 0}");
-            pathLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
-            pathLabel.style.marginTop = 4;
-            container.Add(pathLabel);
+            // Path editor
+            BuildEnemyPathEditor(container, ei, waveLayer);
 
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);
+        }
+
+        private void BuildEnemyPatternProperties(EnemyPattern ep, EnemyTypeLayer etLayer)
+        {
+            _propertyHeaderLabel.text = $"Pattern: {ep.PatternId}";
+            var container = new VisualElement();
+            container.style.paddingTop = 4;
+            container.style.paddingLeft = 8;
+            container.style.paddingRight = 8;
+
+            // Pattern ID (read-only)
+            var idLabel = new Label($"Pattern: {ep.PatternId}");
+            idLabel.style.color = new Color(0.7f, 0.85f, 1f);
+            idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            idLabel.style.marginBottom = 4;
+            container.Add(idLabel);
+
+            // Delay
+            var delayField = new FloatField("Delay") { value = ep.Delay };
+            delayField.isDelayed = true;
+            delayField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Pattern Delay",
+                    () => ep.Delay, v => ep.Delay = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+            });
+            container.Add(delayField);
+
+            // Duration
+            var durField = new FloatField("Duration") { value = ep.Duration };
+            durField.isDelayed = true;
+            durField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Pattern Duration",
+                    () => ep.Duration, v => ep.Duration = v,
+                    Mathf.Max(0.1f, e.newValue));
+                _commandStack.Execute(cmd);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+            });
+            container.Add(durField);
+
+            // Inline pattern editor if resolved
+            var resolvedPattern = _library?.Resolve(ep.PatternId);
+            if (resolvedPattern != null && _singlePreviewer != null)
+            {
+                var separator = new VisualElement();
+                separator.style.height = 1;
+                separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                separator.style.marginTop = 8;
+                separator.style.marginBottom = 4;
+                container.Add(separator);
+
+                var patternHeader = new Label("Pattern Parameters");
+                patternHeader.style.color = new Color(0.8f, 0.8f, 0.8f);
+                patternHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
+                patternHeader.style.marginBottom = 4;
+                container.Add(patternHeader);
+
+                _singlePreviewer.Pattern = resolvedPattern;
+                _patternEditor = new PatternEditorView(_singlePreviewer);
+                _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
+                _patternEditor.SetPattern(resolvedPattern);
+                _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
+
+                var editorRoot = _patternEditor.Root;
+                editorRoot.style.width = Length.Percent(100);
+                editorRoot.style.minWidth = StyleKeyword.Auto;
+                editorRoot.style.maxWidth = StyleKeyword.Auto;
+                editorRoot.style.backgroundColor = Color.clear;
+                container.Add(editorRoot);
+            }
+
+            _propertyContent.Add(container);
+            ApplyLightTextTheme(container);
+        }
+
+        /// <summary>
+        /// Build a collapsible keyframe list editor for an EnemyInstance's movement path.
+        /// Follows the same UI pattern as BuildBossPathEditor.
+        /// </summary>
+        private void BuildEnemyPathEditor(VisualElement parent, EnemyInstance ei, WaveLayer waveLayer)
+        {
+            var keyframes = ei.Path;
+
+            // Rebuild helper: re-select the same block to refresh the entire panel
+            void RebuildList()
+            {
+                var selected = _trackArea.SelectedBlock;
+                if (selected != null)
+                    OnBlockSelectedGeneric(selected);
+                else if (_currentLayer != null)
+                    ShowLayerSummary(_currentLayer);
+            }
+
+            for (int i = 0; i < keyframes.Count; i++)
+            {
+                int idx = i;
+                var kf = keyframes[i];
+
+                var wrapper = new VisualElement();
+                wrapper.style.marginBottom = 3;
+                wrapper.style.backgroundColor = new Color(0.16f, 0.16f, 0.2f);
+                wrapper.style.borderTopLeftRadius = wrapper.style.borderTopRightRadius =
+                    wrapper.style.borderBottomLeftRadius = wrapper.style.borderBottomRightRadius = 3;
+                wrapper.style.paddingLeft = 6;
+                wrapper.style.paddingRight = 4;
+                wrapper.style.paddingTop = 2;
+                wrapper.style.paddingBottom = 2;
+
+                // Detail panel (hidden by default)
+                var detail = new VisualElement();
+                detail.style.display = DisplayStyle.None;
+                detail.style.paddingTop = 4;
+                detail.style.paddingBottom = 2;
+
+                // Summary row
+                var summaryRow = new VisualElement();
+                summaryRow.style.flexDirection = FlexDirection.Row;
+                summaryRow.style.alignItems = Align.Center;
+                summaryRow.style.height = 22;
+
+                var expandLabel = new Label("\u25b6");
+                expandLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+                expandLabel.style.fontSize = 10;
+                expandLabel.style.width = 14;
+                summaryRow.Add(expandLabel);
+
+                var summaryText = new Label($"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})");
+                summaryText.style.color = new Color(0.85f, 0.85f, 0.85f);
+                summaryText.style.fontSize = 11;
+                summaryText.style.flexGrow = 1;
+                summaryRow.Add(summaryText);
+
+                var delBtn = new Button(() =>
+                {
+                    keyframes.RemoveAt(idx);
+                    SaveWaveData(waveLayer);
+                    _trackArea.InvalidateThumbnails();
+                    RebuildList();
+                })
+                { text = "\u2715" };
+                delBtn.style.width = 18;
+                delBtn.style.height = 16;
+                delBtn.style.fontSize = 9;
+                delBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
+                delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
+                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
+                summaryRow.Add(delBtn);
+
+                // Toggle expand/collapse
+                bool expanded = false;
+                summaryRow.RegisterCallback<ClickEvent>(evt =>
+                {
+                    if (evt.target is Button) return;
+                    expanded = !expanded;
+                    detail.style.display = expanded ? DisplayStyle.Flex : DisplayStyle.None;
+                    expandLabel.text = expanded ? "\u25bc" : "\u25b6";
+                });
+
+                wrapper.Add(summaryRow);
+
+                // Detail fields
+                var timeField = new FloatField("Time") { value = kf.Time };
+                timeField.isDelayed = true;
+                timeField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Time = Mathf.Max(0f, e.newValue);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveWaveData(waveLayer);
+                    _trackArea.InvalidateThumbnails();
+                });
+                detail.Add(timeField);
+
+                var xField = new FloatField("X") { value = kf.Position.x };
+                xField.isDelayed = true;
+                xField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(e.newValue, kf.Position.y, kf.Position.z);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveWaveData(waveLayer);
+                    _trackArea.InvalidateThumbnails();
+                });
+                detail.Add(xField);
+
+                var yField = new FloatField("Y") { value = kf.Position.y };
+                yField.isDelayed = true;
+                yField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(kf.Position.x, e.newValue, kf.Position.z);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveWaveData(waveLayer);
+                    _trackArea.InvalidateThumbnails();
+                });
+                detail.Add(yField);
+
+                var zField = new FloatField("Z") { value = kf.Position.z };
+                zField.isDelayed = true;
+                zField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(kf.Position.x, kf.Position.y, e.newValue);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    SaveWaveData(waveLayer);
+                    _trackArea.InvalidateThumbnails();
+                });
+                detail.Add(zField);
+
+                wrapper.Add(detail);
+                parent.Add(wrapper);
+            }
+
+            var addKfBtn = new Button(() =>
+            {
+                float lastTime = keyframes.Count > 0 ? keyframes[keyframes.Count - 1].Time + 3f : 0f;
+                var lastPos = keyframes.Count > 0 ? keyframes[keyframes.Count - 1].Position : new Vector3(0, 5, 0);
+                keyframes.Add(new PathKeyframe { Time = lastTime, Position = lastPos });
+                SaveWaveData(waveLayer);
+                _trackArea.InvalidateThumbnails();
+                RebuildList();
+            })
+            { text = "+ Add Keyframe" };
+            addKfBtn.style.height = 20;
+            addKfBtn.style.marginTop = 2;
+            addKfBtn.style.backgroundColor = new Color(0.2f, 0.25f, 0.35f);
+            addKfBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            addKfBtn.style.borderTopWidth = addKfBtn.style.borderBottomWidth =
+                addKfBtn.style.borderLeftWidth = addKfBtn.style.borderRightWidth = 0;
+            parent.Add(addKfBtn);
         }
 
         /// <summary>
@@ -3001,6 +3530,7 @@ namespace STGEngine.Editor.UI.Timeline
         private void ShowSpawnWaveProperties(SpawnWaveEvent evt)
         {
             _propertyHeaderLabel.text = $"Wave: {evt.WaveId}";
+            float layerDuration = _currentLayer?.TotalDuration ?? float.MaxValue;
 
             var props = new VisualElement();
             props.style.paddingTop = 4;
@@ -3012,11 +3542,12 @@ namespace STGEngine.Editor.UI.Timeline
             startField.isDelayed = true;
             startField.RegisterValueChangedCallback(e =>
             {
+                float maxStart = Mathf.Max(0f, layerDuration - evt.Duration);
                 var cmd = new PropertyChangeCommand<float>(
                     "Change Start Time",
                     () => evt.StartTime,
                     v => evt.StartTime = v,
-                    Mathf.Max(0f, e.newValue));
+                    Mathf.Clamp(e.newValue, 0f, maxStart));
                 _commandStack.Execute(cmd);
             });
             props.Add(startField);
@@ -3027,11 +3558,12 @@ namespace STGEngine.Editor.UI.Timeline
             durField.isDelayed = true;
             durField.RegisterValueChangedCallback(e =>
             {
+                float maxDur = Mathf.Max(0.1f, layerDuration - evt.StartTime);
                 var cmd = new PropertyChangeCommand<float>(
                     "Change Duration",
                     () => evt.Duration,
                     v => evt.Duration = v,
-                    Mathf.Max(0.1f, e.newValue));
+                    Mathf.Clamp(e.newValue, 0.1f, maxDur));
                 _commandStack.Execute(cmd);
             });
             props.Add(durField);
@@ -3082,6 +3614,7 @@ namespace STGEngine.Editor.UI.Timeline
         private void ShowSpawnPatternProperties(SpawnPatternEvent evt)
         {
             _propertyHeaderLabel.text = $"Event: {evt.PatternId}";
+            float layerDuration = _currentLayer?.TotalDuration ?? float.MaxValue;
 
             // Show event properties
             var eventProps = new VisualElement();
@@ -3094,11 +3627,12 @@ namespace STGEngine.Editor.UI.Timeline
             startField.isDelayed = true;
             startField.RegisterValueChangedCallback(e =>
             {
+                float maxStart = Mathf.Max(0f, layerDuration - evt.Duration);
                 var cmd = new PropertyChangeCommand<float>(
                     "Change Start Time",
                     () => evt.StartTime,
                     v => evt.StartTime = v,
-                    Mathf.Max(0f, e.newValue));
+                    Mathf.Clamp(e.newValue, 0f, maxStart));
                 _commandStack.Execute(cmd);
             });
             eventProps.Add(startField);
@@ -3109,11 +3643,12 @@ namespace STGEngine.Editor.UI.Timeline
             durField.isDelayed = true;
             durField.RegisterValueChangedCallback(e =>
             {
+                float maxDur = Mathf.Max(0.1f, layerDuration - evt.StartTime);
                 var cmd = new PropertyChangeCommand<float>(
                     "Change Duration",
                     () => evt.Duration,
                     v => evt.Duration = v,
-                    Mathf.Max(0.1f, e.newValue));
+                    Mathf.Clamp(e.newValue, 0.1f, maxDur));
                 _commandStack.Execute(cmd);
             });
             eventProps.Add(durField);
@@ -3157,9 +3692,16 @@ namespace STGEngine.Editor.UI.Timeline
             eventProps.Add(posY);
             eventProps.Add(posZ);
 
-            // Inline pattern editor if resolved
+            // Inline pattern editor if resolved (clone to avoid mutating shared cache)
             if (evt.ResolvedPattern != null && _singlePreviewer != null)
             {
+                // Replace with a clone so edits don't pollute the shared PatternLibrary cache
+                if (_library != null)
+                {
+                    var clone = _library.ResolveClone(evt.PatternId);
+                    if (clone != null)
+                        evt.ResolvedPattern = clone;
+                }
                 var separator = new VisualElement();
                 separator.style.height = 1;
                 separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
@@ -3172,6 +3714,10 @@ namespace STGEngine.Editor.UI.Timeline
                 patternHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
                 patternHeader.style.marginBottom = 4;
                 eventProps.Add(patternHeader);
+
+                // Warn if inline pattern editor will write to original file
+                if (GetPatternOverrideContext() == null)
+                    eventProps.Add(CreateOriginalFileWarning("Pattern"));
 
                 _singlePreviewer.Pattern = evt.ResolvedPattern;
                 _patternEditor = new PatternEditorView(_singlePreviewer);
@@ -3293,15 +3839,28 @@ namespace STGEngine.Editor.UI.Timeline
                 _breadcrumbSegment.text = segment.Name;
                 _breadcrumbStage.text = _stage.Name;
                 RebuildBreadcrumb();
+                NotifyWavePlaceholders();
                 return;
             }
 
             // Generic double-click: navigate into child layer
             NavigateTo(childLayer);
 
-            // SpellCardDetailLayer: show Boss placeholder with this spell card's path
+            // SpellCardDetailLayer: track editing context for save/override logic
             if (childLayer is SpellCardDetailLayer scLayer)
             {
+                _editingSpellCard = scLayer.SpellCard;
+                _editingSpellCardId = scLayer.SpellCardId;
+                // Find the parent BossFight segment from the navigation stack
+                foreach (var entry in _navigationStack)
+                {
+                    if (entry.Layer is BossFightLayer bf)
+                    {
+                        _editingBossFightSegment = bf.Segment;
+                        break;
+                    }
+                }
+
                 var sc = scLayer.SpellCard;
                 if (sc != null && sc.BossPath != null && sc.BossPath.Count > 0)
                     OnSpellCardEditingChanged?.Invoke(sc);
@@ -3309,8 +3868,13 @@ namespace STGEngine.Editor.UI.Timeline
                     OnSpellCardEditingChanged?.Invoke(null);
             }
 
-            // TODO: PatternLayer preview — needs coordination between _singlePreviewer
-            // and TimelinePlaybackController. Will be implemented later.
+            // PatternLayer: activate single previewer for live pattern preview
+            if (childLayer is PatternLayer patLayer && patLayer.Pattern != null && _singlePreviewer != null)
+            {
+                _singlePreviewer.Pattern = patLayer.Pattern;
+                // Hide boss placeholder — we're previewing a standalone pattern
+                OnSpellCardEditingChanged?.Invoke(null);
+            }
         }
 
         private void OnAddEventRequested(float atTime)
@@ -3491,6 +4055,38 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.AddEvent(evt);
         }
 
+        private void CreateEventWithPatternAndDuration(string patternId, float atTime, float duration)
+        {
+            var pattern = _library.Resolve(patternId);
+            if (pattern == null) return;
+
+            var evt = new SpawnPatternEvent
+            {
+                Id = $"evt_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                StartTime = atTime,
+                Duration = duration,
+                PatternId = patternId,
+                SpawnPosition = new Vector3(0, 5, 0),
+                ResolvedPattern = pattern
+            };
+
+            _trackArea.AddEvent(evt);
+        }
+
+        private void CreateEventWithWaveAndDuration(string waveId, float atTime, float duration)
+        {
+            var evt = new SpawnWaveEvent
+            {
+                Id = $"wevt_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                StartTime = atTime,
+                Duration = duration,
+                WaveId = waveId,
+                SpawnOffset = Vector3.zero
+            };
+
+            _trackArea.AddEvent(evt);
+        }
+
         private void OnStageDataChanged()
         {
             // Structural change: force the current layer to rebuild its block list from data
@@ -3515,8 +4111,97 @@ namespace STGEngine.Editor.UI.Timeline
         private void OnCommandStateChanged()
         {
             // Rebuild visual elements so labels, colors, and positions all update on undo/redo.
-            // GetAllBlocks() returns cached blocks (no disk IO), so this is safe.
             _trackArea.RebuildBlocks();
+
+            // Refresh the properties panel to sync any value changes from drag/undo/redo.
+            var selected = _trackArea.SelectedBlock;
+            if (selected != null)
+            {
+                // MidStageLayer uses legacy OnEventSelected path
+                if (_currentLayer is MidStageLayer && selected.DataSource is TimelineEvent te)
+                    OnEventSelected(te);
+                else
+                    OnBlockSelectedGeneric(selected);
+            }
+            else if (_currentLayer != null)
+            {
+                ShowLayerSummary(_currentLayer);
+            }
+
+            // Auto-save: persist data changes from timeline drag/undo/redo to disk.
+            // Attribute panel edits use ExecAndSave (which saves inline), but timeline
+            // drags only go through PropertyChangeCommand → _commandStack.Execute,
+            // so we need to save here as well.
+            AutoSaveCurrentLayer();
+
+            // Refresh undo/redo button states + history panel
+            RefreshUndoRedoButtons();
+            RefreshHistoryPanel();
+        }
+
+        /// <summary>
+        /// Persist the current layer's data to disk after any command execution.
+        /// Covers timeline drag (Move/Resize) and undo/redo that bypass ExecAndSave.
+        /// </summary>
+        private void AutoSaveCurrentLayer()
+        {
+            if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+            }
+            else if (_currentLayer is BossFightLayer bfLayer)
+            {
+                // A SpellCard block was resized (TimeLimit) or a Transition was resized
+                // — save all loaded spell cards in this BossFight
+                for (int i = 0; i < bfLayer.BlockCount; i++)
+                {
+                    var blk = bfLayer.GetBlock(i);
+                    if (blk is SpellCardBlock scBlk && blk.DataSource is SpellCard sc)
+                        SaveSpellCardInContext(sc, scBlk.SpellCardId);
+                }
+                // BossFight structure (SpellCardIds list) is part of Stage — save Stage too
+                AutoSaveStage();
+            }
+            else if (_currentLayer is WaveLayer waveLayer)
+            {
+                SaveWaveData(waveLayer);
+            }
+            else if (_currentLayer is EnemyTypeLayer etLayer)
+            {
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+            }
+            else if (_currentLayer is PatternLayer patLayer)
+            {
+                // Pattern duration changed via resize — save pattern file
+                SaveEditedPattern(patLayer.Pattern, patLayer.PatternId, GetPatternOverrideContext());
+            }
+            else if (_currentLayer is MidStageLayer || _currentLayer is StageLayer)
+            {
+                // MidStage events (StartTime/Duration) and Stage segments are stored in Stage file
+                AutoSaveStage();
+            }
+        }
+
+        /// <summary>
+        /// Persist the current Stage to disk. Called after any structural or property change
+        /// to Segments or MidStage Events (which are stored inside the Stage YAML).
+        /// Silently skips if the stage has no known file path (e.g. unsaved new stage).
+        /// </summary>
+        private void AutoSaveStage()
+        {
+            if (_stage == null || string.IsNullOrEmpty(_stage.Id) || _catalog == null) return;
+            try
+            {
+                var path = _catalog.GetStagePath(_stage.Id);
+                if (path != null && System.IO.File.Exists(path))
+                {
+                    YamlSerializer.SerializeStageToFile(_stage, path);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] AutoSave stage failed: {e.Message}");
+            }
         }
 
         /// <summary>
@@ -3525,9 +4210,135 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private void OnPatternEditorChanged()
         {
+            var ctx = GetPatternOverrideContext();
+
             if (_selectedEvent != null)
+            {
                 _playback.RefreshEvent(_selectedEvent);
+
+                // MidStage inline edit: save the edited pattern to disk
+                SaveEditedPattern(_selectedEvent.ResolvedPattern, _selectedEvent.PatternId, ctx);
+            }
+            else if (_currentLayer is PatternLayer patLayer)
+            {
+                // In PatternLayer: reload the temporary segment to pick up pattern changes
+                patLayer.LoadPreview(_playback);
+
+                // Save the edited pattern to disk
+                SaveEditedPattern(patLayer.Pattern, patLayer.PatternId, ctx);
+            }
+            else if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                // SpellCard inline pattern edit: save the pattern to disk
+                if (_patternEditor != null)
+                {
+                    var editedPattern = _singlePreviewer?.Pattern;
+                    var selectedBlk = _trackArea.SelectedBlock;
+                    if (selectedBlk?.DataSource is SpellCardPattern scp && editedPattern != null)
+                    {
+                        SaveEditedPattern(editedPattern, scp.PatternId, ctx);
+                    }
+                }
+            }
             _trackArea.InvalidateThumbnails();
+        }
+
+        /// <summary>
+        /// Save an edited BulletPattern to disk.
+        /// If contextId is provided, writes to Override (Modified/{contextId}/{patternId}.yaml).
+        /// Otherwise writes to the original pattern file (STGData/Patterns/{id}.yaml).
+        /// Also refreshes the PatternLibrary cache so other references pick up the change.
+        /// </summary>
+        private void SaveEditedPattern(BulletPattern pattern, string patternId, string contextId = null)
+        {
+            if (pattern == null || string.IsNullOrEmpty(patternId) || _catalog == null) return;
+            try
+            {
+                if (!string.IsNullOrEmpty(contextId))
+                {
+                    var yaml = YamlSerializer.Serialize(pattern);
+                    OverrideManager.SaveOverride(contextId, patternId, yaml);
+                }
+                else
+                {
+                    var path = _catalog.GetPatternPath(patternId);
+                    if (path != null)
+                        YamlSerializer.SerializeToFile(pattern, path);
+                }
+                // Update the shared cache so thumbnails and other references see the change
+                _library?.Register(pattern);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TimelineEditor] Failed to save pattern '{patternId}': {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Find the Pattern Override contextId from the current editing context.
+        /// Walks the navigation stack to find the nearest parent with a contextId.
+        /// Returns null if no override context (= save to original file).
+        /// </summary>
+        private string GetPatternOverrideContext()
+        {
+            // If editing inside a SpellCardDetailLayer, use its contextId
+            if (_currentLayer is SpellCardDetailLayer scLayer && !string.IsNullOrEmpty(scLayer.ContextId))
+                return scLayer.ContextId;
+
+            // If editing inside a MidStageLayer with a selected event, use per-event-instance context
+            if (_currentLayer is MidStageLayer midLayer && !string.IsNullOrEmpty(midLayer.ContextId)
+                && _selectedEvent != null)
+                return $"{midLayer.ContextId}/{_selectedEvent.Id}";
+
+            // Walk the navigation stack for PatternLayer (entered via double-click)
+            foreach (var entry in _navigationStack)
+            {
+                if (entry.Layer is SpellCardDetailLayer parentSc && !string.IsNullOrEmpty(parentSc.ContextId))
+                    return parentSc.ContextId;
+                if (entry.Layer is MidStageLayer parentMid && !string.IsNullOrEmpty(parentMid.ContextId))
+                {
+                    // Find the event that was double-clicked to enter PatternLayer
+                    // The selected block on the parent MidStageLayer is the SpawnPatternEvent
+                    // We can't easily recover the eventId here, so use segmentId only
+                    return parentMid.ContextId;
+                }
+            }
+
+            return null; // No override context — save to original file
+        }
+
+        /// <summary>
+        /// Create a yellow warning bar indicating the user is editing an original template file.
+        /// Add this to the top of property panels when changes go directly to the source file
+        /// instead of an Override copy.
+        /// </summary>
+        private static VisualElement CreateOriginalFileWarning(string resourceType)
+        {
+            var bar = new VisualElement();
+            bar.style.flexDirection = FlexDirection.Row;
+            bar.style.alignItems = Align.Center;
+            bar.style.backgroundColor = new Color(0.55f, 0.45f, 0.1f, 0.85f);
+            bar.style.paddingLeft = 6;
+            bar.style.paddingRight = 6;
+            bar.style.paddingTop = 3;
+            bar.style.paddingBottom = 3;
+            bar.style.marginBottom = 4;
+            bar.style.borderTopLeftRadius = bar.style.borderTopRightRadius =
+                bar.style.borderBottomLeftRadius = bar.style.borderBottomRightRadius = 3;
+
+            var icon = new Label("\u26a0"); // ⚠
+            icon.style.fontSize = 12;
+            icon.style.color = new Color(1f, 0.9f, 0.3f);
+            icon.style.marginRight = 4;
+            bar.Add(icon);
+
+            var text = new Label($"Editing original {resourceType} — changes affect all references");
+            text.style.fontSize = 10;
+            text.style.color = new Color(1f, 0.95f, 0.7f);
+            text.style.whiteSpace = WhiteSpace.Normal;
+            bar.Add(text);
+
+            return bar;
         }
 
         /// <summary>
@@ -3710,6 +4521,668 @@ namespace STGEngine.Editor.UI.Timeline
                 root.schedule.Execute(() => ApplyThemeToTree(root)).ExecuteLater(50);
                 root.schedule.Execute(() => ApplyThemeToTree(root)).ExecuteLater(200);
             });
+        }
+
+        /// <summary>
+        /// Show a dialog when an added asset's duration would exceed the layer's time limit.
+        /// User can choose to auto-trim or cancel.
+        /// </summary>
+        private void ShowDurationOverflowDialog(float assetDuration, float layerDuration,
+            float insertTime, Action<float> onTrimConfirmed)
+        {
+            float overflow = (insertTime + assetDuration) - layerDuration;
+            float trimmedDuration = Mathf.Max(0.5f, layerDuration - insertTime);
+
+            var overlay = new VisualElement();
+            overlay.style.position = Position.Absolute;
+            overlay.style.left = overlay.style.right = overlay.style.top = overlay.style.bottom = 0;
+            overlay.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            overlay.style.alignItems = Align.Center;
+            overlay.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 340;
+
+            var title = new Label("Duration Exceeds Layer Limit");
+            title.style.fontSize = 13;
+            title.style.color = new Color(1f, 0.85f, 0.4f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var msg = new Label(
+                $"Insert at {insertTime:F1}s + duration {assetDuration:F1}s = {insertTime + assetDuration:F1}s\n" +
+                $"Layer limit: {layerDuration:F1}s  (overflow: {overflow:F1}s)\n\n" +
+                $"Auto-trim duration to {trimmedDuration:F1}s?");
+            msg.style.color = new Color(0.85f, 0.85f, 0.85f);
+            msg.style.fontSize = 11;
+            msg.style.whiteSpace = WhiteSpace.Normal;
+            msg.style.marginBottom = 12;
+            panel.Add(msg);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var trimBtn = new Button(() =>
+            {
+                overlay.RemoveFromHierarchy();
+                onTrimConfirmed?.Invoke(trimmedDuration);
+            }) { text = "Auto-Trim" };
+            trimBtn.style.backgroundColor = new Color(0.2f, 0.45f, 0.3f);
+            trimBtn.style.color = new Color(0.95f, 0.95f, 0.95f);
+
+            var cancelBtn = new Button(() => overlay.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.35f, 0.25f, 0.25f);
+            cancelBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(trimBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            overlay.Add(panel);
+
+            Root.panel.visualTree.Add(overlay);
+        }
+
+        /// <summary>
+        /// Show a picker dialog to select an EnemyType when adding an enemy to a Wave.
+        /// </summary>
+        private void ShowEnemyTypePicker(WaveLayer waveLayer)
+        {
+            if (_catalog == null || _catalog.EnemyTypes.Count == 0)
+            {
+                Debug.LogWarning("[TimelineEditor] No enemy types in catalog. Create one from the Assets panel first.");
+                return;
+            }
+
+            var picker = new VisualElement();
+            picker.style.position = Position.Absolute;
+            picker.style.left = Length.Percent(30);
+            picker.style.top = Length.Percent(20);
+            picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
+            picker.style.borderTopWidth = picker.style.borderBottomWidth =
+                picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
+            picker.style.borderTopColor = picker.style.borderBottomColor =
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.6f, 0.35f, 0.2f);
+            picker.style.paddingTop = picker.style.paddingBottom = 8;
+            picker.style.paddingLeft = picker.style.paddingRight = 12;
+            picker.style.borderTopLeftRadius = picker.style.borderTopRightRadius =
+                picker.style.borderBottomLeftRadius = picker.style.borderBottomRightRadius = 6;
+            picker.style.minWidth = 220;
+            picker.style.maxHeight = 300;
+
+            var title = new Label("Select Enemy Type");
+            title.style.fontSize = 12;
+            title.style.color = new Color(1f, 0.6f, 0.3f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 6;
+            picker.Add(title);
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.maxHeight = 220;
+
+            foreach (var entry in _catalog.EnemyTypes)
+            {
+                string label = !string.IsNullOrEmpty(entry.Name)
+                    ? $"{entry.Name}  ({entry.Id})"
+                    : entry.Id;
+
+                var typeId = entry.Id;
+                var btn = new Button(() =>
+                {
+                    picker.RemoveFromHierarchy();
+                    AddEnemyInstanceToWave(waveLayer, typeId);
+                }) { text = label };
+                btn.style.backgroundColor = new Color(0.3f, 0.22f, 0.15f);
+                btn.style.color = new Color(0.9f, 0.9f, 0.9f);
+                btn.style.marginBottom = 2;
+                scroll.Add(btn);
+            }
+
+            picker.Add(scroll);
+
+            var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginTop = 4;
+            picker.Add(cancelBtn);
+
+            Root.panel.visualTree.Add(picker);
+            ApplyLightTextTheme(picker);
+        }
+
+        private void AddEnemyInstanceToWave(WaveLayer waveLayer, string enemyTypeId)
+        {
+            float spawnDelay = _playback.CurrentTime;
+            float defaultPathDur = 3f;
+            float waveDur = waveLayer.TotalDuration;
+
+            var enemy = new EnemyInstance
+            {
+                EnemyTypeId = enemyTypeId,
+                SpawnDelay = Mathf.Min(spawnDelay, Mathf.Max(0f, waveDur - 0.5f)),
+                Path = new List<PathKeyframe>
+                {
+                    new() { Time = 0f, Position = new Vector3(0, 5, 0) },
+                    new() { Time = defaultPathDur, Position = new Vector3(0, -5, 0) }
+                }
+            };
+
+            // Check overflow: if spawn + path duration exceeds wave duration
+            float endTime = enemy.SpawnDelay + defaultPathDur;
+            if (endTime > waveDur && waveDur > 0)
+            {
+                ShowDurationOverflowDialog(defaultPathDur, waveDur, enemy.SpawnDelay, trimmedDur =>
+                {
+                    // Adjust last keyframe time to trimmed duration
+                    if (enemy.Path.Count > 1)
+                        enemy.Path[enemy.Path.Count - 1] = new PathKeyframe
+                        {
+                            Time = trimmedDur,
+                            Position = enemy.Path[enemy.Path.Count - 1].Position
+                        };
+                    var cmd = ListCommand<EnemyInstance>.Add(
+                        waveLayer.Wave.Enemies, enemy, -1, "Add Enemy Instance");
+                    _commandStack.Execute(cmd);
+                    waveLayer.InvalidateBlocks();
+                    OnStageDataChanged();
+                    SaveWaveData(waveLayer);
+                });
+                return;
+            }
+
+            var cmd2 = ListCommand<EnemyInstance>.Add(
+                waveLayer.Wave.Enemies, enemy, -1, "Add Enemy Instance");
+            _commandStack.Execute(cmd2);
+            waveLayer.InvalidateBlocks();
+            OnStageDataChanged();
+            SaveWaveData(waveLayer);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ── Keyboard Shortcuts ──
+        // ═══════════════════════════════════════════════════════════════
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            bool ctrl = evt.ctrlKey || evt.commandKey;
+            bool shift = evt.shiftKey;
+
+            // Ctrl+Z → Undo
+            if (ctrl && !shift && evt.keyCode == KeyCode.Z)
+            {
+                var stack = _patternEditor?.Commands ?? _commandStack;
+                if (stack.CanUndo) stack.Undo();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Ctrl+Y or Ctrl+Shift+Z → Redo
+            if ((ctrl && evt.keyCode == KeyCode.Y) ||
+                (ctrl && shift && evt.keyCode == KeyCode.Z))
+            {
+                var stack = _patternEditor?.Commands ?? _commandStack;
+                if (stack.CanRedo) stack.Redo();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Delete / Backspace → Delete selected block
+            if (!ctrl && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
+            {
+                DeleteSelectedBlock();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Space → Toggle play
+            if (!ctrl && evt.keyCode == KeyCode.Space)
+            {
+                OnTogglePlay();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Ctrl+S → Save
+            if (ctrl && evt.keyCode == KeyCode.S)
+            {
+                OnSaveStage();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Ctrl+C → Copy
+            if (ctrl && evt.keyCode == KeyCode.C)
+            {
+                CopySelectedBlock();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Ctrl+V → Paste
+            if (ctrl && evt.keyCode == KeyCode.V)
+            {
+                PasteBlock();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
+            // Ctrl+D → Duplicate
+            if (ctrl && evt.keyCode == KeyCode.D)
+            {
+                DuplicateSelectedBlock();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+        }
+
+        private void DeleteSelectedBlock()
+        {
+            var selected = _trackArea.SelectedBlock;
+            if (selected == null) return;
+
+            if (_currentLayer is MidStageLayer)
+            {
+                _trackArea.DeleteSelectedEvent();
+            }
+            else if (_currentLayer is BossFightLayer bfLayer)
+            {
+                bfLayer.OnDeleteSpellCardRequested?.Invoke(selected);
+            }
+            else if (_currentLayer is WaveLayer waveLayer)
+            {
+                waveLayer.OnDeleteEnemyRequested?.Invoke(selected);
+            }
+            else if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                scLayer.OnDeletePatternRequested?.Invoke(selected);
+            }
+            else if (_currentLayer is StageLayer)
+            {
+                _stageLayer.OnDeleteSegmentRequested?.Invoke(selected);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ── Copy / Paste / Duplicate ──
+        // ═══════════════════════════════════════════════════════════════
+
+        private void CopySelectedBlock()
+        {
+            var selected = _trackArea.SelectedBlock;
+            if (selected?.DataSource == null) return;
+
+            var data = selected.DataSource;
+            string yaml = null;
+
+            if (data is TimelineEvent te)
+                yaml = YamlSerializer.SerializeStage(new Stage { Segments = new List<TimelineSegment> { new() { Events = new List<TimelineEvent> { te } } } });
+            else if (data is EnemyInstance ei)
+                yaml = YamlSerializer.SerializeWave(new Wave { Enemies = new List<EnemyInstance> { ei } });
+            else if (data is SpellCardPattern scp)
+                yaml = YamlSerializer.SerializeSpellCard(new SpellCard { Patterns = new List<SpellCardPattern> { scp } });
+
+            if (yaml != null)
+            {
+                _clipboard = (data.GetType(), yaml);
+                Debug.Log($"[Timeline] Copied {data.GetType().Name}");
+            }
+        }
+
+        private void PasteBlock()
+        {
+            if (_clipboard == null) return;
+            var (blockType, yamlData) = _clipboard.Value;
+            float pasteTime = _playback.CurrentTime;
+
+            if (typeof(TimelineEvent).IsAssignableFrom(blockType) && _currentLayer is MidStageLayer midLayer)
+            {
+                var tempStage = YamlSerializer.DeserializeStage((string)yamlData);
+                var srcEvt = tempStage?.Segments?[0]?.Events?[0];
+                if (srcEvt == null) return;
+                var clone = CloneTimelineEvent(srcEvt, pasteTime);
+                midLayer.Segment.Events.Add(clone);
+                midLayer.InvalidateBlocks();
+                OnStageDataChanged();
+            }
+            else if (blockType == typeof(EnemyInstance) && _currentLayer is WaveLayer waveLayer)
+            {
+                var tempWave = YamlSerializer.DeserializeWave((string)yamlData);
+                var srcEi = tempWave?.Enemies?[0];
+                if (srcEi == null) return;
+                var clone = CloneEnemyInstance(srcEi, pasteTime);
+                waveLayer.Wave.Enemies.Add(clone);
+                waveLayer.InvalidateBlocks();
+                OnStageDataChanged();
+                SaveWaveData(waveLayer);
+            }
+            else if (blockType == typeof(SpellCardPattern) && _currentLayer is SpellCardDetailLayer scLayer)
+            {
+                var tempSc = YamlSerializer.DeserializeSpellCard((string)yamlData);
+                var srcScp = tempSc?.Patterns?[0];
+                if (srcScp == null) return;
+                var clone = new SpellCardPattern
+                {
+                    PatternId = srcScp.PatternId,
+                    Delay = pasteTime,
+                    Duration = srcScp.Duration,
+                    Offset = srcScp.Offset
+                };
+                scLayer.SpellCard.Patterns.Add(clone);
+                scLayer.InvalidateBlocks();
+                OnStageDataChanged();
+                SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+            }
+        }
+
+        private void DuplicateSelectedBlock()
+        {
+            var selected = _trackArea.SelectedBlock;
+            if (selected?.DataSource == null) return;
+
+            var data = selected.DataSource;
+            float offset = 0.5f;
+
+            if (data is TimelineEvent te && _currentLayer is MidStageLayer midLayer)
+            {
+                var clone = CloneTimelineEvent(te, te.StartTime + offset);
+                midLayer.Segment.Events.Add(clone);
+                midLayer.InvalidateBlocks();
+                OnStageDataChanged();
+            }
+            else if (data is EnemyInstance ei && _currentLayer is WaveLayer waveLayer)
+            {
+                var clone = CloneEnemyInstance(ei, ei.SpawnDelay + offset);
+                waveLayer.Wave.Enemies.Add(clone);
+                waveLayer.InvalidateBlocks();
+                OnStageDataChanged();
+                SaveWaveData(waveLayer);
+            }
+            else if (data is SpellCardPattern scp && _currentLayer is SpellCardDetailLayer scLayer)
+            {
+                var clone = new SpellCardPattern
+                {
+                    PatternId = scp.PatternId,
+                    Delay = scp.Delay + offset,
+                    Duration = scp.Duration,
+                    Offset = scp.Offset
+                };
+                scLayer.SpellCard.Patterns.Add(clone);
+                scLayer.InvalidateBlocks();
+                OnStageDataChanged();
+                SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+            }
+        }
+
+        private static TimelineEvent CloneTimelineEvent(TimelineEvent src, float newStartTime)
+        {
+            TimelineEvent clone;
+            if (src is SpawnPatternEvent spe)
+            {
+                clone = new SpawnPatternEvent
+                {
+                    PatternId = spe.PatternId,
+                    Duration = spe.Duration,
+                    SpawnPosition = spe.SpawnPosition
+                };
+            }
+            else if (src is SpawnWaveEvent swe)
+            {
+                clone = new SpawnWaveEvent
+                {
+                    WaveId = swe.WaveId,
+                    Duration = swe.Duration
+                };
+            }
+            else
+            {
+                // TimelineEvent is abstract; fallback to SpawnPatternEvent
+                clone = new SpawnPatternEvent { Duration = src.Duration };
+            }
+            clone.Id = Guid.NewGuid().ToString("N")[..8];
+            clone.StartTime = newStartTime;
+            return clone;
+        }
+
+        private static EnemyInstance CloneEnemyInstance(EnemyInstance src, float newSpawnDelay)
+        {
+            return new EnemyInstance
+            {
+                EnemyTypeId = src.EnemyTypeId,
+                SpawnDelay = newSpawnDelay,
+                Path = src.Path != null ? new List<PathKeyframe>(src.Path.Select(k =>
+                    new PathKeyframe { Time = k.Time, Position = k.Position })) : null
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ── Undo/Redo Buttons ──
+        // ═══════════════════════════════════════════════════════════════
+
+        private void OnUndoClicked()
+        {
+            var stack = _patternEditor?.Commands ?? _commandStack;
+            if (stack.CanUndo) stack.Undo();
+        }
+
+        private void OnRedoClicked()
+        {
+            var stack = _patternEditor?.Commands ?? _commandStack;
+            if (stack.CanRedo) stack.Redo();
+        }
+
+        private void RefreshUndoRedoButtons()
+        {
+            var stack = _patternEditor?.Commands ?? _commandStack;
+            _undoBtn?.SetEnabled(stack.CanUndo);
+            _redoBtn?.SetEnabled(stack.CanRedo);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ── Command History Panel ──
+        // ═══════════════════════════════════════════════════════════════
+
+        private void ToggleHistoryPanel()
+        {
+            _historyVisible = !_historyVisible;
+            if (_historyVisible)
+                ShowHistoryPanel();
+            else
+                HideHistoryPanel();
+        }
+
+        private void ShowHistoryPanel()
+        {
+            if (_historyPanel != null)
+            {
+                _historyPanel.style.display = DisplayStyle.Flex;
+                RefreshHistoryPanel();
+                return;
+            }
+
+            _historyPanel = new VisualElement();
+            _historyPanel.style.position = Position.Absolute;
+            _historyPanel.style.left = 0;
+            _historyPanel.style.right = 0;
+            _historyPanel.style.top = 30; // below toolbar
+            _historyPanel.style.maxHeight = 200;
+            _historyPanel.style.backgroundColor = new Color(0.13f, 0.13f, 0.15f, 0.96f);
+            _historyPanel.style.borderBottomWidth = 1;
+            _historyPanel.style.borderBottomColor = new Color(0.4f, 0.4f, 0.4f);
+            _historyPanel.style.paddingTop = 4;
+            _historyPanel.style.paddingBottom = 4;
+
+            var header = new VisualElement();
+            header.style.flexDirection = FlexDirection.Row;
+            header.style.alignItems = Align.Center;
+            header.style.paddingLeft = 8;
+            header.style.paddingRight = 8;
+            header.style.marginBottom = 4;
+
+            var titleLabel = new Label("Command History");
+            titleLabel.style.color = Lt;
+            titleLabel.style.fontSize = 11;
+            titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            titleLabel.style.flexGrow = 1;
+            header.Add(titleLabel);
+
+            var closeBtn = new Button(() => { _historyVisible = false; HideHistoryPanel(); }) { text = "\u2715" };
+            closeBtn.style.width = 20;
+            closeBtn.style.height = 18;
+            closeBtn.style.fontSize = 10;
+            closeBtn.style.color = Lt;
+            closeBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            closeBtn.style.borderTopWidth = closeBtn.style.borderBottomWidth =
+                closeBtn.style.borderLeftWidth = closeBtn.style.borderRightWidth = 0;
+            header.Add(closeBtn);
+
+            _historyPanel.Add(header);
+
+            _historyScroll = new ScrollView(ScrollViewMode.Vertical);
+            _historyScroll.style.flexGrow = 1;
+            _historyScroll.style.maxHeight = 170;
+            _historyPanel.Add(_historyScroll);
+
+            Root.Add(_historyPanel);
+            RefreshHistoryPanel();
+            ApplyLightTextTheme(_historyPanel);
+        }
+
+        private void HideHistoryPanel()
+        {
+            if (_historyPanel != null)
+                _historyPanel.style.display = DisplayStyle.None;
+        }
+
+        private void RefreshHistoryPanel()
+        {
+            if (_historyScroll == null || !_historyVisible) return;
+
+            _historyScroll.Clear();
+
+            var undoHistory = _commandStack.UndoHistory;
+            var redoHistory = _commandStack.RedoHistory;
+
+            // Undo items (oldest first, newest at bottom) — gray text
+            for (int i = 0; i < undoHistory.Count; i++)
+            {
+                int targetUndoCount = undoHistory.Count - i; // how many undos to reach this position
+                var item = BuildHistoryItem(undoHistory[i].Description, false, targetUndoCount);
+                _historyScroll.Add(item);
+            }
+
+            // Current position indicator
+            var currentLine = new VisualElement();
+            currentLine.style.flexDirection = FlexDirection.Row;
+            currentLine.style.alignItems = Align.Center;
+            currentLine.style.height = 18;
+            currentLine.style.paddingLeft = 8;
+
+            var greenBar = new VisualElement();
+            greenBar.style.height = 2;
+            greenBar.style.flexGrow = 1;
+            greenBar.style.backgroundColor = new Color(0.3f, 0.8f, 0.3f);
+            currentLine.Add(greenBar);
+
+            var currentLabel = new Label("\u25b8 Current");
+            currentLabel.style.color = new Color(0.3f, 0.8f, 0.3f);
+            currentLabel.style.fontSize = 10;
+            currentLabel.style.marginLeft = 4;
+            currentLine.Add(currentLabel);
+
+            _historyScroll.Add(currentLine);
+
+            // Redo items (oldest first) — dimmer text + strikethrough style
+            for (int i = 0; i < redoHistory.Count; i++)
+            {
+                int targetRedoCount = i + 1; // how many redos to reach this position
+                var item = BuildHistoryItem(redoHistory[i].Description, true, targetRedoCount);
+                _historyScroll.Add(item);
+            }
+
+            // Auto-scroll to current position
+            _historyScroll.schedule.Execute(() =>
+            {
+                _historyScroll.scrollOffset = new Vector2(0, _historyScroll.scrollOffset.y + 9999);
+                // Scroll back a bit to show current indicator
+                float targetY = Mathf.Max(0, (undoHistory.Count + 0.5f) * 20f - _historyScroll.resolvedStyle.height * 0.5f);
+                _historyScroll.scrollOffset = new Vector2(0, targetY);
+            }).ExecuteLater(10);
+        }
+
+        private VisualElement BuildHistoryItem(string description, bool isRedo, int stepsToReach)
+        {
+            var item = new VisualElement();
+            item.style.flexDirection = FlexDirection.Row;
+            item.style.alignItems = Align.Center;
+            item.style.height = 20;
+            item.style.paddingLeft = 12;
+            item.style.paddingRight = 8;
+
+            var label = new Label(description ?? "(unnamed)");
+            label.style.fontSize = 10;
+            label.style.flexGrow = 1;
+            label.style.overflow = Overflow.Hidden;
+            label.style.textOverflow = TextOverflow.Ellipsis;
+
+            if (isRedo)
+            {
+                label.style.color = new Color(0.5f, 0.5f, 0.5f);
+                // Simulate strikethrough with a line overlay
+                var strike = new VisualElement();
+                strike.style.position = Position.Absolute;
+                strike.style.left = 12;
+                strike.style.right = 8;
+                strike.style.top = 10;
+                strike.style.height = 1;
+                strike.style.backgroundColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                item.Add(strike);
+            }
+            else
+            {
+                label.style.color = new Color(0.7f, 0.7f, 0.7f);
+            }
+
+            item.Add(label);
+
+            // Hover highlight
+            item.RegisterCallback<MouseEnterEvent>(_ =>
+                item.style.backgroundColor = new Color(0.25f, 0.25f, 0.3f, 0.5f));
+            item.RegisterCallback<MouseLeaveEvent>(_ =>
+                item.style.backgroundColor = StyleKeyword.Null);
+
+            // Click to jump to this position
+            int steps = stepsToReach;
+            bool redo = isRedo;
+            item.RegisterCallback<ClickEvent>(_ =>
+            {
+                if (redo)
+                {
+                    for (int j = 0; j < steps && _commandStack.CanRedo; j++)
+                        _commandStack.Redo();
+                }
+                else
+                {
+                    for (int j = 0; j < steps && _commandStack.CanUndo; j++)
+                        _commandStack.Undo();
+                }
+            });
+
+            return item;
         }
 
         private static void ApplyLightTextTheme(VisualElement root)

@@ -36,12 +36,35 @@ namespace STGEngine.Runtime
         }
 
         /// <summary>
-        /// Resolve a pattern by ID. Returns null if not found.
+        /// Resolve a pattern by ID. Returns the cached (shared) instance. Null if not found.
+        /// WARNING: Do NOT mutate the returned object — it is shared across all references.
+        /// Use ResolveClone() when you need an editable copy.
         /// </summary>
         public BulletPattern Resolve(string patternId)
         {
             EnsureScanned();
             return _cache.TryGetValue(patternId, out var pattern) ? pattern : null;
+        }
+
+        /// <summary>
+        /// Resolve a pattern by ID and return a deep clone (serialize → deserialize).
+        /// Safe to mutate without affecting other references or the cache.
+        /// Returns null if not found or clone fails.
+        /// </summary>
+        public BulletPattern ResolveClone(string patternId)
+        {
+            var original = Resolve(patternId);
+            if (original == null) return null;
+            try
+            {
+                var yaml = YamlSerializer.Serialize(original);
+                return YamlSerializer.Deserialize(yaml);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[PatternLibrary] Failed to clone pattern '{patternId}': {e.Message}");
+                return null;
+            }
         }
 
         /// <summary>

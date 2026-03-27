@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
@@ -36,6 +37,15 @@ namespace STGEngine.Editor.UI.AssetLibrary
         /// <summary>Fired when user clicks "Add to Timeline". (category, id)</summary>
         public Action<AssetCategory, string> OnAssetAddRequested;
 
+        /// <summary>Fired after a delete or rename modifies the catalog.</summary>
+        public Action OnCatalogChanged;
+
+        /// <summary>
+        /// Query whether the current timeline layer can accept this asset type.
+        /// Returns true if the asset can be added. Used to enable/disable "Add to Timeline".
+        /// </summary>
+        public Func<AssetCategory, bool> CanAddToTimeline;
+
         private STGCatalog _catalog;
         private bool _collapsed;
         private readonly VisualElement _content;
@@ -49,6 +59,9 @@ namespace STGEngine.Editor.UI.AssetLibrary
 
         // Category foldouts
         private readonly Dictionary<AssetCategory, Foldout> _foldouts = new();
+
+        // Active context menu overlay (dismiss on next click)
+        private VisualElement _contextMenu;
 
         private const float PanelWidth = 240f;
         private const float CollapsedWidth = 24f;
@@ -104,7 +117,7 @@ namespace STGEngine.Editor.UI.AssetLibrary
             // Build category foldouts
             BuildCategoryFoldout(AssetCategory.Patterns, "Patterns");
             BuildCategoryFoldout(AssetCategory.Waves, "Waves");
-            BuildCategoryFoldout(AssetCategory.Enemies, "Enemies");
+            BuildCategoryFoldout(AssetCategory.Enemies, "Enemy Types");
             BuildCategoryFoldout(AssetCategory.SpellCards, "SpellCards");
 
             ApplyTheme(Root);
@@ -140,6 +153,27 @@ namespace STGEngine.Editor.UI.AssetLibrary
         public void ForceApplyTheme()
         {
             ApplyTheme(Root);
+        }
+
+        /// <summary>
+        /// Refresh the enabled/disabled state of all "Add to Timeline" buttons
+        /// based on the current timeline layer. Call when the layer changes.
+        /// </summary>
+        public void RefreshButtonStates()
+        {
+            foreach (var kvp in _foldouts)
+            {
+                var cat = kvp.Key;
+                if (cat == AssetCategory.Enemies) continue; // no add button
+
+                bool canAdd = CanAddToTimeline?.Invoke(cat) ?? true;
+                var foldout = kvp.Value;
+                foldout.Query<Button>(className: "add-to-timeline-btn").ForEach(btn =>
+                {
+                    btn.SetEnabled(canAdd);
+                    btn.style.opacity = canAdd ? 1f : 0.35f;
+                });
+            }
         }
 
         // ─── Internal ───
@@ -238,11 +272,13 @@ namespace STGEngine.Editor.UI.AssetLibrary
             if (category == AssetCategory.Patterns || category == AssetCategory.Waves
                 || category == AssetCategory.SpellCards)
             {
+                var catCapture = category;
                 var addToTimelineBtn = new Button(() =>
                 {
                     OnAssetAddRequested?.Invoke(category, entry.Id);
                 })
                 { text = "\u25b6" };
+                addToTimelineBtn.AddToClassList("add-to-timeline-btn");
                 addToTimelineBtn.style.width = 18;
                 addToTimelineBtn.style.height = 16;
                 addToTimelineBtn.style.fontSize = 9;
@@ -258,6 +294,10 @@ namespace STGEngine.Editor.UI.AssetLibrary
                 addToTimelineBtn.tooltip = category == AssetCategory.SpellCards
                     ? "Add to BossFight Segment"
                     : "Add to Timeline";
+                // Disable if current layer can't accept this asset type
+                bool canAdd = CanAddToTimeline?.Invoke(catCapture) ?? true;
+                addToTimelineBtn.SetEnabled(canAdd);
+                if (!canAdd) addToTimelineBtn.style.opacity = 0.35f;
                 item.Add(addToTimelineBtn);
             }
 
@@ -285,7 +325,143 @@ namespace STGEngine.Editor.UI.AssetLibrary
                 SelectItem(category, entry.Id, item);
             });
 
+            // Right-click context menu (Runtime UI Toolkit doesn't support ContextualMenuManipulator)
+            item.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 1) return; // right-click only
+                evt.StopPropagation();
+                SelectItem(category, entry.Id, item);
+                ShowContextMenu(evt.position, category, entry);
+            });
+
             return item;
+        }
+
+        // ─── Custom Context Menu (Runtime-compatible) ───
+
+        private void ShowContextMenu(Vector3 position, AssetCategory category, CatalogEntry entry)
+        {
+            DismissContextMenu();
+
+            // Full-screen dismiss layer
+            var dismiss = new VisualElement();
+            dismiss.style.position = Position.Absolute;
+            dismiss.style.left = dismiss.style.right = dismiss.style.top = dismiss.style.bottom = 0;
+            dismiss.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                evt.StopPropagation();
+                DismissContextMenu();
+            });
+
+            // Menu panel
+            var menu = new VisualElement();
+            menu.style.position = Position.Absolute;
+            menu.style.left = position.x;
+            menu.style.top = position.y;
+            menu.style.backgroundColor = new Color(0.22f, 0.22f, 0.25f, 0.98f);
+            menu.style.borderTopLeftRadius = menu.style.borderTopRightRadius =
+                menu.style.borderBottomLeftRadius = menu.style.borderBottomRightRadius = 4;
+            menu.style.borderTopWidth = menu.style.borderBottomWidth =
+                menu.style.borderLeftWidth = menu.style.borderRightWidth = 1;
+            menu.style.borderTopColor = menu.style.borderBottomColor =
+                menu.style.borderLeftColor = menu.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+            menu.style.paddingTop = menu.style.paddingBottom = 4;
+            menu.style.minWidth = 150;
+
+            // "Add to Timeline" — only for timeline-level asset types, and only when the
+            // current layer can accept this category
+            if (category != AssetCategory.Enemies)
+            {
+                bool canAdd = CanAddToTimeline?.Invoke(category) ?? true;
+                if (canAdd)
+                {
+                    string addLabel = category == AssetCategory.SpellCards
+                        ? "Add to BossFight" : "Add to Timeline";
+                    AddMenuItem(menu, addLabel, () =>
+                    {
+                        DismissContextMenu();
+                        OnAssetAddRequested?.Invoke(category, entry.Id);
+                    });
+                }
+                else
+                {
+                    string reason = category switch
+                    {
+                        AssetCategory.Patterns => "Navigate to a MidStage or SpellCard layer first",
+                        AssetCategory.Waves => "Navigate to a MidStage layer first",
+                        AssetCategory.SpellCards => "Navigate to a BossFight layer first",
+                        _ => "Not available in current layer"
+                    };
+                    AddMenuItem(menu, $"Add to Timeline  ({reason})", null,
+                        new Color(0.5f, 0.5f, 0.5f));
+                }
+            }
+            AddMenuItem(menu, "Rename...", () =>
+            {
+                DismissContextMenu();
+                ShowRenameDialog(category, entry);
+            });
+            AddMenuSeparator(menu);
+            AddMenuItem(menu, "Delete", () =>
+            {
+                DismissContextMenu();
+                ShowDeleteConfirmation(category, entry);
+            }, new Color(1f, 0.5f, 0.5f));
+
+            dismiss.Add(menu);
+
+            _contextMenu = dismiss;
+            Root.panel.visualTree.Add(dismiss);
+        }
+
+        private void DismissContextMenu()
+        {
+            _contextMenu?.RemoveFromHierarchy();
+            _contextMenu = null;
+        }
+
+        private static void AddMenuItem(VisualElement menu, string text, Action onClick,
+            Color? textColor = null)
+        {
+            var item = new VisualElement();
+            item.style.height = 24;
+            item.style.paddingLeft = 12;
+            item.style.paddingRight = 12;
+            item.style.justifyContent = Justify.Center;
+
+            var label = new Label(text);
+            label.style.color = textColor ?? new Color(0.85f, 0.85f, 0.85f);
+            label.style.fontSize = 11;
+            item.Add(label);
+
+            if (onClick != null)
+            {
+                item.RegisterCallback<MouseEnterEvent>(_ =>
+                    item.style.backgroundColor = new Color(0.3f, 0.4f, 0.6f, 0.7f));
+                item.RegisterCallback<MouseLeaveEvent>(_ =>
+                    item.style.backgroundColor = StyleKeyword.Null);
+                item.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    onClick.Invoke();
+                });
+            }
+            else
+            {
+                label.style.opacity = 0.5f;
+            }
+
+            menu.Add(item);
+        }
+
+        private static void AddMenuSeparator(VisualElement menu)
+        {
+            var sep = new VisualElement();
+            sep.style.height = 1;
+            sep.style.marginTop = sep.style.marginBottom = 2;
+            sep.style.marginLeft = sep.style.marginRight = 6;
+            sep.style.backgroundColor = new Color(0.4f, 0.4f, 0.4f, 0.5f);
+            menu.Add(sep);
         }
 
         private void SelectItem(AssetCategory category, string id, VisualElement element)
@@ -323,7 +499,7 @@ namespace STGEngine.Editor.UI.AssetLibrary
 
                 case AssetCategory.Enemies:
                     id = _catalog.EnsureUniqueEnemyTypeId("new_enemy");
-                    name = "New Enemy";
+                    name = "New Enemy Type";
                     var enemy = new EnemyType { Id = id, Name = name };
                     YamlSerializer.SerializeEnemyTypeToFile(enemy, _catalog.GetEnemyTypePath(id));
                     _catalog.AddOrUpdateEnemyType(id, name);
@@ -351,6 +527,194 @@ namespace STGEngine.Editor.UI.AssetLibrary
 
             STGCatalog.Save(_catalog);
             Refresh(_catalog);
+            OnCatalogChanged?.Invoke();
+        }
+
+        // ─── Delete ───
+
+        private void ShowDeleteConfirmation(AssetCategory category, CatalogEntry entry)
+        {
+            if (_catalog == null) return;
+
+            var overlay = new VisualElement();
+            overlay.style.position = Position.Absolute;
+            overlay.style.left = overlay.style.right = overlay.style.top = overlay.style.bottom = 0;
+            overlay.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            overlay.style.alignItems = Align.Center;
+            overlay.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 320;
+
+            var categoryLabel = category == AssetCategory.Enemies ? "Enemy Type" : category.ToString();
+            var title = new Label($"Delete {categoryLabel}?");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.95f, 0.7f, 0.7f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var displayName = string.IsNullOrEmpty(entry.Name) ? entry.Id : entry.Name;
+            var warning = category == AssetCategory.Enemies
+                ? $"Are you sure you want to delete \"{displayName}\" ({entry.Id})?\nThis is a template asset. Waves referencing this EnemyType will break."
+                : $"Are you sure you want to delete \"{displayName}\" ({entry.Id})?\nThis will remove the YAML file from disk.";
+            var msg = new Label(warning);
+            msg.style.color = new Color(0.85f, 0.85f, 0.85f);
+            msg.style.fontSize = 11;
+            msg.style.whiteSpace = WhiteSpace.Normal;
+            msg.style.marginBottom = 12;
+            panel.Add(msg);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var deleteBtn = new Button(() =>
+            {
+                DeleteAsset(category, entry.Id);
+                overlay.RemoveFromHierarchy();
+            }) { text = "Delete" };
+            deleteBtn.style.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
+            deleteBtn.style.color = new Color(0.95f, 0.95f, 0.95f);
+
+            var cancelBtn = new Button(() => overlay.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+            cancelBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(deleteBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            overlay.Add(panel);
+
+            Root.panel.visualTree.Add(overlay);
+        }
+
+        private void DeleteAsset(AssetCategory category, string id)
+        {
+            if (_catalog == null) return;
+
+            bool removed = category switch
+            {
+                AssetCategory.Patterns => _catalog.RemovePattern(id),
+                AssetCategory.Enemies => _catalog.RemoveEnemyType(id),
+                AssetCategory.Waves => _catalog.RemoveWave(id),
+                AssetCategory.SpellCards => _catalog.RemoveSpellCard(id),
+                _ => false
+            };
+
+            if (removed)
+            {
+                STGCatalog.Save(_catalog);
+                Refresh(_catalog);
+                OnCatalogChanged?.Invoke();
+                Debug.Log($"[AssetLibrary] Deleted {category}: {id}");
+            }
+        }
+
+        // ─── Rename ───
+
+        private void ShowRenameDialog(AssetCategory category, CatalogEntry entry)
+        {
+            if (_catalog == null) return;
+
+            var overlay = new VisualElement();
+            overlay.style.position = Position.Absolute;
+            overlay.style.left = overlay.style.right = overlay.style.top = overlay.style.bottom = 0;
+            overlay.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            overlay.style.alignItems = Align.Center;
+            overlay.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 300;
+
+            var renameCategoryLabel = category == AssetCategory.Enemies ? "Enemy Type" : category.ToString();
+            var title = new Label($"Rename {renameCategoryLabel}");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var idLabel = new Label($"ID: {entry.Id}");
+            idLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+            idLabel.style.fontSize = 10;
+            idLabel.style.marginBottom = 4;
+            panel.Add(idLabel);
+
+            var nameField = new TextField("New Name:") { value = entry.Name ?? "" };
+            nameField.isDelayed = true;
+            nameField.style.marginBottom = 8;
+            panel.Add(nameField);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var confirmBtn = new Button(() =>
+            {
+                var newName = nameField.value?.Trim();
+                if (string.IsNullOrEmpty(newName))
+                {
+                    overlay.RemoveFromHierarchy();
+                    return;
+                }
+                RenameAsset(category, entry.Id, newName);
+                overlay.RemoveFromHierarchy();
+            }) { text = "Rename" };
+            confirmBtn.style.backgroundColor = new Color(0.2f, 0.4f, 0.5f);
+            confirmBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+
+            var cancelBtn = new Button(() => overlay.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(confirmBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            overlay.Add(panel);
+
+            ApplyTheme(panel);
+            Root.panel.visualTree.Add(overlay);
+        }
+
+        private void RenameAsset(AssetCategory category, string id, string newName)
+        {
+            if (_catalog == null) return;
+
+            switch (category)
+            {
+                case AssetCategory.Patterns:
+                    _catalog.AddOrUpdatePattern(id, newName);
+                    break;
+                case AssetCategory.Enemies:
+                    _catalog.AddOrUpdateEnemyType(id, newName);
+                    break;
+                case AssetCategory.Waves:
+                    _catalog.AddOrUpdateWave(id, newName);
+                    break;
+                case AssetCategory.SpellCards:
+                    _catalog.AddOrUpdateSpellCard(id, newName);
+                    break;
+                default:
+                    return;
+            }
+
+            STGCatalog.Save(_catalog);
+            Refresh(_catalog);
+            OnCatalogChanged?.Invoke();
+            Debug.Log($"[AssetLibrary] Renamed {category} '{id}' to '{newName}'");
         }
 
         private static Color GetCategoryColor(AssetCategory category)

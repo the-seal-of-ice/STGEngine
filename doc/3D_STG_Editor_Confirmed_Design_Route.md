@@ -439,37 +439,46 @@ namespace STGEngine.Core.Timeline
 
 ## 五、垂直切片之后的路线
 
-### Phase 1 完成后 → Phase 2：扩展弹幕系统
+### Phase 2：扩展弹幕系统 ✅ 已完成
 
-- 补充更多发射器：SphereEmitter、LineEmitter、ConeEmitter
-- 补充模拟型修饰器：HomingModifier、BounceModifier、SplitModifier
-- 弹幕视觉多样化：不同形状 mesh、颜色曲线、拖尾效果
-- 碰撞体定义 + 可视化叠加显示
+- ✅ 补充更多发射器：SphereEmitter、LineEmitter、ConeEmitter
+- ✅ 补充模拟型修饰器：HomingModifier、BounceModifier、SplitModifier
+- ✅ 弹幕视觉多样化：不同形状 mesh、颜色曲线、拖尾效果
+- ✅ 碰撞体定义 + 可视化叠加显示
 
-### Phase 3：时间轴系统
+详见 9.5 节（Phase 2 Step 1-6 实施记录）。
 
-- 分段式时间轴数据模型
-- 时间轴 UI（UI Toolkit 自绘轨道）
-- BGM 波形叠加
-- 面包屑导航（递归子时间轴）
-- 段落间触发条件编辑
+### Phase 3：时间轴系统 ✅ 已完成
 
-### Phase 4：符卡 + 小怪编辑器
+- ✅ 分段式时间轴数据模型（Stage → Segment[]）
+- ✅ 时间轴 UI（UI Toolkit 自绘轨道 TrackAreaView）
+- ✅ 面包屑导航（两层 → 后续扩展为递归）
+- ✅ 段落间触发条件编辑
+- ⏳ BGM 波形叠加（推迟至 Phase 3.5）
 
-- 符卡数据模型（弹幕模式列表 + Boss 行为 + 阶段切换）
-- 小怪类型模板 + 实例系统
-- 资源库面板（模板拖拽复用）
-- 波次编辑器
+详见 9.6-9.8 节。
 
-### Phase 5：场景演出脚本
+### Phase 4：符卡 + 小怪编辑器 ✅ 已完成
 
-- 镜头关键帧编辑器（数据驱动，AnimationCurve 风格）
-- 边界形状动画编辑器
-- 模式切换事件编辑器（参数轴渐变曲线）
+- ✅ 符卡数据模型（SpellCard + SpellCardPattern + BossPath）
+- ✅ 小怪类型模板（EnemyType）+ 实例系统（Wave + EnemyInstance）
+- ✅ 资源库面板（AssetLibraryPanel，拖拽添加）
+- ✅ 波次编辑器（WaveLayer）
+- ✅ BossFight Segment 支持 + 符卡预览器
 
-### Phase 6：整关编辑 + 模式系统
+详见 9.9-9.10 节。
 
-- 段落编排（全局时间轴）
+### Phase 5：递归 Timeline 层级 + 缩略图 + Override ✅ 已完成（缺陷修复中）
+
+- ✅ Step 1：递归 Timeline 层级导航（ITimelineLayer 6 层实现）
+- ✅ Step 2：块内缩略图系统（弹幕轨迹 + 路径 + 色条）
+- ✅ Step 3：Modified/Override 机制（OverrideManager + [M] 标记）
+- ⚠️ 操作矩阵审计发现 9 个缺陷待修复（详见 9.14 节）
+
+### Phase 6（下一步）：缺陷修复 + 整关编辑 + 模式系统
+
+- 修复 9.14 节操作矩阵中的 P0-P2 缺陷
+- 段落编排（全局时间轴）— 已由 StageLayer 实现基础版
 - 模式参数轴的实时预览
 - 2D⟷3D 投影预览（正交相机快速预览）
 - 难度修饰器编辑 + 难度切换预览
@@ -2330,10 +2339,12 @@ URP Forward Lit pass，支持 GPU Instancing：
 
 #### 9.11.7 已知遗留项
 
-- PatternLayer / WaveLayer 的预览播放未实现（需要 `_singlePreviewer` 和 `TimelinePlaybackController` 的深度协调）
+> 以下遗留项已在 9.14 节操作矩阵审计中统一追踪，此处仅保留原始记录。
+
+- PatternLayer / WaveLayer 的预览播放未实现 → 见 9.14.3 P2
 - 面包屑目前仍使用 3 个硬编码 Label（支持到 3 层），完全动态化留后续
-- BossFight 层的 TrackArea 显示符卡块，但属性面板仍走旧路径（ShowBossFightSpellCards）
-- 拖拽红线时自动滚动时间轴未实现
+- BossFight 层的 TrackArea 显示符卡块，但属性面板仍走旧路径（ShowBossFightSpellCards）→ 已在 Step 1d 中修复
+- 拖拽红线时自动滚动时间轴未实现 → 已在 Step 1e 中实现（EdgeScroll）
 
 #### 9.11.8 新增文件
 
@@ -2467,7 +2478,113 @@ Editor/UI/Timeline/Layers/
 
 #### 9.13.8 已知遗留项
 
-- Pattern 级别的 override（SpellCard 内的 Pattern 引用）尚未实现完整的保存链路（PatternLibrary.Resolve 仍走 Resources.LoadAll）
-- Wave 级别的 override 保存尚未实现（MidStage 层级的 Wave 编辑场景较少）
+> 以下遗留项已在 9.14 节操作矩阵审计中统一追踪。
+
+- Pattern 级别的 override（SpellCard 内的 Pattern 引用）尚未实现完整的保存链路 → 见 9.14.3 P1
+- Wave 级别的 override 保存尚未实现 → 见 9.14.3 P1
 - "Save as New Template" 后不自动替换当前引用（需手动更新 SpellCardIds）
+
+---
+
+### 9.14 操作矩阵审计（Phase 5 Step 1 实施后）
+
+> 基于代码审计，记录每层 × 每操作的实现状态。
+> ✅ 已实现 | ⚠️ 部分实现 | ❌ 未实现 | ➖ 不适用
+
+#### 9.14.1 操作矩阵
+
+| 层级 | 右键添加 | 右键删除 | 双击进入 | 拖拽移动 | 拖拽重排 | Resize | 属性编辑 | 属性保存 | Rename ID | Modified | 缩略图 | 预览 |
+|------|---------|---------|---------|---------|---------|--------|---------|---------|----------|---------|--------|------|
+| L0 Stage | ✅ Add MidStage/BossFight | ✅ Delete Segment | ✅ → L1a/L1b | ➖ | ✅ 拖拽重排 | ✅ Duration | ✅ Name/Duration | ✅ Save Stage | ➖ | ➖ | ✅ 色条缩略 | ✅ 合并预览 |
+| L1a MidStage | ✅ Add Pattern/Wave | ✅ Delete Event | ✅ → L2a/L2b | ✅ StartTime | ➖ | ✅ Duration | ✅ 完整属性面板 | ✅ Save Stage | ⚠️ 仅 Pattern | ➖ | ✅ 弹幕缩略 | ✅ Segment 预览 |
+| L1b BossFight | ✅ Add SpellCard | ✅ Delete SpellCard | ✅ → L2c | ➖ | ✅ 拖拽重排 | ✅ TimeLimit | ✅ 完整属性面板 | ✅ Override 保存 | ➖ | ✅ Revert/SaveAs | ✅ 弹幕缩略 | ✅ 合并 SC 预览 |
+| L2c SpellCard | ✅ Add Pattern | ✅ Delete Pattern | ✅ → L2a | ✅ Delay | ➖ | ✅ Duration | ✅ 完整属性面板 | ✅ Override 保存 | ➖ | ➖ | ✅ 弹幕缩略 | ✅ SC 预览 |
+| L2b Wave | ✅ Add Enemy | ✅ Delete Enemy | ❌ → L3（未实现） | ✅ SpawnDelay | ➖ | ➖ 路径推导 | ✅ SpawnDelay 可编辑 | ✅ Override 保存 | ➖ | ➖ | ✅ 路径缩略 | ➖ 无弹幕 |
+| L2a Pattern | ➖ 叶子层 | ➖ | ➖ | ➖ | ➖ | ✅ Duration | ✅ PatternEditorView | ✅ 直接保存 | ➖ | ➖ | ✅ 弹幕缩略 | ✅ 单 Pattern 预览 |
+
+#### 9.14.2 存储结构与持久化状态
+
+```
+STGData/                              持久化状态
+├── Stages/
+│   ├── demo_stage.yaml               ✅ Save Stage 按钮保存
+│   └── demo_stage_2.yaml             ✅
+├── Patterns/
+│   ├── demo_ring_wave.yaml           ✅ PatternEditorView 保存
+│   └── ...                           ✅
+├── SpellCards/
+│   ├── spell_01.yaml                 ✅ 属性面板编辑自动保存
+│   └── ...                           ✅
+├── Waves/
+│   ├── wave_01.yaml                  ❌ Add/Delete/SpawnDelay 修改不保存
+│   └── new_wave.yaml                 ❌
+├── EnemyTypes/
+│   ├── grunt_a.yaml                  ➖ L3 未实现，无编辑入口
+│   └── new_enemy.yaml                ➖
+├── Modified/
+│   └── boss_phase_1/
+│       └── spell_01.yaml             ✅ Override 自动保存
+└── catalog.yaml                      ✅ 资源注册表
+```
+
+#### 9.14.3 缺陷清单与修复优先级
+
+> Phase 5 Step 2 审计修复后更新。✅ = 已修复，⚠️ = 待修复。
+
+| 优先级 | 缺陷 | 位置 | 影响 | 状态 |
+|--------|------|------|------|------|
+| P0 | SpellCardDetailLayer.CreateChildLayer 返回 null | SpellCardDetailLayer.cs | L2c 双击进入 PatternLayer 导航链断裂 | ✅ 已修复 |
+| P1 | WaveLayer 数据不持久化 | TimelineEditorView.cs WireLayerToTrackArea | Add/Delete Enemy、SpawnDelay 编辑后丢失 | ✅ 已修复 |
+| P1 | SpellCardDetailLayer 属性编辑后不保存 | TimelineEditorView.cs BuildSpellCardPatternProperties | Delay/Duration/Offset 编辑后丢失 | ✅ 已修复 |
+| P1 | EnterSpellCardEditing 导航不完整 | TimelineEditorView.cs EnterSpellCardEditing | 从属性面板 Edit 按钮进入 SC 编辑时缺少 Wire/SetLayer/RebuildBreadcrumb，右键菜单显示错误 | ✅ 已修复 |
+| P2 | PatternLayer 无 PatternEditorView 嵌入 | TimelineEditorView.cs ShowLayerSummary | 进入 Pattern 层后只有提示文字，无法编辑 | ✅ 已修复 |
+| P2 | EnemyInstanceBlock.Duration setter 为空 | WaveLayer.cs:45 | Resize 拖拽无效果 | ✅ 已修复（CanResizeDuration 探测） |
+| P2 | SpellCardDetailLayer 属性面板只有只读 Label | TimelineEditorView.cs BuildSpellCardPatternProperties | 选中 Pattern 块后无可编辑字段 | ✅ 已修复 |
+| P2 | WaveLayer 属性面板只有只读 Label | TimelineEditorView.cs BuildEnemyInstanceProperties | 选中 Enemy 块后无可编辑字段 | ✅ 已修复 |
+| P2 | Pattern Override 写入端未接通 | PatternEditorView 直接写原始文件 | SC 内编辑 Pattern 不走 Override 机制 | ⚠️ 待修复 |
+| P3 | SpellCard Override per-segment 共享 | BossFightLayer contextId | 同一 BossFight 重复引用同一 scId 共享 Override | ⚠️ 待修复（风险低） |
+| P3 | Pattern/Wave 缺少 Rename ID 入口 | MidStageLayer 右键菜单 | 无法重命名资源 ID | ⚠️ 待修复 |
+| P3 | L3 EnemyType 层未实现 | WaveLayer.cs | 设计文档标注为"未来" | ⚠️ 待修复 |
+
+#### 9.14.4 缺陷详情
+
+##### P0: SpellCardDetailLayer 双击进入 PatternLayer
+
+`SpellCardDetailLayer.CreateChildLayer()` 写死 `return null`，注释 "PatternLayer will be implemented in step 1g"。但 `PatternLayer` 类已完整实现。
+
+修复：
+```csharp
+public ITimelineLayer CreateChildLayer(ITimelineBlock block)
+{
+    if (block is SpellCardPatternBlock spb && spb.DataSource is SpellCardPattern scp)
+    {
+        var pattern = _library?.Resolve(scp.PatternId);
+        if (pattern != null)
+            return new PatternLayer(pattern, scp.PatternId);
+    }
+    return null;
+}
+```
+
+##### P1: WaveLayer 数据不持久化
+
+`WireLayerToTrackArea(waveLayer)` 中 `OnAddEnemyRequested` / `OnDeleteEnemyRequested` 回调只调用了 `waveLayer.InvalidateBlocks()` 和 `OnStageDataChanged()`，但 Wave 数据存储在独立 YAML 文件中（`STGData/Waves/{waveId}.yaml`），不随 Stage 一起保存。
+
+修复：在回调中添加 Wave YAML 序列化保存：
+```csharp
+// 在 Add/Delete 回调末尾追加：
+SaveWaveInContext(waveLayer.Wave, waveLayer.WaveId);
+```
+
+##### P1: SpellCardDetailLayer 属性编辑不保存
+
+`BuildSpellCardPatternProperties()` 中编辑 Delay/Duration/Offset 后需确认是否调用了 `SaveSpellCardInContext()`。如果缺失，编辑结果只存在于内存中的 SpellCard 对象，关闭编辑器后丢失。
+
+##### P2: EnemyInstanceBlock Resize 无效
+
+`Duration` 的 setter 为 `set { }`（空实现），因为 Duration 由路径最后一个关键帧时间推导。两种修复策略：
+- A) 允许手动覆盖：添加 `_overrideDuration` 字段
+- B) 禁用 Resize：在 ITimelineBlock 接口中添加 `bool CanResize` 属性（需改接口）
+
+推荐策略 A，不改接口。
 

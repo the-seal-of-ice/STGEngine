@@ -26,6 +26,12 @@ enemy_types:
   - id: new_enemy
     name: "New Enemy"
     file: EnemyTypes/new_enemy.yaml
+  - id: new_enemy_2
+    name: "New Enemy Type"
+    file: EnemyTypes/new_enemy_2.yaml
+  - id: new_enemy_3
+    name: "New Enemy Type"
+    file: EnemyTypes/new_enemy_3.yaml
 waves:
   - id: wave_01
     name: "第一波"

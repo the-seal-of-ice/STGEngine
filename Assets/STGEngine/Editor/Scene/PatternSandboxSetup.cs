@@ -81,6 +81,10 @@ namespace STGEngine.Editor.Scene
         private BossPlaceholder _bossPlaceholder;
         private SpellCard _activeBossSpellCard;
 
+        // Enemy placeholders
+        private readonly List<EnemyPlaceholder> _enemyPlaceholders = new();
+        private List<WavePlaceholderData> _activeWaves;
+
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
 
@@ -163,6 +167,14 @@ namespace STGEngine.Editor.Scene
             {
                 _bossPlaceholder.SetTime(_timelinePlayback.CurrentTime);
             }
+
+            // Drive Enemy placeholders along paths — synced to playback time
+            if (_activeWaves != null && _timelinePlayback != null)
+            {
+                float t = _timelinePlayback.CurrentTime;
+                foreach (var ep in _enemyPlaceholders)
+                    ep.SetTime(t);
+            }
         }
 
         private void OnDestroy()
@@ -170,6 +182,7 @@ namespace STGEngine.Editor.Scene
             _editorView?.Dispose();
             _timelineView?.Dispose();
             _previewerPool?.Dispose();
+            ClearEnemyPlaceholders();
         }
 
         // ─── Pattern Edit Mode ───
@@ -210,6 +223,8 @@ namespace STGEngine.Editor.Scene
             _timelineView = new TimelineEditorView(_timelinePlayback, _patternLibrary, _previewer);
             _timelineView.SetCatalog(_catalog);
             _timelineView.OnSpellCardEditingChanged += OnSpellCardEditingChanged;
+            _timelineView.OnWaveEditingChanged += OnWaveEditingChanged;
+            _timelineView.OnLayerChanged += () => _assetLibrary?.RefreshButtonStates();
             _timelineView.OnMeshTypeChanged += mt =>
             {
                 EnsureBulletVisuals(mt);
@@ -309,6 +324,8 @@ namespace STGEngine.Editor.Scene
             _assetLibrary.Refresh(_catalog);
             _assetLibrary.OnAssetSelected += OnAssetSelected;
             _assetLibrary.OnAssetAddRequested += OnAssetAddToTimeline;
+            _assetLibrary.OnCatalogChanged += OnCatalogChanged;
+            _assetLibrary.CanAddToTimeline = CanAddAssetToTimeline;
 
             var libraryPanel = _assetLibrary.Root;
             libraryPanel.style.position = Position.Absolute;
@@ -319,6 +336,13 @@ namespace STGEngine.Editor.Scene
 
             // Force theme override after Unity Runtime Theme has been applied
             StartCoroutine(ForceTimelineTheme());
+
+            // Initial button state refresh (SetStage ran before _assetLibrary existed)
+            _assetLibrary.RefreshButtonStates();
+
+            // Initial placeholder notification (events are now subscribed, but SetStage
+            // already ran during construction before subscription — trigger once now)
+            _timelineView.NotifyWavePlaceholders();
         }
 
         /// <summary>
@@ -578,6 +602,72 @@ namespace STGEngine.Editor.Scene
             }
         }
 
+        private void OnWaveEditingChanged(List<WavePlaceholderData> waves)
+        {
+            ClearEnemyPlaceholders();
+
+            if (waves == null || waves.Count == 0)
+            {
+                _activeWaves = null;
+                return;
+            }
+
+            _activeWaves = waves;
+
+            foreach (var wd in waves)
+            {
+                if (wd.Wave?.Enemies == null) continue;
+
+                foreach (var enemy in wd.Wave.Enemies)
+                {
+                    var go = new GameObject($"EnemyPlaceholder_{enemy.EnemyTypeId}");
+                    var ep = go.AddComponent<EnemyPlaceholder>();
+
+                    // Try to load EnemyType from catalog for visuals
+                    var meshType = MeshType.Diamond;
+                    var color = new Color(0.3f, 0.8f, 1f); // Default cyan
+                    float scale = 0.8f;
+
+                    if (_catalog != null)
+                    {
+                        var etPath = _catalog.GetEnemyTypePath(enemy.EnemyTypeId);
+                        if (System.IO.File.Exists(etPath))
+                        {
+                            try
+                            {
+                                var et = YamlSerializer.DeserializeEnemyType(
+                                    System.IO.File.ReadAllText(etPath));
+                                meshType = et.MeshType;
+                                color = et.Color;
+                                scale = et.Scale * 0.8f;
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogWarning($"[SandboxSetup] Failed to load EnemyType '{enemy.EnemyTypeId}': {e.Message}");
+                            }
+                        }
+                    }
+
+                    ep.Setup(meshType, color, scale);
+                    // Adjust spawnDelay by wave's time offset within the segment/stage
+                    ep.SetPath(enemy.Path, enemy.SpawnDelay + wd.TimeOffset, wd.SpawnOffset);
+                    ep.Show();
+                    ep.SetTime(0f);
+
+                    _enemyPlaceholders.Add(ep);
+                }
+            }
+        }
+
+        private void ClearEnemyPlaceholders()
+        {
+            foreach (var ep in _enemyPlaceholders)
+            {
+                if (ep != null) Destroy(ep.gameObject);
+            }
+            _enemyPlaceholders.Clear();
+        }
+
         private void OnAssetSelected(AssetCategory category, string id)
         {
             // Selection is tracked in the panel; no action needed here yet
@@ -602,6 +692,21 @@ namespace STGEngine.Editor.Scene
                     Debug.Log($"[AssetLibrary] Cannot add {category} directly to timeline.");
                     break;
             }
+        }
+
+        private bool CanAddAssetToTimeline(AssetCategory category)
+        {
+            if (_timelineView == null) return false;
+            return _timelineView.CanAcceptAsset(category);
+        }
+
+        private void OnCatalogChanged()
+        {
+            // Reload catalog and refresh library + timeline
+            _catalog = STGCatalog.Load();
+            _patternLibrary = new PatternLibrary();
+            _assetLibrary?.Refresh(_catalog);
+            _timelineView?.SetCatalog(_catalog);
         }
     }
 }
