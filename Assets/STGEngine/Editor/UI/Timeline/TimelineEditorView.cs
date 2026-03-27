@@ -1017,7 +1017,7 @@ namespace STGEngine.Editor.UI.Timeline
                 var midLayer = new MidStageLayer(segment);
                 _currentLayer = midLayer;
                 WireLayerToTrackArea(midLayer);
-                _trackArea.SetSegment(segment);
+                _trackArea.SetLayer(midLayer);
                 _playback.LoadSegment(segment);
                 // Hide boss placeholder when switching to MidStage
                 OnSpellCardEditingChanged?.Invoke(null);
@@ -3284,7 +3284,7 @@ namespace STGEngine.Editor.UI.Timeline
                     var midLayer = childLayer as MidStageLayer;
                     if (midLayer != null)
                         WireLayerToTrackArea(midLayer);
-                    _trackArea.SetSegment(segment);
+                    _trackArea.SetLayer(childLayer);
                     _playback.LoadSegment(segment);
                     OnSpellCardEditingChanged?.Invoke(null);
                 }
