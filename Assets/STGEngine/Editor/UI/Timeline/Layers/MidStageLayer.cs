@@ -77,7 +77,13 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 // Clone to avoid mutating the shared cache instance
                 var pattern = Library.ResolveClone(sp.PatternId);
                 if (pattern != null)
-                    return new PatternLayer(pattern, sp.PatternId);
+                {
+                    // Override context = segmentId/eventId (per-instance, not per-segment)
+                    var eventContextId = !string.IsNullOrEmpty(ContextId)
+                        ? $"{ContextId}/{sp.Id}"
+                        : null;
+                    return new PatternLayer(pattern, sp.PatternId, eventContextId);
+                }
             }
             else if (block?.DataSource is SpawnWaveEvent sw && Catalog != null)
             {

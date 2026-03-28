@@ -19,6 +19,16 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Render interpolation alpha from the underlying SimulationLoop.</summary>
         public float Alpha => _simLoop.Alpha;
 
+        /// <summary>
+        /// Fixed logic timestep. Proxy for SimulationLoop.FixedDt.
+        /// Set this to 1f / tickRate to change simulation precision.
+        /// </summary>
+        public float FixedDt
+        {
+            get => _simLoop.FixedDt;
+            set => _simLoop.FixedDt = value;
+        }
+
         /// <summary>Fired on every time change (play tick, seek, or step).</summary>
         public event Action<float> OnTimeChanged;
 

@@ -2,7 +2,7 @@ id: ff6a80680a1d
 name: 幻符「螺旋追踪弹」
 patterns:
 - pattern_id: 3f93f01c3aff
-  delay: 0
+  delay: 4.270181
   duration: 12
   offset: {x: 3, y: 0, z: 0}
 - pattern_id: fbd54cab4147

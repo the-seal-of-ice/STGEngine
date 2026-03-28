@@ -4,7 +4,7 @@ health: 10
 scale: 1
 patterns:
 - pattern_id: 4cf7ab95555b
-  delay: 0
+  delay: 0.4744649
   duration: 5
   offset: {x: 0, y: 0, z: 0}
 color: {r: 1, g: 0.5, b: 0.5, a: 1}

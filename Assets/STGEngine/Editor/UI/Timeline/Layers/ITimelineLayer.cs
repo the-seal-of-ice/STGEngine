@@ -42,6 +42,15 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         float TotalDuration { get; }
 
         /// <summary>
+        /// Time origin offset for display purposes (seconds).
+        /// Block positions in the ruler and track area are shifted by this value.
+        /// For example, an EnemyType layer entered from a Wave uses the enemy's
+        /// SpawnDelay so the timeline visually starts at the enemy's birth time.
+        /// Default: 0 (no offset).
+        /// </summary>
+        float TimeOrigin => 0f;
+
+        /// <summary>
         /// If true, blocks are arranged in a sequential queue (no overlap, no free move).
         /// Dragging reorders blocks; StartTime is auto-computed.
         /// If false, blocks can overlap and be freely positioned.

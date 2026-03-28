@@ -16,14 +16,19 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     {
         private readonly SpellCard _spellCard;
         private readonly string _spellCardId;
+        private readonly int _listIndex;
+        private readonly string _instanceContextId;
         private float _startTime;
         private readonly bool _isModified;
         private List<ThumbnailBar> _thumbnailBars;
 
-        public SpellCardBlock(SpellCard spellCard, string spellCardId, float startTime, bool isModified = false)
+        public SpellCardBlock(SpellCard spellCard, string spellCardId, float startTime,
+            bool isModified = false, int listIndex = 0, string instanceContextId = null)
         {
             _spellCard = spellCard;
             _spellCardId = spellCardId;
+            _listIndex = listIndex;
+            _instanceContextId = instanceContextId;
             _startTime = startTime;
             _isModified = isModified;
             BuildThumbnailBars();
@@ -79,6 +84,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>The SpellCard ID (for catalog lookups).</summary>
         public string SpellCardId => _spellCardId;
+
+        /// <summary>Index of this SpellCard in the BossFight's SpellCardIds list.</summary>
+        public int ListIndex => _listIndex;
+
+        /// <summary>Per-instance override context ID (segmentId/sc_{index}). Used for isolated overrides.</summary>
+        public string InstanceContextId => _instanceContextId;
 
         // ── Thumbnail ──
 

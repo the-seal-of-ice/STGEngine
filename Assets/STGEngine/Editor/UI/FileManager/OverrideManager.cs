@@ -190,10 +190,17 @@ namespace STGEngine.Editor.UI.FileManager
         public static string SegmentContext(string segmentId) => segmentId;
 
         /// <summary>
-        /// Build a context ID for patterns within a SpellCard that is itself within a segment.
-        /// Format: "{segmentId}/{spellCardId}" — Patterns within this SC can be overridden.
+        /// Build a per-instance context ID for a SpellCard within a BossFight.
+        /// Format: "{segmentId}/sc_{index}" — isolates overrides when the same scId appears multiple times.
         /// </summary>
-        public static string SpellCardContext(string segmentId, string spellCardId) =>
-            $"{segmentId}/{spellCardId}";
+        public static string SpellCardInstanceContext(string segmentId, int index) =>
+            $"{segmentId}/sc_{index}";
+
+        /// <summary>
+        /// Build a context ID for patterns within a SpellCard instance.
+        /// Format: "{segmentId}/sc_{index}/{spellCardId}" — Patterns within this SC instance can be overridden.
+        /// </summary>
+        public static string SpellCardContext(string segmentId, int index, string spellCardId) =>
+            $"{segmentId}/sc_{index}/{spellCardId}";
     }
 }

@@ -254,7 +254,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     resolved = _library?.ResolveClone(scp.PatternId);
 
                 if (resolved != null)
-                    return new PatternLayer(resolved, scp.PatternId);
+                    return new PatternLayer(resolved, scp.PatternId, _contextId);
 
                 Debug.LogWarning($"[SpellCardDetailLayer] Cannot resolve pattern '{scp.PatternId}' — library missing or pattern not found.");
             }

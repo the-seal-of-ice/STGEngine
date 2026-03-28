@@ -144,6 +144,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         // ── Timeline parameters ──
 
         public float TotalDuration => Mathf.Max(10f, _enemyType.PatternDuration + 5f);
+        public float TimeOrigin => SourceInstance?.SpawnDelay ?? 0f;
         public bool IsSequential => false;
 
         // ── Interaction ──

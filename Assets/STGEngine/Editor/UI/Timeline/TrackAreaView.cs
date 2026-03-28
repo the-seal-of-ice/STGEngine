@@ -36,6 +36,12 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly VisualElement _playheadLine;
         private readonly VisualElement _playheadRulerMarker;
 
+        // ── Time hints ──
+        private readonly Label _playheadTimeLabel;           // red bubble on playhead
+        private readonly Label _hoverTimeLabel;              // grey tooltip following mouse
+        private readonly List<Label> _rulerLabelPool = new();// reusable labels for ruler ticks
+        private const int RulerLabelPoolSize = 24;
+
         private float _pixelsPerSecond = 60f;
         private float _scrollOffset;
         private const float MinPPS = 15f;
@@ -110,6 +116,37 @@ namespace STGEngine.Editor.UI.Timeline
                 _playheadRulerMarker.style.borderBottomLeftRadius = _playheadRulerMarker.style.borderBottomRightRadius = 4;
             _rulerArea.Add(_playheadRulerMarker);
 
+            // Playhead time bubble — red label above the playhead marker
+            _playheadTimeLabel = new Label("0.00");
+            _playheadTimeLabel.style.position = Position.Absolute;
+            _playheadTimeLabel.style.bottom = 8;
+            _playheadTimeLabel.style.fontSize = 9;
+            _playheadTimeLabel.style.color = Color.white;
+            _playheadTimeLabel.style.backgroundColor = new Color(0.85f, 0.15f, 0.15f, 0.9f);
+            _playheadTimeLabel.style.paddingLeft = 3;
+            _playheadTimeLabel.style.paddingRight = 3;
+            _playheadTimeLabel.style.paddingTop = 1;
+            _playheadTimeLabel.style.paddingBottom = 1;
+            _playheadTimeLabel.style.borderTopLeftRadius = _playheadTimeLabel.style.borderTopRightRadius =
+                _playheadTimeLabel.style.borderBottomLeftRadius = _playheadTimeLabel.style.borderBottomRightRadius = 3;
+            _playheadTimeLabel.pickingMode = PickingMode.Ignore;
+            _rulerArea.Add(_playheadTimeLabel);
+
+            // Ruler tick labels — pre-allocated pool
+            for (int i = 0; i < RulerLabelPoolSize; i++)
+            {
+                var lbl = new Label();
+                lbl.style.position = Position.Absolute;
+                lbl.style.top = 1;
+                lbl.style.fontSize = 9;
+                lbl.style.color = new Color(0.6f, 0.6f, 0.6f);
+                lbl.style.unityTextAlign = TextAnchor.UpperLeft;
+                lbl.pickingMode = PickingMode.Ignore;
+                lbl.style.display = DisplayStyle.None;
+                _rulerArea.Add(lbl);
+                _rulerLabelPool.Add(lbl);
+            }
+
             // Track content area
             _trackContent = new VisualElement();
             _trackContent.style.flexGrow = 1;
@@ -127,6 +164,30 @@ namespace STGEngine.Editor.UI.Timeline
             _playheadLine.style.bottom = 0;
             _playheadLine.style.backgroundColor = new Color(1f, 0.2f, 0.2f);
             _trackContent.Add(_playheadLine);
+
+            // Hover time tooltip — follows mouse in track area
+            _hoverTimeLabel = new Label();
+            _hoverTimeLabel.style.position = Position.Absolute;
+            _hoverTimeLabel.style.fontSize = 10;
+            _hoverTimeLabel.style.color = new Color(0.85f, 0.85f, 0.85f);
+            _hoverTimeLabel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f, 0.85f);
+            _hoverTimeLabel.style.paddingLeft = 4;
+            _hoverTimeLabel.style.paddingRight = 4;
+            _hoverTimeLabel.style.paddingTop = 2;
+            _hoverTimeLabel.style.paddingBottom = 2;
+            _hoverTimeLabel.style.borderTopLeftRadius = _hoverTimeLabel.style.borderTopRightRadius =
+                _hoverTimeLabel.style.borderBottomLeftRadius = _hoverTimeLabel.style.borderBottomRightRadius = 3;
+            _hoverTimeLabel.pickingMode = PickingMode.Ignore;
+            _hoverTimeLabel.style.display = DisplayStyle.None;
+            _trackContent.Add(_hoverTimeLabel);
+
+            // Mouse move/leave on track for hover time
+            _trackContent.RegisterCallback<MouseMoveEvent>(OnTrackMouseMove);
+            _trackContent.RegisterCallback<MouseLeaveEvent>(_ => _hoverTimeLabel.style.display = DisplayStyle.None);
+
+            // Mouse move/leave on ruler for hover time
+            _rulerArea.RegisterCallback<MouseMoveEvent>(OnRulerHoverMove);
+            _rulerArea.RegisterCallback<MouseLeaveEvent>(_ => _hoverTimeLabel.style.display = DisplayStyle.None);
 
             TimelineEditorView.RegisterThemeOverride(Root);
         }
@@ -644,6 +705,7 @@ namespace STGEngine.Editor.UI.Timeline
             _dragBlockInfo = info;
             _dragStartMouseX = mouseX;
             _dragStartValue = mode == DragMode.Move ? info.Block.StartTime : info.Block.Duration;
+            _hoverTimeLabel.style.display = DisplayStyle.None; // hide during drag
 
             _trackContent.RegisterCallback<MouseMoveEvent>(OnDragMove);
             _trackContent.RegisterCallback<MouseUpEvent>(OnDragEnd);
@@ -708,7 +770,8 @@ namespace STGEngine.Editor.UI.Timeline
             else if (_dragMode == DragMode.Reorder)
             {
                 // Visual feedback: offset the dragged block element horizontally
-                float left = blk.StartTime * _pixelsPerSecond - _scrollOffset + deltaX;
+                float reorderOrigin = _layer?.TimeOrigin ?? 0f;
+                float left = (blk.StartTime + reorderOrigin) * _pixelsPerSecond - _scrollOffset + deltaX;
                 _dragBlockInfo.Element.style.left = left;
                 // Slight vertical lift to indicate dragging
                 _dragBlockInfo.Element.style.top = TrackPadding + _dragBlockInfo.Row * TrackRowHeight - 3;
@@ -891,7 +954,8 @@ namespace STGEngine.Editor.UI.Timeline
                         // During scrub, also update the seek position
                         if (_dragMode == DragMode.Scrub)
                         {
-                            float time = (lx + _scrollOffset) / _pixelsPerSecond;
+                            float scrubOrigin = _layer?.TimeOrigin ?? 0f;
+                            float time = (lx + _scrollOffset) / _pixelsPerSecond - scrubOrigin;
                             OnSeekRequested?.Invoke(Mathf.Max(0f, time));
                         }
 
@@ -1056,6 +1120,7 @@ namespace STGEngine.Editor.UI.Timeline
             if (e.button != 0) return;
 
             _dragMode = DragMode.Scrub;
+            _hoverTimeLabel.style.display = DisplayStyle.None; // hide during scrub
             SeekFromRuler(e.mousePosition);
 
             _rulerArea.RegisterCallback<MouseMoveEvent>(OnRulerMouseMove);
@@ -1085,7 +1150,8 @@ namespace STGEngine.Editor.UI.Timeline
         private void SeekFromRuler(Vector2 mousePosition)
         {
             var localX = _rulerArea.WorldToLocal(mousePosition).x;
-            float time = (localX + _scrollOffset) / _pixelsPerSecond;
+            float origin = _layer?.TimeOrigin ?? 0f;
+            float time = (localX + _scrollOffset) / _pixelsPerSecond - origin;
             OnSeekRequested?.Invoke(Mathf.Max(0f, time));
         }
 
@@ -1121,9 +1187,10 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void UpdateAllBlockPositions()
         {
+            float origin = _layer?.TimeOrigin ?? 0f;
             foreach (var info in _blocks)
             {
-                float left = info.Block.StartTime * _pixelsPerSecond - _scrollOffset;
+                float left = (info.Block.StartTime + origin) * _pixelsPerSecond - _scrollOffset;
                 float width = info.Block.Duration * _pixelsPerSecond;
 
                 info.Element.style.left = left;
@@ -1134,9 +1201,15 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void UpdatePlayhead()
         {
-            float x = _currentPlayTime * _pixelsPerSecond - _scrollOffset;
+            float origin = _layer?.TimeOrigin ?? 0f;
+            float displayTime = _currentPlayTime + origin;
+            float x = displayTime * _pixelsPerSecond - _scrollOffset;
             _playheadLine.style.left = x;
             _playheadRulerMarker.style.left = x - 4;
+
+            // Playhead time bubble
+            _playheadTimeLabel.text = FormatTime(displayTime);
+            _playheadTimeLabel.style.left = x + 5;
         }
 
         private Dictionary<ITimelineBlock, int> AssignRows(IReadOnlyList<ITimelineBlock> blocks)
@@ -1183,7 +1256,7 @@ namespace STGEngine.Editor.UI.Timeline
             if (width <= 0 || height <= 0) return;
 
             float interval = CalculateTickInterval();
-            float startTime = Mathf.Floor(_scrollOffset / _pixelsPerSecond / interval) * interval;
+            float startTime = Mathf.Floor((_scrollOffset / _pixelsPerSecond) / interval) * interval;
 
             painter.strokeColor = new Color(0.4f, 0.4f, 0.4f);
             painter.lineWidth = 1f;
@@ -1201,6 +1274,46 @@ namespace STGEngine.Editor.UI.Timeline
                 painter.LineTo(new Vector2(x, height - tickHeight));
                 painter.Stroke();
             }
+
+            // Schedule label positioning AFTER the render pass completes
+            _rulerArea.schedule.Execute(UpdateRulerLabels);
+        }
+
+        /// <summary>
+        /// Position ruler tick labels. Called via schedule.Execute after DrawRuler
+        /// to avoid modifying the visual tree during generateVisualContent.
+        /// </summary>
+        private void UpdateRulerLabels()
+        {
+            float width = _rulerArea.resolvedStyle.width;
+            if (width <= 0) return;
+
+            float origin = _layer?.TimeOrigin ?? 0f;
+            float interval = CalculateTickInterval();
+            float startTime = Mathf.Floor((_scrollOffset / _pixelsPerSecond) / interval) * interval;
+
+            int labelIdx = 0;
+
+            for (float t = startTime; t * _pixelsPerSecond - _scrollOffset < width; t += interval)
+            {
+                float x = t * _pixelsPerSecond - _scrollOffset;
+                if (x < 0) continue;
+
+                float displayTime = t + origin;
+                bool isMajor = Mathf.Abs(t % (interval * 5)) < 0.001f || interval >= 5f;
+
+                if (isMajor && labelIdx < _rulerLabelPool.Count)
+                {
+                    var lbl = _rulerLabelPool[labelIdx++];
+                    lbl.text = FormatTime(displayTime);
+                    lbl.style.left = x + 2;
+                    lbl.style.display = DisplayStyle.Flex;
+                }
+            }
+
+            // Hide unused labels
+            for (int i = labelIdx; i < _rulerLabelPool.Count; i++)
+                _rulerLabelPool[i].style.display = DisplayStyle.None;
         }
 
         private float CalculateTickInterval()
@@ -1216,6 +1329,50 @@ namespace STGEngine.Editor.UI.Timeline
             return 60f;
         }
 
+        // ─── Time Hints ───
+
+        /// <summary>
+        /// Format a time value for display on ruler labels and tooltips.
+        /// Always uses m:ss or m:ss.f format: "0:00", "0:01", "0:12.5", "1:05", "2:30.0".
+        /// </summary>
+        private static string FormatTime(float t)
+        {
+            if (t < 0f) t = 0f;
+            int min = (int)(t / 60f);
+            float sec = t - min * 60f;
+            return sec % 1f < 0.001f ? $"{min}:{sec:00}" : $"{min}:{sec:00.0}";
+        }
+
+        private void OnTrackMouseMove(MouseMoveEvent e)
+        {
+            // Don't show hover tooltip during drag
+            if (_dragMode != DragMode.None) return;
+            if (_layer == null) return;
+            var localX = _trackContent.WorldToLocal(e.mousePosition).x;
+            var localY = _trackContent.WorldToLocal(e.mousePosition).y;
+            float time = (localX + _scrollOffset) / _pixelsPerSecond;
+            _hoverTimeLabel.text = FormatTime(time);
+            _hoverTimeLabel.style.left = localX + 12;
+            _hoverTimeLabel.style.top = Mathf.Max(0f, localY - 20);
+            _hoverTimeLabel.style.display = DisplayStyle.Flex;
+            _hoverTimeLabel.BringToFront();
+        }
+
+        private void OnRulerHoverMove(MouseMoveEvent e)
+        {
+            // Don't show hover tooltip during scrub drag
+            if (_dragMode == DragMode.Scrub) return;
+            if (_layer == null) return;
+            var localX = _rulerArea.WorldToLocal(e.mousePosition).x;
+            float time = (localX + _scrollOffset) / _pixelsPerSecond;
+            // Show hover label in track content area (below ruler)
+            _hoverTimeLabel.text = FormatTime(time);
+            _hoverTimeLabel.style.left = localX + 12;
+            _hoverTimeLabel.style.top = 0;
+            _hoverTimeLabel.style.display = DisplayStyle.Flex;
+            _hoverTimeLabel.BringToFront();
+        }
+
         // ─── Zoom to Fit ───
 
         public void ZoomToFit()
@@ -1225,7 +1382,9 @@ namespace STGEngine.Editor.UI.Timeline
             float availableWidth = _trackContent.resolvedStyle.width;
             if (availableWidth <= 0) availableWidth = 600f;
 
-            _pixelsPerSecond = Mathf.Clamp(availableWidth / _layer.TotalDuration * 0.9f, MinPPS, MaxPPS);
+            float origin = _layer.TimeOrigin;
+            float visibleDuration = _layer.TotalDuration + origin;
+            _pixelsPerSecond = Mathf.Clamp(availableWidth / visibleDuration * 0.9f, MinPPS, MaxPPS);
             _scrollOffset = 0f;
 
             UpdateAllBlockPositions();

@@ -109,7 +109,7 @@ namespace STGEngine.Runtime.Preview
             {
                 // For simulation path, reset and re-simulate to current time
                 _simEvaluator.Reset();
-                float dt = 1f / 60f;
+                float dt = Playback.FixedDt;
                 float target = Playback.CurrentTime;
 
                 // Even at t=0, we need at least one Step to initialize bullet states
@@ -148,7 +148,7 @@ namespace STGEngine.Runtime.Preview
             {
                 // SimulationEvaluator is stepped by the fixed-timestep loop,
                 // so each OnTimeChanged corresponds to one logic tick.
-                float dt = 1f / 60f;
+                float dt = Playback.FixedDt;
                 _simEvaluator.Step(dt);
                 _currStates = _simEvaluator.GetStates();
             }

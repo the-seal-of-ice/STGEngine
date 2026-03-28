@@ -160,12 +160,14 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     {
         private readonly BulletPattern _pattern;
         private readonly string _patternId;
+        private readonly string _contextId;
         private readonly PatternBlock _block;
 
-        public PatternLayer(BulletPattern pattern, string patternId)
+        public PatternLayer(BulletPattern pattern, string patternId, string contextId = null)
         {
             _pattern = pattern;
             _patternId = patternId;
+            _contextId = contextId;
             _block = new PatternBlock(pattern, patternId);
         }
 
@@ -244,6 +246,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public BulletPattern Pattern => _pattern;
         public string PatternId => _patternId;
+        /// <summary>Override context ID (e.g. segmentId/eventId). Null = save to original file.</summary>
+        public string ContextId => _contextId;
 
         /// <summary>Invalidate the block's thumbnail cache (e.g. after pattern edit).</summary>
         public void InvalidateThumbnails() => _block.InvalidateThumbnailCache();

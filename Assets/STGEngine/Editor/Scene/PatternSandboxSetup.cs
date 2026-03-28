@@ -7,6 +7,7 @@ using STGEngine.Core.Serialization;
 using STGEngine.Editor.UI;
 using STGEngine.Editor.UI.AssetLibrary;
 using STGEngine.Editor.UI.FileManager;
+using STGEngine.Editor.UI.Settings;
 using STGEngine.Editor.UI.Timeline;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
@@ -83,6 +84,11 @@ namespace STGEngine.Editor.Scene
 
         // Enemy placeholders
         private readonly List<EnemyPlaceholder> _enemyPlaceholders = new();
+
+        // Pause menu + Settings
+        private PauseMenuPanel _pauseMenu;
+        private SettingsPanel _settingsPanel;
+        private bool _wasPlayingBeforePause;
         private List<WavePlaceholderData> _activeWaves;
 
         /// <summary>Current editor mode.</summary>
@@ -105,6 +111,13 @@ namespace STGEngine.Editor.Scene
 
         private void Awake()
         {
+            // Load global settings (gameplay + editor prefs)
+            EngineSettingsManager.Load();
+
+            // Apply initial editor FPS limit
+            var editorPrefs = EngineSettingsManager.Editor;
+            Application.targetFrameRate = editorPrefs.PreviewFpsLimit > 0 ? editorPrefs.PreviewFpsLimit : -1;
+
             // Apply pending mode override from previous scene load
             if (_pendingModeOverride.HasValue)
             {
@@ -133,7 +146,13 @@ namespace STGEngine.Editor.Scene
                 // Boss placeholder (hidden until spell card editing)
                 var bossGo = new GameObject("BossPlaceholder");
                 _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();
+
+                // Apply initial tick rate from settings
+                ApplyTickRate(EngineSettingsManager.Gameplay.SimulationTickRate);
             }
+
+            // Subscribe to settings changes for live updates
+            EngineSettingsManager.OnSettingsChanged += OnSettingsChanged;
         }
 
         private void Start()
@@ -175,14 +194,108 @@ namespace STGEngine.Editor.Scene
                 foreach (var ep in _enemyPlaceholders)
                     ep.SetTime(t);
             }
+
+            // Global keyboard shortcuts — works even when scene viewport has focus
+            if (_editorMode == EditorMode.TimelineEdit && _timelineView != null)
+            {
+                // Escape key: toggle pause menu / close settings
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    if (_settingsPanel != null && _settingsPanel.IsOpen)
+                    {
+                        _settingsPanel.Close();
+                        _pauseMenu?.Open();
+                    }
+                    else if (_pauseMenu != null)
+                    {
+                        if (!_pauseMenu.IsOpen)
+                        {
+                            // Pause playback and open menu
+                            _wasPlayingBeforePause = _timelinePlayback?.IsPlaying ?? false;
+                            _timelinePlayback?.Pause();
+                        }
+                        _pauseMenu.Toggle();
+                    }
+                }
+                // Other shortcuts only when menus are closed
+                else if (_pauseMenu == null || !_pauseMenu.IsOpen)
+                {
+                    if (_settingsPanel == null || !_settingsPanel.IsOpen)
+                    {
+                        PollGlobalShortcuts();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Poll Unity Input for keyboard shortcuts and forward to TimelineEditorView.
+        /// This ensures shortcuts like Space (play/pause), Ctrl+Z (undo), etc. work
+        /// even when the UI Toolkit panel does not have focus (e.g. user clicked the scene).
+        /// Only fires on GetKeyDown (single press), not held keys.
+        /// Skips when a text input field has focus to avoid interfering with typing.
+        /// </summary>
+        private void PollGlobalShortcuts()
+        {
+            // Skip if a UI Toolkit element has focus — the OnKeyDown callback handles it
+            var focused = _uiRoot?.panel?.focusController?.focusedElement;
+            if (focused != null)
+                return;
+
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
+                     || Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+            // Check each shortcut key
+            KeyCode[] shortcutKeys = {
+                KeyCode.Space, KeyCode.Delete, KeyCode.Backspace,
+                KeyCode.Z, KeyCode.Y, KeyCode.S, KeyCode.C, KeyCode.V, KeyCode.D
+            };
+
+            foreach (var key in shortcutKeys)
+            {
+                if (Input.GetKeyDown(key))
+                {
+                    _timelineView.HandleKeyboardShortcut(key, ctrl, shift);
+                    break; // one key per frame is enough
+                }
+            }
         }
 
         private void OnDestroy()
         {
+            EngineSettingsManager.OnSettingsChanged -= OnSettingsChanged;
             _editorView?.Dispose();
             _timelineView?.Dispose();
             _previewerPool?.Dispose();
             ClearEnemyPlaceholders();
+        }
+
+        // ─── Settings Live Apply ───
+
+        private void OnSettingsChanged()
+        {
+            var gameplay = EngineSettingsManager.Gameplay;
+            var editor = EngineSettingsManager.Editor;
+
+            // [GAMEPLAY] Tick rate → SimulationLoop.FixedDt on all controllers
+            ApplyTickRate(gameplay.SimulationTickRate);
+
+            // [EDITOR] Preview FPS limit → Application.targetFrameRate
+            Application.targetFrameRate = editor.PreviewFpsLimit > 0 ? editor.PreviewFpsLimit : -1;
+        }
+
+        private void ApplyTickRate(int tickRate)
+        {
+            float fixedDt = 1f / Mathf.Max(1, tickRate);
+
+            // Timeline playback controller (outer loop + all active previewers)
+            if (_timelinePlayback != null)
+                _timelinePlayback.FixedDt = fixedDt;
+
+            // Single previewer (pattern edit mode / property panel preview)
+            if (_previewer != null)
+                _previewer.Playback.FixedDt = fixedDt;
         }
 
         // ─── Pattern Edit Mode ───
@@ -343,6 +456,28 @@ namespace STGEngine.Editor.Scene
             // Initial placeholder notification (events are now subscribed, but SetStage
             // already ran during construction before subscription — trigger once now)
             _timelineView.NotifyWavePlaceholders();
+
+            // ── Pause Menu + Settings (must be last — renders on top of everything) ──
+            _settingsPanel = new SettingsPanel();
+            _settingsPanel.OnBackRequested += () =>
+            {
+                _pauseMenu.Open(); // return to pause menu
+            };
+            root.Add(_settingsPanel.Root);
+
+            _pauseMenu = new PauseMenuPanel();
+            _pauseMenu.OnResumeRequested += () =>
+            {
+                // Resume playback if it was playing before pause
+                if (_wasPlayingBeforePause && _timelinePlayback != null)
+                    _timelinePlayback.Play();
+            };
+            _pauseMenu.OnSettingsRequested += () =>
+            {
+                _pauseMenu.Close(); // hide pause menu (don't resume playback)
+                _settingsPanel.Open();
+            };
+            root.Add(_pauseMenu.Root);
         }
 
         /// <summary>

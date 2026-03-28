@@ -44,6 +44,22 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Render interpolation alpha from the underlying SimulationLoop.</summary>
         public float Alpha => _simLoop.Alpha;
 
+        /// <summary>
+        /// Fixed logic timestep. Proxy for SimulationLoop.FixedDt.
+        /// Set this to 1f / tickRate to change simulation precision.
+        /// Also propagates to all active previewers.
+        /// </summary>
+        public float FixedDt
+        {
+            get => _simLoop.FixedDt;
+            set
+            {
+                _simLoop.FixedDt = value;
+                foreach (var active in _activeEvents)
+                    active.Previewer.Playback.FixedDt = value;
+            }
+        }
+
         /// <summary>Fired on every time change.</summary>
         public event Action<float> OnTimeChanged;
 
@@ -246,6 +262,7 @@ namespace STGEngine.Runtime.Preview
             previewer.Playback.Duration = spawnEvt.Duration;
             previewer.Playback.Loop = false;
             previewer.Playback.PlaybackSpeed = PlaybackSpeed;
+            previewer.Playback.FixedDt = _simLoop.FixedDt; // inherit tick rate
             previewer.Playback.Seek(Mathf.Max(localTime, 0f));
             previewer.ForceRefresh();
 

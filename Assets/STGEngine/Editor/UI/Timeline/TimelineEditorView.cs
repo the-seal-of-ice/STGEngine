@@ -116,6 +116,8 @@ namespace STGEngine.Editor.UI.Timeline
         private SpellCard _editingSpellCard;
         private string _editingSpellCardId;
         private TimelineSegment _editingBossFightSegment;
+        /// <summary>Per-instance override context for the SpellCard being edited (segmentId/sc_{index}).</summary>
+        private string _editingSpellCardInstanceContext;
 
         // ── Recursive navigation stack ──
         private readonly Stack<BreadcrumbEntry> _navigationStack = new();
@@ -194,6 +196,7 @@ namespace STGEngine.Editor.UI.Timeline
                         _editingSpellCard = null;
                         _editingSpellCardId = null;
                         _editingBossFightSegment = null;
+                        _editingSpellCardInstanceContext = null;
                     }
                     NavigateToDepth(0);
                     // Restore StageLayer in TrackArea
@@ -1237,6 +1240,7 @@ namespace STGEngine.Editor.UI.Timeline
                 _breadcrumbSep2.style.display = DisplayStyle.None;
                 _breadcrumbSpellCard.style.display = DisplayStyle.None;
                 _editingBossFightSegment = null;
+                _editingSpellCardInstanceContext = null;
                 OnSpellCardEditingChanged?.Invoke(null);
             }
 
@@ -1491,7 +1495,9 @@ namespace STGEngine.Editor.UI.Timeline
 
                 // Edit button
                 var editScId = scId;
-                var editBtn = new Button(() => EnterSpellCardEditing(segment, editScId))
+                var editIdx = i;
+                var editBtn = new Button(() => EnterSpellCardEditing(segment, editScId,
+                    OverrideManager.SpellCardInstanceContext(segment.Id, editIdx)))
                 { text = "\u270e" };
                 editBtn.style.width = 20;
                 editBtn.style.height = 18;
@@ -1614,13 +1620,13 @@ namespace STGEngine.Editor.UI.Timeline
 
         // ─── Spell Card Editing (Breadcrumb Layer 3) ───
 
-        private void EnterSpellCardEditing(TimelineSegment segment, string spellCardId)
+        private void EnterSpellCardEditing(TimelineSegment segment, string spellCardId, string instanceContextId = null)
         {
             if (_catalog == null) return;
 
-            // Load spell card from YAML (override-aware)
-            var contextId = OverrideManager.SegmentContext(segment.Id);
-            var path = OverrideManager.ResolveSpellCardPath(_catalog, contextId, spellCardId);
+            // Load spell card from YAML (override-aware, using instance context)
+            var resolveCtx = instanceContextId ?? OverrideManager.SegmentContext(segment.Id);
+            var path = OverrideManager.ResolveSpellCardPath(_catalog, resolveCtx, spellCardId);
             if (!System.IO.File.Exists(path))
             {
                 Debug.LogWarning($"[TimelineEditor] SpellCard file not found: {path}");
@@ -1641,6 +1647,7 @@ namespace STGEngine.Editor.UI.Timeline
             _editingSpellCard = sc;
             _editingSpellCardId = spellCardId;
             _editingBossFightSegment = segment;
+            _editingSpellCardInstanceContext = instanceContextId;
 
             // ── NavigateTo 7-step sequence (memorix #74) ──
 
@@ -1655,8 +1662,13 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             // 2. Set _currentLayer
+            // SpellCardDetailLayer.ContextId is used for Pattern Override context within this SC.
+            // Format: "{instanceContext}/{spellCardId}" or fallback to "{segmentId}/{spellCardId}"
+            var scDetailContext = !string.IsNullOrEmpty(instanceContextId)
+                ? $"{instanceContextId}/{spellCardId}"
+                : $"{segment.Id}/{spellCardId}";
             _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library,
-                OverrideManager.SpellCardContext(segment.Id, spellCardId), _catalog);
+                scDetailContext, _catalog);
 
             // 3. WireLayerToTrackArea (binds Add/Delete callbacks)
             WireLayerToTrackArea(_currentLayer);
@@ -1845,6 +1857,7 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             _editingBossFightSegment = null;
+            _editingSpellCardInstanceContext = null;
         }
 
         // ─── Recursive Navigation ───
@@ -1894,16 +1907,22 @@ namespace STGEngine.Editor.UI.Timeline
                 _editingSpellCard = null;
                 _editingSpellCardId = null;
                 _editingBossFightSegment = null;
+                _editingSpellCardInstanceContext = null;
             }
 
             var entry = _navigationStack.Pop();
             _currentLayer = entry.Layer;
 
-            // If returning from EnemyTypeLayer, the parent WaveLayer's preview data may be stale.
+            // Returning from a child layer — parent's block data may be stale.
             // Invalidate blocks so they pick up any changes saved to disk.
             if (_currentLayer is WaveLayer parentWave)
             {
                 parentWave.InvalidateBlocks();
+            }
+            else if (_currentLayer is EnemyTypeLayer parentEt)
+            {
+                parentEt.Library = _library; // ensure latest library cache
+                parentEt.InvalidateBlocks();
             }
 
             WireLayerToTrackArea(_currentLayer);
@@ -1927,6 +1946,7 @@ namespace STGEngine.Editor.UI.Timeline
                 _editingSpellCard = null;
                 _editingSpellCardId = null;
                 _editingBossFightSegment = null;
+                _editingSpellCardInstanceContext = null;
             }
 
             while (_navigationStack.Count > depth && _navigationStack.Count > 0)
@@ -1937,11 +1957,16 @@ namespace STGEngine.Editor.UI.Timeline
 
             if (_currentLayer != null)
             {
-                // If returning from EnemyTypeLayer, the parent WaveLayer's preview data may be stale.
+                // Returning from a child layer — parent's block data may be stale.
                 // Invalidate blocks so they pick up any changes saved to disk.
                 if (_currentLayer is WaveLayer parentWave)
                 {
                     parentWave.InvalidateBlocks();
+                }
+                else if (_currentLayer is EnemyTypeLayer parentEt)
+                {
+                    parentEt.Library = _library;
+                    parentEt.InvalidateBlocks();
                 }
 
                 WireLayerToTrackArea(_currentLayer);
@@ -2442,8 +2467,9 @@ namespace STGEngine.Editor.UI.Timeline
                 if (layers[i].Layer is SpellCardDetailLayer scLayer &&
                     !string.IsNullOrEmpty(scLayer.ContextId) &&
                     _editingBossFightSegment != null &&
+                    !string.IsNullOrEmpty(_editingSpellCardInstanceContext) &&
                     OverrideManager.HasOverride(
-                        OverrideManager.SegmentContext(_editingBossFightSegment.Id),
+                        _editingSpellCardInstanceContext,
                         scLayer.SpellCardId))
                 {
                     displayName = $"[M] {displayName}";
@@ -2474,6 +2500,7 @@ namespace STGEngine.Editor.UI.Timeline
                                 _editingSpellCard = null;
                                 _editingSpellCardId = null;
                                 _editingBossFightSegment = null;
+                                _editingSpellCardInstanceContext = null;
                             }
                             NavigateToDepth(0);
                             _currentLayer = _stageLayer;
@@ -2507,10 +2534,9 @@ namespace STGEngine.Editor.UI.Timeline
                 var yaml = YamlSerializer.SerializeSpellCard(_editingSpellCard);
 
                 // If editing within a BossFight segment context, save as override
-                if (_editingBossFightSegment != null)
+                if (_editingBossFightSegment != null && !string.IsNullOrEmpty(_editingSpellCardInstanceContext))
                 {
-                    var contextId = OverrideManager.SegmentContext(_editingBossFightSegment.Id);
-                    OverrideManager.SaveOverride(contextId, _editingSpellCardId, yaml);
+                    OverrideManager.SaveOverride(_editingSpellCardInstanceContext, _editingSpellCardId, yaml);
                 }
                 else
                 {
@@ -2542,10 +2568,9 @@ namespace STGEngine.Editor.UI.Timeline
             try
             {
                 var yaml = YamlSerializer.SerializeSpellCard(sc);
-                if (_editingBossFightSegment != null)
+                if (_editingBossFightSegment != null && !string.IsNullOrEmpty(_editingSpellCardInstanceContext))
                 {
-                    var contextId = OverrideManager.SegmentContext(_editingBossFightSegment.Id);
-                    OverrideManager.SaveOverride(contextId, scId, yaml);
+                    OverrideManager.SaveOverride(_editingSpellCardInstanceContext, scId, yaml);
                 }
                 else
                 {
@@ -2926,7 +2951,7 @@ namespace STGEngine.Editor.UI.Timeline
                     if (sc != null)
                     {
                         _propertyContent.Clear();
-                        BuildSpellCardBlockProperties(sc, scBlock.SpellCardId, bfLayer);
+                        BuildSpellCardBlockProperties(sc, scBlock.SpellCardId, bfLayer, scBlock.InstanceContextId);
                     }
                 }
                 else if (block is TransitionBlock transBlock)
@@ -3030,7 +3055,8 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     if (entry.Layer is BossFightLayer bf) { parentBf = bf; break; }
                 }
-                BuildSpellCardBlockProperties(scDetailLayer.SpellCard, scDetailLayer.SpellCardId, parentBf);
+                BuildSpellCardBlockProperties(scDetailLayer.SpellCard, scDetailLayer.SpellCardId, parentBf,
+                    _editingSpellCardInstanceContext);
                 return;
             }
 
@@ -3176,7 +3202,8 @@ namespace STGEngine.Editor.UI.Timeline
             ApplyLightTextTheme(container);
         }
 
-        private void BuildSpellCardBlockProperties(SpellCard sc, string scId, BossFightLayer bfLayer)
+        private void BuildSpellCardBlockProperties(SpellCard sc, string scId, BossFightLayer bfLayer,
+            string instanceContextId = null)
         {
             _propertyHeaderLabel.text = $"SpellCard: {_catalog?.FindSpellCard(scId)?.Name ?? scId}";
             var container = new VisualElement();
@@ -3259,7 +3286,7 @@ namespace STGEngine.Editor.UI.Timeline
             // Edit button → enter SpellCard detail
             var editBtn = new Button(() =>
             {
-                EnterSpellCardEditing(bfLayer.Segment, scId);
+                EnterSpellCardEditing(bfLayer.Segment, scId, instanceContextId);
             }) { text = "Edit SpellCard Details ▶" };
             editBtn.style.marginTop = 8;
             editBtn.style.backgroundColor = new Color(0.25f, 0.3f, 0.45f);
@@ -3840,14 +3867,16 @@ namespace STGEngine.Editor.UI.Timeline
                 // If dragging forward (fromIdx < insertSlot), removal shifts slots down by 1.
                 int targetIdx = insertSlot > fromIdx ? insertSlot - 1 : insertSlot;
                 if (targetIdx == fromIdx) return;
+                targetIdx = Mathf.Clamp(targetIdx, 0, ids.Count - 1);
 
-                // Execute
-                var id = ids[fromIdx];
-                ids.RemoveAt(fromIdx);
-                targetIdx = Mathf.Clamp(targetIdx, 0, ids.Count);
-                ids.Insert(targetIdx, id);
+                // Execute via CommandStack so undo/redo works
+                var cmd = ListCommand<string>.Move(ids, fromIdx, targetIdx,
+                    "Reorder Spell Card");
+                _commandStack.Execute(cmd);
 
-                // Rebuild
+                // BossFightLayer caches SpellCard data from disk — must reload after reorder.
+                // OnCommandStateChanged already calls InvalidateCurrentLayerBlocks + RebuildBlocks,
+                // but we need to re-wire callbacks since block instances changed.
                 bfLayer.InvalidateBlocks();
                 WireLayerToTrackArea(bfLayer);
                 _trackArea.RebuildBlocks();
@@ -3876,10 +3905,12 @@ namespace STGEngine.Editor.UI.Timeline
 
                 int targetIdx = insertSlot > fromIdx ? insertSlot - 1 : insertSlot;
                 if (targetIdx == fromIdx) return;
+                targetIdx = Mathf.Clamp(targetIdx, 0, segments.Count - 1);
 
-                segments.RemoveAt(fromIdx);
-                targetIdx = Mathf.Clamp(targetIdx, 0, segments.Count);
-                segments.Insert(targetIdx, seg);
+                // Execute via CommandStack so undo/redo works
+                var cmd = ListCommand<TimelineSegment>.Move(segments, fromIdx, targetIdx,
+                    "Reorder Segment");
+                _commandStack.Execute(cmd);
 
                 stageLayer.InvalidateBlocks();
                 _trackArea.RebuildBlocks();
@@ -4275,6 +4306,9 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 _editingSpellCard = scLayer.SpellCard;
                 _editingSpellCardId = scLayer.SpellCardId;
+                // Set per-instance override context from the source SpellCardBlock
+                if (block is SpellCardBlock scBlock)
+                    _editingSpellCardInstanceContext = scBlock.InstanceContextId;
                 // Find the parent BossFight segment from the navigation stack
                 foreach (var entry in _navigationStack)
                 {
@@ -4530,16 +4564,22 @@ namespace STGEngine.Editor.UI.Timeline
             else if (_currentLayer is SpellCardDetailLayer sc) sc.InvalidateBlocks();
             else if (_currentLayer is StageLayer sl) sl.InvalidateBlocks();
             else if (_currentLayer is WaveLayer wl) wl.InvalidateBlocks();
+            else if (_currentLayer is EnemyTypeLayer et) et.InvalidateBlocks();
         }
 
         private void OnCommandStateChanged()
         {
-            // Ensure layer's internal block list is up-to-date before visual rebuild
-            if (_currentLayer is EnemyTypeLayer etl)
-                etl.InvalidateBlocks();
+            // Ensure layer's internal block list is up-to-date before visual rebuild.
+            // All layer types may need this after structural commands (add/remove/move).
+            InvalidateCurrentLayerBlocks();
 
             // Rebuild visual elements so labels, colors, and positions all update on undo/redo.
             _trackArea.RebuildBlocks();
+
+            // Refresh preview — structural changes (add/remove pattern, enemy, etc.)
+            // need the playback segment rebuilt so 3D bullets and placeholders update.
+            if (_currentLayer != null)
+                LoadPreviewForLayer(_currentLayer);
 
             // Refresh the properties panel to sync any value changes from drag/undo/redo.
             var selected = _trackArea.SelectedBlock;
@@ -4561,6 +4601,9 @@ namespace STGEngine.Editor.UI.Timeline
             // drags only go through PropertyChangeCommand → _commandStack.Execute,
             // so we need to save here as well.
             AutoSaveCurrentLayer();
+
+            // Refresh wave/enemy placeholders (covers add/remove enemy, undo/redo)
+            NotifyWavePlaceholders();
 
             // Refresh undo/redo button states + history panel
             RefreshUndoRedoButtons();
@@ -4709,6 +4752,10 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private string GetPatternOverrideContext()
         {
+            // PatternLayer carries its own contextId (set by parent's CreateChildLayer)
+            if (_currentLayer is PatternLayer patLayer && !string.IsNullOrEmpty(patLayer.ContextId))
+                return patLayer.ContextId;
+
             // If editing inside a SpellCardDetailLayer, use its contextId
             if (_currentLayer is SpellCardDetailLayer scLayer && !string.IsNullOrEmpty(scLayer.ContextId))
                 return scLayer.ContextId;
@@ -4718,18 +4765,13 @@ namespace STGEngine.Editor.UI.Timeline
                 && _selectedEvent != null)
                 return $"{midLayer.ContextId}/{_selectedEvent.Id}";
 
-            // Walk the navigation stack for PatternLayer (entered via double-click)
+            // Walk the navigation stack for deeper layers
             foreach (var entry in _navigationStack)
             {
                 if (entry.Layer is SpellCardDetailLayer parentSc && !string.IsNullOrEmpty(parentSc.ContextId))
                     return parentSc.ContextId;
                 if (entry.Layer is MidStageLayer parentMid && !string.IsNullOrEmpty(parentMid.ContextId))
-                {
-                    // Find the event that was double-clicked to enter PatternLayer
-                    // The selected block on the parent MidStageLayer is the SpawnPatternEvent
-                    // We can't easily recover the eventId here, so use segmentId only
                     return parentMid.ContextId;
-                }
             }
 
             return null; // No override context — save to original file
@@ -5142,80 +5184,80 @@ namespace STGEngine.Editor.UI.Timeline
             bool ctrl = evt.ctrlKey || evt.commandKey;
             bool shift = evt.shiftKey;
 
+            if (HandleKeyboardShortcut(evt.keyCode, ctrl, shift))
+            {
+                evt.StopPropagation();
+                evt.PreventDefault();
+            }
+        }
+
+        /// <summary>
+        /// Process a keyboard shortcut. Returns true if the key was handled.
+        /// Called from OnKeyDown (UI Toolkit focus) and from PatternSandboxSetup.Update
+        /// (global Input polling) so shortcuts work even when the scene viewport has focus.
+        /// </summary>
+        public bool HandleKeyboardShortcut(KeyCode keyCode, bool ctrl, bool shift)
+        {
             // Ctrl+Z → Undo
-            if (ctrl && !shift && evt.keyCode == KeyCode.Z)
+            if (ctrl && !shift && keyCode == KeyCode.Z)
             {
                 var stack = _patternEditor?.Commands ?? _commandStack;
                 if (stack.CanUndo) stack.Undo();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Ctrl+Y or Ctrl+Shift+Z → Redo
-            if ((ctrl && evt.keyCode == KeyCode.Y) ||
-                (ctrl && shift && evt.keyCode == KeyCode.Z))
+            if ((ctrl && keyCode == KeyCode.Y) ||
+                (ctrl && shift && keyCode == KeyCode.Z))
             {
                 var stack = _patternEditor?.Commands ?? _commandStack;
                 if (stack.CanRedo) stack.Redo();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Delete / Backspace → Delete selected block
-            if (!ctrl && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
+            if (!ctrl && (keyCode == KeyCode.Delete || keyCode == KeyCode.Backspace))
             {
                 DeleteSelectedBlock();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Space → Toggle play
-            if (!ctrl && evt.keyCode == KeyCode.Space)
+            if (!ctrl && keyCode == KeyCode.Space)
             {
                 OnTogglePlay();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Ctrl+S → Save
-            if (ctrl && evt.keyCode == KeyCode.S)
+            if (ctrl && keyCode == KeyCode.S)
             {
                 OnSaveStage();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Ctrl+C → Copy
-            if (ctrl && evt.keyCode == KeyCode.C)
+            if (ctrl && keyCode == KeyCode.C)
             {
                 CopySelectedBlock();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Ctrl+V → Paste
-            if (ctrl && evt.keyCode == KeyCode.V)
+            if (ctrl && keyCode == KeyCode.V)
             {
                 PasteBlock();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
 
             // Ctrl+D → Duplicate
-            if (ctrl && evt.keyCode == KeyCode.D)
+            if (ctrl && keyCode == KeyCode.D)
             {
                 DuplicateSelectedBlock();
-                evt.StopPropagation();
-                evt.PreventDefault();
-                return;
+                return true;
             }
+
+            return false;
         }
 
         private void DeleteSelectedBlock()
