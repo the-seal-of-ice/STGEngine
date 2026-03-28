@@ -214,6 +214,7 @@ namespace STGEngine.Editor.UI.Timeline
             sep.style.color = new Color(0.5f, 0.5f, 0.5f);
             sep.style.marginLeft = 4;
             sep.style.marginRight = 4;
+            sep.AddToClassList("breadcrumb-static-sep");
             _breadcrumbBar.Add(sep);
 
             _breadcrumbSegment = new Label("\u2014");
@@ -1897,6 +1898,14 @@ namespace STGEngine.Editor.UI.Timeline
 
             var entry = _navigationStack.Pop();
             _currentLayer = entry.Layer;
+
+            // If returning from EnemyTypeLayer, the parent WaveLayer's preview data may be stale.
+            // Invalidate blocks so they pick up any changes saved to disk.
+            if (_currentLayer is WaveLayer parentWave)
+            {
+                parentWave.InvalidateBlocks();
+            }
+
             WireLayerToTrackArea(_currentLayer);
             _trackArea.SetLayer(_currentLayer);
             LoadPreviewForLayer(_currentLayer);
@@ -1928,6 +1937,13 @@ namespace STGEngine.Editor.UI.Timeline
 
             if (_currentLayer != null)
             {
+                // If returning from EnemyTypeLayer, the parent WaveLayer's preview data may be stale.
+                // Invalidate blocks so they pick up any changes saved to disk.
+                if (_currentLayer is WaveLayer parentWave)
+                {
+                    parentWave.InvalidateBlocks();
+                }
+
                 WireLayerToTrackArea(_currentLayer);
                 _trackArea.SetLayer(_currentLayer);
                 LoadPreviewForLayer(_currentLayer);
@@ -2360,47 +2376,70 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private void RebuildBreadcrumb()
         {
-            // Remove all children except the seed controls (which are after the spacer)
-            // Strategy: clear everything, then re-add seed controls
-            // But seed controls are complex — safer to just update the breadcrumb labels.
-
-            // For now, update the existing hardcoded labels to match the stack.
-            // Full dynamic breadcrumb will replace this once SegmentListView is removed (1f).
-
+            // Collect all layers root-first
             var layers = new List<BreadcrumbEntry>();
-            // Stack is LIFO, so we need to reverse to get root-first order
             var stackArray = _navigationStack.ToArray();
             for (int i = stackArray.Length - 1; i >= 0; i--)
                 layers.Add(stackArray[i]);
-
-            // Current layer is the last one
             if (_currentLayer != null)
                 layers.Add(new BreadcrumbEntry { Layer = _currentLayer, DisplayName = _currentLayer.DisplayName });
 
-            // Update existing breadcrumb labels based on depth
-            if (layers.Count >= 1)
-                _breadcrumbStage.text = layers[0].DisplayName;
-
-            if (layers.Count >= 2)
+            // Remove old dynamic breadcrumb elements (keep seed controls)
+            // The breadcrumb bar has: [dynamic crumbs...] [spacer] [seed controls]
+            // We tagged dynamic elements with a class to find them
+            var toRemove = new List<VisualElement>();
+            foreach (var child in _breadcrumbBar.Children())
             {
-                _breadcrumbSegment.text = layers[1].DisplayName;
-                _breadcrumbSegment.style.color = layers.Count > 2
-                    ? new Color(0.5f, 0.8f, 1f) // clickable color
-                    : new Color(0.5f, 0.8f, 1f); // current level
+                if (child.ClassListContains("breadcrumb-dynamic"))
+                    toRemove.Add(child);
             }
-            else
+            foreach (var el in toRemove)
+                el.RemoveFromHierarchy();
+
+            // Also hide the old hardcoded labels (they may still be in the hierarchy)
+            _breadcrumbStage.style.display = DisplayStyle.None;
+            _breadcrumbSegment.style.display = DisplayStyle.None;
+            _breadcrumbSep2.style.display = DisplayStyle.None;
+            _breadcrumbSpellCard.style.display = DisplayStyle.None;
+            _breadcrumbSep3.style.display = DisplayStyle.None;
+            _breadcrumbDetail.style.display = DisplayStyle.None;
+
+            // Hide the static separator between Stage and Segment
+            foreach (var child in _breadcrumbBar.Children())
             {
-                _breadcrumbSegment.text = "\u2014";
+                if (child.ClassListContains("breadcrumb-static-sep"))
+                    child.style.display = DisplayStyle.None;
             }
 
-            if (layers.Count >= 3)
+            // Find the spacer (first element with flexGrow=1) to insert before it
+            VisualElement spacer = null;
+            foreach (var child in _breadcrumbBar.Children())
             {
-                _breadcrumbSep2.style.display = DisplayStyle.Flex;
-                _breadcrumbSpellCard.style.display = DisplayStyle.Flex;
+                if (child.style.flexGrow == new StyleFloat(1f))
+                {
+                    spacer = child;
+                    break;
+                }
+            }
+            int insertIndex = spacer != null ? _breadcrumbBar.IndexOf(spacer) : _breadcrumbBar.childCount;
 
-                // Show [M] marker if the current SpellCard is an override
-                var displayName = layers[2].DisplayName;
-                if (layers[2].Layer is SpellCardDetailLayer scLayer &&
+            // Generate dynamic breadcrumb labels
+            for (int i = 0; i < layers.Count; i++)
+            {
+                if (i > 0)
+                {
+                    var sep = new Label(">");
+                    sep.AddToClassList("breadcrumb-dynamic");
+                    sep.style.color = new Color(0.5f, 0.5f, 0.5f);
+                    sep.style.marginLeft = 4;
+                    sep.style.marginRight = 4;
+                    _breadcrumbBar.Insert(insertIndex++, sep);
+                }
+
+                var displayName = layers[i].DisplayName;
+
+                // Show [M] marker for modified SpellCards
+                if (layers[i].Layer is SpellCardDetailLayer scLayer &&
                     !string.IsNullOrEmpty(scLayer.ContextId) &&
                     _editingBossFightSegment != null &&
                     OverrideManager.HasOverride(
@@ -2408,31 +2447,54 @@ namespace STGEngine.Editor.UI.Timeline
                         scLayer.SpellCardId))
                 {
                     displayName = $"[M] {displayName}";
-                    _breadcrumbSpellCard.style.color = new Color(1f, 0.7f, 0.3f); // Orange for modified
+                }
+
+                bool isLast = (i == layers.Count - 1);
+                var label = new Label(displayName);
+                label.AddToClassList("breadcrumb-dynamic");
+                label.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+                if (isLast)
+                {
+                    // Current layer — bright color, not clickable
+                    label.style.color = new Color(0.5f, 1f, 0.7f);
                 }
                 else
                 {
-                    _breadcrumbSpellCard.style.color = new Color(0.5f, 0.8f, 1f);
+                    // Parent layer — clickable
+                    label.style.color = new Color(0.5f, 0.8f, 1f);
+                    int depth = i;
+                    label.RegisterCallback<ClickEvent>(_ =>
+                    {
+                        if (depth == 0 && _stageLayer != null)
+                        {
+                            // Special handling for Stage level
+                            if (_editingSpellCard != null)
+                            {
+                                _editingSpellCard = null;
+                                _editingSpellCardId = null;
+                                _editingBossFightSegment = null;
+                            }
+                            NavigateToDepth(0);
+                            _currentLayer = _stageLayer;
+                            _trackArea.SetLayer(_stageLayer);
+                            LoadStageOverviewPreview();
+                            RebuildBreadcrumb();
+                            NotifyWavePlaceholders();
+                        }
+                        else
+                        {
+                            if (_editingSpellCard != null)
+                                ExitSpellCardEditing();
+                            else if (_navigationStack.Count > depth)
+                                NavigateToDepth(depth);
+                        }
+                    });
+                    label.style.cursor = new UnityEngine.UIElements.Cursor(); // indicate clickable
                 }
-                _breadcrumbSpellCard.text = displayName;
-            }
-            else
-            {
-                _breadcrumbSep2.style.display = DisplayStyle.None;
-                _breadcrumbSpellCard.style.display = DisplayStyle.None;
-            }
 
-            // Fourth level: Pattern detail (e.g. PatternLayer from SpellCard)
-            if (layers.Count >= 4)
-            {
-                _breadcrumbSep3.style.display = DisplayStyle.Flex;
-                _breadcrumbDetail.style.display = DisplayStyle.Flex;
-                _breadcrumbDetail.text = layers[3].DisplayName;
-            }
-            else
-            {
-                _breadcrumbSep3.style.display = DisplayStyle.None;
-                _breadcrumbDetail.style.display = DisplayStyle.None;
+                label.style.marginRight = 4;
+                _breadcrumbBar.Insert(insertIndex++, label);
             }
         }
 

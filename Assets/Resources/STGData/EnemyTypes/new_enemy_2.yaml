@@ -1,9 +1,11 @@
 id: 5917071cde57
 name: New Enemy Type
 health: 10
-
 scale: 1
-patterns: []
-
+patterns:
+- pattern_id: demo_cone_bounce
+  delay: 1.052718
+  duration: 5
+  offset: {x: 0, y: 0, z: 0}
 color: {r: 1, g: 1, b: 1, a: 1}
 mesh_type: Diamond

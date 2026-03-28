@@ -8,4 +8,11 @@ enemies:
     position: {x: 0, y: 5, z: 0}
   - time: 3
     position: {x: 0, y: -5, z: 0}
+- enemy_type_id: 5917071cde57
+  spawn_delay: 0.7413505
+  path:
+  - time: 0
+    position: {x: 0, y: 5, z: 0}
+  - time: 3
+    position: {x: 3, y: -5, z: 0}
 duration: 10
