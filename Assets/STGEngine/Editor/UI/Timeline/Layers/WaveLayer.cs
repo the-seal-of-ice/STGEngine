@@ -205,13 +205,15 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (block?.DataSource is EnemyInstance ei && Catalog != null)
             {
-                var path = Catalog.GetEnemyTypePath(ei.EnemyTypeId);
+                // Resolve EnemyType with override awareness (same context as this Wave)
+                var path = OverrideManager.ResolveEnemyTypePath(Catalog, ContextId, ei.EnemyTypeId);
                 if (File.Exists(path))
                 {
                     var enemyType = YamlSerializer.DeserializeEnemyTypeFromFile(path);
                     return new EnemyTypeLayer(enemyType, ei.EnemyTypeId, Catalog)
                     {
-                        SourceInstance = ei
+                        SourceInstance = ei,
+                        ContextId = ContextId // 继承 Wave 的 override context
                     };
                 }
             }

@@ -162,7 +162,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 var resolved = _library?.ResolveClone(ep.PatternId);
                 if (resolved != null)
-                    return new PatternLayer(resolved, ep.PatternId);
+                    return new PatternLayer(resolved, ep.PatternId, ContextId);
                 Debug.LogWarning($"[EnemyTypeLayer] Cannot resolve pattern '{ep.PatternId}'");
             }
             return null;
@@ -455,6 +455,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>The EnemyInstance that entered this layer. Used for path-based preview positioning.</summary>
         public EnemyInstance SourceInstance { get; set; }
+
+        /// <summary>Override context ID (inherited from parent WaveLayer). Null = edit original template.</summary>
+        public string ContextId { get; set; }
 
         /// <summary>Pattern library for resolving pattern IDs. Set by WireLayerToTrackArea.</summary>
         public PatternLibrary Library

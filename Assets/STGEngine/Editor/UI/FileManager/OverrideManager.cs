@@ -80,6 +80,20 @@ namespace STGEngine.Editor.UI.FileManager
             return catalog.GetWavePath(waveId);
         }
 
+        /// <summary>
+        /// Resolve an EnemyType YAML path: override first, then catalog fallback.
+        /// </summary>
+        public static string ResolveEnemyTypePath(STGCatalog catalog, string contextId, string enemyTypeId)
+        {
+            if (!string.IsNullOrEmpty(contextId))
+            {
+                var overridePath = GetOverridePath(contextId, enemyTypeId);
+                if (File.Exists(overridePath))
+                    return overridePath;
+            }
+            return catalog.GetEnemyTypePath(enemyTypeId);
+        }
+
         // ── Write / Delete ──
 
         /// <summary>

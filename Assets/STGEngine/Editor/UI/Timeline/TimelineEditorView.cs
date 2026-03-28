@@ -2179,7 +2179,7 @@ namespace STGEngine.Editor.UI.Timeline
                 etLayer.InvalidateBlocks(); // Rebuild blocks now that Library is set
                 etLayer.OnEnemyTypeChanged = () =>
                 {
-                    SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                    SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
                 };
                 etLayer.OnAddPatternRequested = () =>
                 {
@@ -2195,7 +2195,7 @@ namespace STGEngine.Editor.UI.Timeline
                             var cmd = ListCommand<EnemyPattern>.Remove(
                                 etLayer.EnemyType.Patterns, idx, "Delete Pattern from EnemyType");
                             _commandStack.Execute(cmd);
-                            SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                            SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
                         }
                     }
                 };
@@ -2618,13 +2618,21 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>
         /// Save an EnemyType to disk and update the catalog.
         /// </summary>
-        private void SaveEnemyType(EnemyType enemyType, string enemyTypeId)
+        private void SaveEnemyType(EnemyType enemyType, string enemyTypeId, string contextId = null)
         {
             if (_catalog == null || enemyType == null) return;
             try
             {
-                var path = _catalog.GetEnemyTypePath(enemyTypeId);
-                YamlSerializer.SerializeEnemyTypeToFile(enemyType, path);
+                if (!string.IsNullOrEmpty(contextId))
+                {
+                    var yaml = YamlSerializer.SerializeEnemyType(enemyType);
+                    OverrideManager.SaveOverride(contextId, enemyTypeId, yaml);
+                }
+                else
+                {
+                    var path = _catalog.GetEnemyTypePath(enemyTypeId);
+                    YamlSerializer.SerializeEnemyTypeToFile(enemyType, path);
+                }
                 _catalog.AddOrUpdateEnemyType(enemyTypeId, enemyType.Name);
                 STGCatalog.Save(_catalog);
             }
@@ -2656,8 +2664,8 @@ namespace STGEngine.Editor.UI.Timeline
 
             foreach (var ei in wave.Enemies)
             {
-                // Resolve enemy type
-                var etPath = _catalog.GetEnemyTypePath(ei.EnemyTypeId);
+                // Resolve enemy type (override-aware, same context as wave)
+                var etPath = OverrideManager.ResolveEnemyTypePath(_catalog, waveContextId, ei.EnemyTypeId);
                 if (string.IsNullOrEmpty(etPath) || !System.IO.File.Exists(etPath)) continue;
                 EnemyType enemyType;
                 try { enemyType = YamlSerializer.DeserializeEnemyTypeFromFile(etPath); }
@@ -2884,7 +2892,7 @@ namespace STGEngine.Editor.UI.Timeline
                     var cmd = ListCommand<EnemyPattern>.Add(
                         etLayer.EnemyType.Patterns, newEp, desc: "Add Pattern to EnemyType");
                     _commandStack.Execute(cmd);
-                    SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                    SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
                 })
                 { text = pid };
                 btn.style.backgroundColor = new Color(0.25f, 0.25f, 0.25f);
@@ -3519,7 +3527,8 @@ namespace STGEngine.Editor.UI.Timeline
             // ── Append EnemyType stats below path editor ──
             if (_catalog != null)
             {
-                var etPath = _catalog.GetEnemyTypePath(ei.EnemyTypeId);
+                var waveCtx = waveLayer?.ContextId;
+                var etPath = OverrideManager.ResolveEnemyTypePath(_catalog, waveCtx, ei.EnemyTypeId);
                 if (System.IO.File.Exists(etPath))
                 {
                     var enemyType = YamlSerializer.DeserializeEnemyTypeFromFile(etPath);
@@ -3537,14 +3546,12 @@ namespace STGEngine.Editor.UI.Timeline
                     etHeader.style.marginBottom = 4;
                     container.Add(etHeader);
 
-                    // Reuse EnemyTypeLayer's panel builder (read-only, no commandStack)
+                    // Reuse EnemyTypeLayer's panel builder
                     var tempLayer = new EnemyTypeLayer(enemyType, ei.EnemyTypeId, _catalog);
+                    tempLayer.ContextId = waveCtx;
                     tempLayer.OnEnemyTypeChanged = () =>
                     {
-                        var savePath = _catalog.GetEnemyTypePath(ei.EnemyTypeId);
-                        YamlSerializer.SerializeEnemyTypeToFile(enemyType, savePath);
-                        _catalog.AddOrUpdateEnemyType(ei.EnemyTypeId, enemyType.Name);
-                        STGCatalog.Save(_catalog);
+                        SaveEnemyType(enemyType, ei.EnemyTypeId, waveCtx);
                     };
                     tempLayer.BuildEnemyTypePropertiesPanel(container, _commandStack);
                 }
@@ -3579,7 +3586,7 @@ namespace STGEngine.Editor.UI.Timeline
                     () => ep.Delay, v => ep.Delay = v,
                     Mathf.Max(0f, e.newValue));
                 _commandStack.Execute(cmd);
-                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
             });
             container.Add(delayField);
 
@@ -3593,7 +3600,7 @@ namespace STGEngine.Editor.UI.Timeline
                     () => ep.Duration, v => ep.Duration = v,
                     Mathf.Max(0.1f, e.newValue));
                 _commandStack.Execute(cmd);
-                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
             });
             container.Add(durField);
 
@@ -3607,7 +3614,7 @@ namespace STGEngine.Editor.UI.Timeline
                     "Change EnemyPattern Offset",
                     () => ep.Offset, v => ep.Offset = v, newOffset);
                 _commandStack.Execute(cmd);
-                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
             });
             container.Add(epOx);
 
@@ -3620,7 +3627,7 @@ namespace STGEngine.Editor.UI.Timeline
                     "Change EnemyPattern Offset",
                     () => ep.Offset, v => ep.Offset = v, newOffset);
                 _commandStack.Execute(cmd);
-                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
             });
             container.Add(epOy);
 
@@ -3633,7 +3640,7 @@ namespace STGEngine.Editor.UI.Timeline
                     "Change EnemyPattern Offset",
                     () => ep.Offset, v => ep.Offset = v, newOffset);
                 _commandStack.Execute(cmd);
-                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
             });
             container.Add(epOz);
 
@@ -4639,7 +4646,7 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else if (_currentLayer is EnemyTypeLayer etLayer)
             {
-                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
             }
             else if (_currentLayer is PatternLayer patLayer)
             {
