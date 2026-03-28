@@ -21,7 +21,7 @@ namespace STGEngine.Editor.UI.FileManager
         /// <summary>Relative path under STGData/, e.g. "Patterns/demo_ring_wave.yaml".</summary>
         public string File;
 
-        public string DisplayLabel => string.IsNullOrEmpty(Name) ? Id : $"{Name}  ({Id})";
+        public string DisplayLabel => string.IsNullOrEmpty(Name) ? Id.Substring(0, Math.Min(8, Id.Length)) : Name;
     }
 
     /// <summary>
@@ -121,16 +121,11 @@ namespace STGEngine.Editor.UI.FileManager
             if (entry != null)
             {
                 entry.Name = name;
+                return;
             }
-            else
-            {
-                Patterns.Add(new CatalogEntry
-                {
-                    Id = id,
-                    Name = name,
-                    File = $"Patterns/{id}.yaml"
-                });
-            }
+            var slug = NameToSlug(name);
+            slug = EnsureUniquePatternFile(slug);
+            Patterns.Add(new CatalogEntry { Id = id, Name = name, File = $"Patterns/{slug}.yaml" });
         }
 
         public void AddOrUpdateStage(string id, string name)
@@ -139,16 +134,11 @@ namespace STGEngine.Editor.UI.FileManager
             if (entry != null)
             {
                 entry.Name = name;
+                return;
             }
-            else
-            {
-                Stages.Add(new CatalogEntry
-                {
-                    Id = id,
-                    Name = name,
-                    File = $"Stages/{id}.yaml"
-                });
-            }
+            var slug = NameToSlug(name);
+            slug = EnsureUniqueStageFile(slug);
+            Stages.Add(new CatalogEntry { Id = id, Name = name, File = $"Stages/{slug}.yaml" });
         }
 
         public void AddOrUpdateEnemyType(string id, string name)
@@ -157,16 +147,11 @@ namespace STGEngine.Editor.UI.FileManager
             if (entry != null)
             {
                 entry.Name = name;
+                return;
             }
-            else
-            {
-                EnemyTypes.Add(new CatalogEntry
-                {
-                    Id = id,
-                    Name = name,
-                    File = $"EnemyTypes/{id}.yaml"
-                });
-            }
+            var slug = NameToSlug(name);
+            slug = EnsureUniqueEnemyTypeFile(slug);
+            EnemyTypes.Add(new CatalogEntry { Id = id, Name = name, File = $"EnemyTypes/{slug}.yaml" });
         }
 
         public void AddOrUpdateWave(string id, string name)
@@ -175,16 +160,11 @@ namespace STGEngine.Editor.UI.FileManager
             if (entry != null)
             {
                 entry.Name = name;
+                return;
             }
-            else
-            {
-                Waves.Add(new CatalogEntry
-                {
-                    Id = id,
-                    Name = name,
-                    File = $"Waves/{id}.yaml"
-                });
-            }
+            var slug = NameToSlug(name);
+            slug = EnsureUniqueWaveFile(slug);
+            Waves.Add(new CatalogEntry { Id = id, Name = name, File = $"Waves/{slug}.yaml" });
         }
 
         public void AddOrUpdateSpellCard(string id, string name)
@@ -193,16 +173,11 @@ namespace STGEngine.Editor.UI.FileManager
             if (entry != null)
             {
                 entry.Name = name;
+                return;
             }
-            else
-            {
-                SpellCards.Add(new CatalogEntry
-                {
-                    Id = id,
-                    Name = name,
-                    File = $"SpellCards/{id}.yaml"
-                });
-            }
+            var slug = NameToSlug(name);
+            slug = EnsureUniqueSpellCardFile(slug);
+            SpellCards.Add(new CatalogEntry { Id = id, Name = name, File = $"SpellCards/{slug}.yaml" });
         }
 
         public bool RemovePattern(string id)
@@ -330,62 +305,100 @@ namespace STGEngine.Editor.UI.FileManager
             return string.IsNullOrEmpty(s) ? "unnamed" : s;
         }
 
+        /// <summary>Convert a display name to a filesystem-safe slug for file naming.</summary>
+        public static string NameToSlug(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return $"unnamed_{Guid.NewGuid().ToString("N").Substring(0, 6)}";
+            var slug = name.Trim().ToLowerInvariant();
+            slug = Regex.Replace(slug, @"[^a-z0-9\u4e00-\u9fff]+", "_");
+            slug = slug.Trim('_');
+            if (string.IsNullOrEmpty(slug)) slug = $"unnamed_{Guid.NewGuid().ToString("N").Substring(0, 6)}";
+            return slug;
+        }
+
         /// <summary>
         /// Ensure the ID is unique within a list by appending _2, _3, etc.
         /// </summary>
-        public string EnsureUniquePatternId(string baseId)
+        public string EnsureUniquePatternId(string _) => Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        public string EnsureUniqueStageId(string _) => Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        public string EnsureUniqueEnemyTypeId(string _) => Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        public string EnsureUniqueWaveId(string _) => Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        public string EnsureUniqueSpellCardId(string _) => Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        // ─── File Slug Uniqueness ───
+
+        public string EnsureUniquePatternFile(string slug)
         {
-            if (FindPattern(baseId) == null) return baseId;
-            for (int i = 2; i < 1000; i++)
+            var path = Path.Combine(PatternsDir, $"{slug}.yaml");
+            if (!System.IO.File.Exists(path) && Patterns.All(e => e.File != $"Patterns/{slug}.yaml")) return slug;
+            for (int i = 2; i < 100; i++)
             {
-                var candidate = $"{baseId}_{i}";
-                if (FindPattern(candidate) == null) return candidate;
+                var candidate = $"{slug}_{i}";
+                var candidatePath = Path.Combine(PatternsDir, $"{candidate}.yaml");
+                if (!System.IO.File.Exists(candidatePath) && Patterns.All(e => e.File != $"Patterns/{candidate}.yaml"))
+                    return candidate;
             }
-            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+            return $"{slug}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
         }
 
-        public string EnsureUniqueStageId(string baseId)
+        public string EnsureUniqueStageFile(string slug)
         {
-            if (FindStage(baseId) == null) return baseId;
-            for (int i = 2; i < 1000; i++)
+            var path = Path.Combine(StagesDir, $"{slug}.yaml");
+            if (!System.IO.File.Exists(path) && Stages.All(e => e.File != $"Stages/{slug}.yaml")) return slug;
+            for (int i = 2; i < 100; i++)
             {
-                var candidate = $"{baseId}_{i}";
-                if (FindStage(candidate) == null) return candidate;
+                var candidate = $"{slug}_{i}";
+                var candidatePath = Path.Combine(StagesDir, $"{candidate}.yaml");
+                if (!System.IO.File.Exists(candidatePath) && Stages.All(e => e.File != $"Stages/{candidate}.yaml"))
+                    return candidate;
             }
-            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+            return $"{slug}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
         }
 
-        public string EnsureUniqueEnemyTypeId(string baseId)
+        public string EnsureUniqueEnemyTypeFile(string slug)
         {
-            if (FindEnemyType(baseId) == null) return baseId;
-            for (int i = 2; i < 1000; i++)
+            var path = Path.Combine(EnemyTypesDir, $"{slug}.yaml");
+            if (!System.IO.File.Exists(path) && EnemyTypes.All(e => e.File != $"EnemyTypes/{slug}.yaml")) return slug;
+            for (int i = 2; i < 100; i++)
             {
-                var candidate = $"{baseId}_{i}";
-                if (FindEnemyType(candidate) == null) return candidate;
+                var candidate = $"{slug}_{i}";
+                var candidatePath = Path.Combine(EnemyTypesDir, $"{candidate}.yaml");
+                if (!System.IO.File.Exists(candidatePath) && EnemyTypes.All(e => e.File != $"EnemyTypes/{candidate}.yaml"))
+                    return candidate;
             }
-            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+            return $"{slug}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
         }
 
-        public string EnsureUniqueWaveId(string baseId)
+        public string EnsureUniqueWaveFile(string slug)
         {
-            if (FindWave(baseId) == null) return baseId;
-            for (int i = 2; i < 1000; i++)
+            var path = Path.Combine(WavesDir, $"{slug}.yaml");
+            if (!System.IO.File.Exists(path) && Waves.All(e => e.File != $"Waves/{slug}.yaml")) return slug;
+            for (int i = 2; i < 100; i++)
             {
-                var candidate = $"{baseId}_{i}";
-                if (FindWave(candidate) == null) return candidate;
+                var candidate = $"{slug}_{i}";
+                var candidatePath = Path.Combine(WavesDir, $"{candidate}.yaml");
+                if (!System.IO.File.Exists(candidatePath) && Waves.All(e => e.File != $"Waves/{candidate}.yaml"))
+                    return candidate;
             }
-            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+            return $"{slug}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
         }
 
-        public string EnsureUniqueSpellCardId(string baseId)
+        public string EnsureUniqueSpellCardFile(string slug)
         {
-            if (FindSpellCard(baseId) == null) return baseId;
-            for (int i = 2; i < 1000; i++)
+            var path = Path.Combine(SpellCardsDir, $"{slug}.yaml");
+            if (!System.IO.File.Exists(path) && SpellCards.All(e => e.File != $"SpellCards/{slug}.yaml")) return slug;
+            for (int i = 2; i < 100; i++)
             {
-                var candidate = $"{baseId}_{i}";
-                if (FindSpellCard(candidate) == null) return candidate;
+                var candidate = $"{slug}_{i}";
+                var candidatePath = Path.Combine(SpellCardsDir, $"{candidate}.yaml");
+                if (!System.IO.File.Exists(candidatePath) && SpellCards.All(e => e.File != $"SpellCards/{candidate}.yaml"))
+                    return candidate;
             }
-            return $"{baseId}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+            return $"{slug}_{Guid.NewGuid().ToString("N").Substring(0, 4)}";
         }
 
         // ─── Migration ───

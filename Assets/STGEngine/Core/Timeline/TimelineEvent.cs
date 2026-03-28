@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Serialization;
@@ -10,7 +11,7 @@ namespace STGEngine.Core.Timeline
     /// </summary>
     public abstract class TimelineEvent
     {
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
 
         /// <summary>Start time relative to the segment's beginning (seconds).</summary>
         public float StartTime { get; set; }

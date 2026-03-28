@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace STGEngine.Core.Timeline
@@ -19,7 +20,7 @@ namespace STGEngine.Core.Timeline
     /// </summary>
     public class TimelineSegment
     {
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
         public string Name { get; set; } = "";
         public SegmentType Type { get; set; } = SegmentType.MidStage;
 

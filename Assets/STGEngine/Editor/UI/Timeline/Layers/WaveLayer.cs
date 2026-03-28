@@ -35,7 +35,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             get
             {
                 var name = _resolveTypeName?.Invoke(_enemy.EnemyTypeId);
-                return string.IsNullOrEmpty(name) ? _enemy.EnemyTypeId : name;
+                return string.IsNullOrEmpty(name)
+                    ? _enemy.EnemyTypeId.Substring(0, Math.Min(8, _enemy.EnemyTypeId.Length))
+                    : name;
             }
         }
 

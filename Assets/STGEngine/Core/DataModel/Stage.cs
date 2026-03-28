@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using STGEngine.Core.Timeline;
 
@@ -9,7 +10,7 @@ namespace STGEngine.Core.DataModel
     /// </summary>
     public class Stage
     {
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
         public string Name { get; set; } = "";
 
         /// <summary>

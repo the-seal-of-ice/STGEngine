@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -36,7 +37,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 var name = !string.IsNullOrEmpty(_spellCard.Name)
                     ? _spellCard.Name
-                    : _spellCardId;
+                    : _spellCardId.Substring(0, Math.Min(8, _spellCardId.Length));
                 return _isModified ? $"[M] {name}" : name;
             }
         }

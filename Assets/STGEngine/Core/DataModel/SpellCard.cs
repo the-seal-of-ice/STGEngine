@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,7 +11,7 @@ namespace STGEngine.Core.DataModel
     /// </summary>
     public class SpellCard
     {
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
         public string Name { get; set; } = "";
 
         // ── Bullet configuration ──

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -69,8 +70,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public string DisplayLabel => _event switch
         {
-            SpawnPatternEvent sp => sp.PatternId,
-            SpawnWaveEvent sw => $"\u2693 {sw.WaveId}",
+            SpawnPatternEvent sp => sp.ResolvedPattern?.Name ?? sp.PatternId.Substring(0, Math.Min(8, sp.PatternId.Length)),
+            SpawnWaveEvent sw => $"\u2693 {sw.WaveId.Substring(0, Math.Min(8, sw.WaveId.Length))}",
             _ => _event.Id
         };
 

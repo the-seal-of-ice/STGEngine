@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using STGEngine.Core.Emitters;
@@ -52,7 +53,7 @@ namespace STGEngine.Core.DataModel
     /// </summary>
     public class BulletPattern
     {
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
         public string Name { get; set; } = "";
 
         /// <summary>Emitter: determines initial bullet distribution.</summary>

@@ -36,7 +36,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         }
 
         public string Id => _pattern.PatternId;
-        public string DisplayLabel => _pattern.PatternId;
+        public string DisplayLabel => _resolvedPattern?.Name ?? _pattern.PatternId.Substring(0, Math.Min(8, _pattern.PatternId.Length));
 
         public float StartTime
         {

@@ -32,7 +32,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         }
 
         public string Id => _patternId;
-        public string DisplayLabel => _patternId;
+        public string DisplayLabel => !string.IsNullOrEmpty(_pattern?.Name) ? _pattern.Name : _patternId.Substring(0, Math.Min(8, _patternId.Length));
 
         public float StartTime { get => 0f; set { } }
         public float Duration
@@ -172,7 +172,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         // ── Identity ──
 
         public string LayerId => $"pattern:{_patternId}";
-        public string DisplayName => _patternId;
+        public string DisplayName => !string.IsNullOrEmpty(_pattern?.Name) ? _pattern.Name : _patternId.Substring(0, Math.Min(8, _patternId.Length));
 
         // ── Block data ──
 

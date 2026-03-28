@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace STGEngine.Core.DataModel
@@ -8,7 +9,7 @@ namespace STGEngine.Core.DataModel
     /// </summary>
     public class Wave
     {
-        public string Id { get; set; } = "";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
         public string Name { get; set; } = "";
 
         /// <summary>Enemy instances in this wave.</summary>

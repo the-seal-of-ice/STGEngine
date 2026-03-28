@@ -2938,7 +2938,7 @@ namespace STGEngine.Editor.UI.Timeline
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
 
-            var patternHeader = new Label($"Pattern: {patLayer.PatternId}");
+            var patternHeader = new Label($"Pattern: {_catalog?.FindPattern(patLayer.PatternId)?.Name ?? patLayer.PatternId}");
             patternHeader.style.color = new Color(0.7f, 0.85f, 1f);
             patternHeader.style.unityFontStyleAndWeight = FontStyle.Bold;
             patternHeader.style.marginBottom = 4;
@@ -3015,7 +3015,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void BuildSpellCardBlockProperties(SpellCard sc, string scId, BossFightLayer bfLayer)
         {
-            _propertyHeaderLabel.text = $"SpellCard: {scId}";
+            _propertyHeaderLabel.text = $"SpellCard: {_catalog?.FindSpellCard(scId)?.Name ?? scId}";
             var container = new VisualElement();
             container.style.paddingTop = 4;
             container.style.paddingLeft = 8;
@@ -3180,14 +3180,14 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void BuildSpellCardPatternProperties(SpellCardPattern scp, SpellCardDetailLayer scLayer)
         {
-            _propertyHeaderLabel.text = $"Pattern: {scp.PatternId}";
+            _propertyHeaderLabel.text = $"Pattern: {_catalog?.FindPattern(scp.PatternId)?.Name ?? scp.PatternId}";
             var container = new VisualElement();
             container.style.paddingTop = 4;
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
 
             // Pattern ID (read-only)
-            var idLabel = new Label($"Pattern: {scp.PatternId}");
+            var idLabel = new Label($"Pattern: {_catalog?.FindPattern(scp.PatternId)?.Name ?? scp.PatternId}");
             idLabel.style.color = new Color(0.7f, 0.85f, 1f);
             idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             idLabel.style.marginBottom = 4;
@@ -3293,14 +3293,14 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void BuildEnemyInstanceProperties(EnemyInstance ei, WaveLayer waveLayer)
         {
-            _propertyHeaderLabel.text = $"Enemy: {ei.EnemyTypeId}";
+            _propertyHeaderLabel.text = $"Enemy: {_catalog?.FindEnemyType(ei.EnemyTypeId)?.Name ?? ei.EnemyTypeId}";
             var container = new VisualElement();
             container.style.paddingTop = 4;
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
 
             // EnemyType ID (read-only)
-            var idLabel = new Label($"Type: {ei.EnemyTypeId}");
+            var idLabel = new Label($"Type: {_catalog?.FindEnemyType(ei.EnemyTypeId)?.Name ?? ei.EnemyTypeId}");
             idLabel.style.color = new Color(1f, 0.7f, 0.5f);
             idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             idLabel.style.marginBottom = 4;
@@ -3362,14 +3362,14 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void BuildEnemyPatternProperties(EnemyPattern ep, EnemyTypeLayer etLayer)
         {
-            _propertyHeaderLabel.text = $"Pattern: {ep.PatternId}";
+            _propertyHeaderLabel.text = $"Pattern: {_catalog?.FindPattern(ep.PatternId)?.Name ?? ep.PatternId}";
             var container = new VisualElement();
             container.style.paddingTop = 4;
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
 
             // Pattern ID (read-only)
-            var idLabel = new Label($"Pattern: {ep.PatternId}");
+            var idLabel = new Label($"Pattern: {_catalog?.FindPattern(ep.PatternId)?.Name ?? ep.PatternId}");
             idLabel.style.color = new Color(0.7f, 0.85f, 1f);
             idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             idLabel.style.marginBottom = 4;
@@ -3754,7 +3754,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void ShowSpawnWaveProperties(SpawnWaveEvent evt)
         {
-            _propertyHeaderLabel.text = $"Wave: {evt.WaveId}";
+            _propertyHeaderLabel.text = $"Wave: {_catalog?.FindWave(evt.WaveId)?.Name ?? evt.WaveId}";
             float layerDuration = _currentLayer?.TotalDuration ?? float.MaxValue;
 
             var props = new VisualElement();
@@ -3795,7 +3795,7 @@ namespace STGEngine.Editor.UI.Timeline
             _propDurField = durField;
 
             // Wave ID
-            var waveLabel = new Label($"Wave: {evt.WaveId}");
+            var waveLabel = new Label($"Wave: {_catalog?.FindWave(evt.WaveId)?.Name ?? evt.WaveId}");
             waveLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
             waveLabel.style.marginTop = 4;
             props.Add(waveLabel);
@@ -3838,7 +3838,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void ShowSpawnPatternProperties(SpawnPatternEvent evt)
         {
-            _propertyHeaderLabel.text = $"Event: {evt.PatternId}";
+            _propertyHeaderLabel.text = $"Event: {_catalog?.FindPattern(evt.PatternId)?.Name ?? evt.PatternId}";
             float layerDuration = _currentLayer?.TotalDuration ?? float.MaxValue;
 
             // Show event properties
@@ -3880,7 +3880,7 @@ namespace STGEngine.Editor.UI.Timeline
             _propDurField = durField;
 
             // Pattern ID
-            var patternLabel = new Label($"Pattern: {evt.PatternId}");
+            var patternLabel = new Label($"Pattern: {_catalog?.FindPattern(evt.PatternId)?.Name ?? evt.PatternId}");
             patternLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
             patternLabel.style.marginTop = 4;
             eventProps.Add(patternLabel);
