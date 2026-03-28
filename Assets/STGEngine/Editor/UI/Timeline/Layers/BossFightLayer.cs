@@ -130,7 +130,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     }));
                     entries.Add(new ContextMenuEntry("Save as New Template...", () =>
                     {
-                        OnSaveAsNewTemplateRequested?.Invoke(scBlock.SpellCardId, "spellcard");
+                        OnSaveAsNewTemplateRequested?.Invoke(scBlock.SpellCardId, "spellcard", instanceCtx);
                     }));
                 }
             }
@@ -188,8 +188,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         /// <summary>Raised when an override is reverted (deleted). UI should refresh.</summary>
         public Action OnOverrideChanged;
 
-        /// <summary>Raised when "Save as New Template" is selected. Args: resourceId, resourceType.</summary>
-        public Action<string, string> OnSaveAsNewTemplateRequested;
+        /// <summary>Raised when "Save as New Template" is selected. Args: resourceId, resourceType, instanceContextId.</summary>
+        public Action<string, string, string> OnSaveAsNewTemplateRequested;
 
         // ── Data access ──
 

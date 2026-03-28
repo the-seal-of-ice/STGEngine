@@ -2086,9 +2086,9 @@ namespace STGEngine.Editor.UI.Timeline
                     LoadBossFightPreview(seg);
                     RebuildBreadcrumb();
                 };
-                bfLayer.OnSaveAsNewTemplateRequested = (resourceId, resourceType) =>
+                bfLayer.OnSaveAsNewTemplateRequested = (resourceId, resourceType, instanceCtx) =>
                 {
-                    ShowSaveAsNewTemplateDialog(bfLayer.ContextId, resourceId, resourceType);
+                    ShowSaveAsNewTemplateDialog(instanceCtx, resourceId, resourceType);
                 };
             }
             else if (layer is SpellCardDetailLayer scDetailLayer)
@@ -2172,6 +2172,25 @@ namespace STGEngine.Editor.UI.Timeline
                         });
                     }
                 };
+                waveLayer.OnRevertOverrideRequested = () =>
+                {
+                    OverrideManager.DeleteOverride(waveLayer.ContextId, waveLayer.WaveId);
+                    // Reload wave from original file
+                    var origPath = _catalog.GetWavePath(waveLayer.WaveId);
+                    if (System.IO.File.Exists(origPath))
+                    {
+                        var origWave = YamlSerializer.DeserializeWaveFromFile(origPath);
+                        waveLayer.ReloadWave(origWave);
+                    }
+                    waveLayer.InvalidateBlocks();
+                    _trackArea.RebuildBlocks();
+                    LoadPreviewForLayer(waveLayer);
+                    ShowLayerSummary(_currentLayer);
+                };
+                waveLayer.OnSaveAsNewTemplateRequested = (resourceId, resourceType, ctx) =>
+                {
+                    ShowSaveAsNewTemplateDialog(ctx, resourceId, resourceType);
+                };
             }
             else if (layer is EnemyTypeLayer etLayer)
             {
@@ -2212,6 +2231,33 @@ namespace STGEngine.Editor.UI.Timeline
                             ShowLayerSummary(_currentLayer);
                         });
                     }
+                };
+                etLayer.OnRevertOverrideRequested = () =>
+                {
+                    OverrideManager.DeleteOverride(etLayer.ContextId, etLayer.EnemyTypeId);
+                    // Reload EnemyType from original file
+                    var origPath = _catalog.GetEnemyTypePath(etLayer.EnemyTypeId);
+                    if (System.IO.File.Exists(origPath))
+                    {
+                        var origEt = YamlSerializer.DeserializeEnemyTypeFromFile(origPath);
+                        // Replace in-place
+                        etLayer.EnemyType.Name = origEt.Name;
+                        etLayer.EnemyType.Health = origEt.Health;
+                        etLayer.EnemyType.Scale = origEt.Scale;
+                        etLayer.EnemyType.Color = origEt.Color;
+                        etLayer.EnemyType.MeshType = origEt.MeshType;
+                        etLayer.EnemyType.Patterns.Clear();
+                        if (origEt.Patterns != null)
+                            etLayer.EnemyType.Patterns.AddRange(origEt.Patterns);
+                    }
+                    etLayer.InvalidateBlocks();
+                    _trackArea.RebuildBlocks();
+                    LoadPreviewForLayer(etLayer);
+                    ShowLayerSummary(_currentLayer);
+                };
+                etLayer.OnSaveAsNewTemplateRequested = (resourceId, resourceType, ctx) =>
+                {
+                    ShowSaveAsNewTemplateDialog(ctx, resourceId, resourceType);
                 };
             }
         }
@@ -2560,17 +2606,21 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
-        /// Save a SpellCard to disk (override or original) based on current editing context.
+        /// Save a SpellCard to disk (override or original).
+        /// Uses explicit contextId if provided, otherwise falls back to global editing context.
         /// </summary>
-        private void SaveSpellCardInContext(SpellCard sc, string scId)
+        private void SaveSpellCardInContext(SpellCard sc, string scId, string contextId = null)
         {
             if (sc == null || scId == null || _catalog == null) return;
+            // Resolve effective context: explicit param > global editing state > null (original file)
+            var effectiveCtx = contextId
+                ?? (_editingBossFightSegment != null ? _editingSpellCardInstanceContext : null);
             try
             {
                 var yaml = YamlSerializer.SerializeSpellCard(sc);
-                if (_editingBossFightSegment != null && !string.IsNullOrEmpty(_editingSpellCardInstanceContext))
+                if (!string.IsNullOrEmpty(effectiveCtx))
                 {
-                    OverrideManager.SaveOverride(_editingSpellCardInstanceContext, scId, yaml);
+                    OverrideManager.SaveOverride(effectiveCtx, scId, yaml);
                 }
                 else
                 {
@@ -3077,6 +3127,9 @@ namespace STGEngine.Editor.UI.Timeline
                 container.style.paddingLeft = 8;
                 container.style.paddingRight = 8;
 
+                // Save context status bar
+                container.Add(CreateSaveContextBar("EnemyType", etLayer.ContextId));
+
                 // If we have a source EnemyInstance, show its path keyframe editor first
                 if (etLayer.SourceInstance != null)
                 {
@@ -3122,6 +3175,12 @@ namespace STGEngine.Editor.UI.Timeline
                 return;
             }
 
+            // Wave/generic layers: add save context bar before default panel
+            if (layer is WaveLayer wvSummary)
+            {
+                _propertyContent.Add(CreateSaveContextBar("Wave", wvSummary.ContextId));
+            }
+
             layer.BuildPropertiesPanel(_propertyContent, null);
             ApplyLightTextTheme(_propertyContent);
         }
@@ -3134,6 +3193,9 @@ namespace STGEngine.Editor.UI.Timeline
             container.style.paddingTop = 4;
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
+
+            // Save context status bar
+            container.Add(CreateSaveContextBar("Pattern", patLayer.ContextId));
 
             var patternHeader = new Label($"Pattern: {_catalog?.FindPattern(patLayer.PatternId)?.Name ?? patLayer.PatternId}");
             patternHeader.style.color = new Color(0.7f, 0.85f, 1f);
@@ -3219,11 +3281,11 @@ namespace STGEngine.Editor.UI.Timeline
             container.style.paddingLeft = 8;
             container.style.paddingRight = 8;
 
-            // Helper: execute command + persist to disk
+            // Helper: execute command + persist to disk (uses explicit instance context)
             void ExecAndSave(ICommand cmd)
             {
                 _commandStack.Execute(cmd);
-                SaveSpellCardInContext(sc, scId);
+                SaveSpellCardInContext(sc, scId, instanceContextId);
             }
 
             // Name
@@ -4819,6 +4881,47 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// Create an orange info bar indicating the user is editing an override copy.
+        /// </summary>
+        private static VisualElement CreateOverrideModeBar(string resourceType)
+        {
+            var bar = new VisualElement();
+            bar.style.flexDirection = FlexDirection.Row;
+            bar.style.alignItems = Align.Center;
+            bar.style.backgroundColor = new Color(0.35f, 0.25f, 0.1f, 0.85f);
+            bar.style.paddingLeft = 6;
+            bar.style.paddingRight = 6;
+            bar.style.paddingTop = 3;
+            bar.style.paddingBottom = 3;
+            bar.style.marginBottom = 4;
+            bar.style.borderTopLeftRadius = bar.style.borderTopRightRadius =
+                bar.style.borderBottomLeftRadius = bar.style.borderBottomRightRadius = 3;
+
+            var icon = new Label("\u270e"); // ✎
+            icon.style.fontSize = 12;
+            icon.style.color = new Color(1f, 0.7f, 0.3f);
+            icon.style.marginRight = 4;
+            bar.Add(icon);
+
+            var text = new Label($"Override mode — {resourceType} changes saved to instance copy");
+            text.style.fontSize = 10;
+            text.style.color = new Color(1f, 0.85f, 0.6f);
+            text.style.whiteSpace = WhiteSpace.Normal;
+            bar.Add(text);
+
+            return bar;
+        }
+
+        /// <summary>
+        /// Create a context-aware status bar for the properties panel.
+        /// Shows override mode (orange) or original file warning (yellow) based on contextId.
+        /// </summary>
+        private static VisualElement CreateSaveContextBar(string resourceType, string contextId)
+        {
+            return !string.IsNullOrEmpty(contextId)
+                ? CreateOverrideModeBar(resourceType)
+                : CreateOriginalFileWarning(resourceType);
+        }
         /// Called during drag to update property fields in real-time without rebuilding.
         /// </summary>
         private void OnEventValuesChanged(TimelineEvent evt)

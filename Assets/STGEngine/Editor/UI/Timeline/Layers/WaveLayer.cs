@@ -240,6 +240,19 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 }
             }
 
+            // Wave-level override operations
+            if (!string.IsNullOrEmpty(ContextId) && OverrideManager.HasOverride(ContextId, WaveId))
+            {
+                entries.Add(new ContextMenuEntry("Revert Wave to Original", () =>
+                {
+                    OnRevertOverrideRequested?.Invoke();
+                }));
+                entries.Add(new ContextMenuEntry("Save Wave as New Template...", () =>
+                {
+                    OnSaveAsNewTemplateRequested?.Invoke(WaveId, "wave", ContextId);
+                }));
+            }
+
             return entries;
         }
 
@@ -319,6 +332,17 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public Wave Wave => _wave;
         public string WaveId => _waveId;
 
+        /// <summary>Replace wave data in-place (for revert from override to original).</summary>
+        public void ReloadWave(Wave source)
+        {
+            if (source == null) return;
+            _wave.Name = source.Name;
+            _wave.Duration = source.Duration;
+            _wave.Enemies.Clear();
+            if (source.Enemies != null)
+                _wave.Enemies.AddRange(source.Enemies);
+        }
+
         /// <summary>Context ID for override resolution (= segment ID). Set by WireLayerToTrackArea.</summary>
         public string ContextId { get; set; }
 
@@ -332,6 +356,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>Fired when user requests to rename the EnemyType of a selected enemy instance.</summary>
         public Action<ITimelineBlock> OnRenameEnemyTypeRequested;
+
+        /// <summary>Fired when user requests to revert the Wave override to original.</summary>
+        public Action OnRevertOverrideRequested;
+
+        /// <summary>Fired when user requests to save the Wave override as a new template. Args: resourceId, resourceType, contextId.</summary>
+        public Action<string, string, string> OnSaveAsNewTemplateRequested;
 
         /// <summary>Called after wave-level properties (Name, Duration) are changed. Host should save.</summary>
         public Action OnWavePropertiesChanged;

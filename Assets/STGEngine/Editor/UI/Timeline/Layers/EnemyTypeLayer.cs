@@ -188,6 +188,19 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 }
             }
 
+            // EnemyType-level override operations
+            if (!string.IsNullOrEmpty(ContextId) && OverrideManager.HasOverride(ContextId, _enemyTypeId))
+            {
+                entries.Add(new ContextMenuEntry("Revert EnemyType to Original", () =>
+                {
+                    OnRevertOverrideRequested?.Invoke();
+                }));
+                entries.Add(new ContextMenuEntry("Save EnemyType as New Template...", () =>
+                {
+                    OnSaveAsNewTemplateRequested?.Invoke(_enemyTypeId, "enemytype", ContextId);
+                }));
+            }
+
             return entries;
         }
 
@@ -483,6 +496,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>Fired when user requests to rename the Pattern of a selected enemy pattern.</summary>
         public Action<ITimelineBlock> OnRenamePatternRequested;
+
+        /// <summary>Fired when user requests to revert the EnemyType override to original.</summary>
+        public Action OnRevertOverrideRequested;
+
+        /// <summary>Fired when user requests to save the EnemyType override as a new template. Args: resourceId, resourceType, contextId.</summary>
+        public Action<string, string, string> OnSaveAsNewTemplateRequested;
 
         // ── Internal ──
 

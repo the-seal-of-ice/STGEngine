@@ -165,9 +165,10 @@ namespace STGEngine.Editor.UI.FileManager
             string targetDir;
             switch (resourceType.ToLower())
             {
-                case "spellcard": targetDir = STGCatalog.SpellCardsDir; break;
-                case "pattern":   targetDir = STGCatalog.PatternsDir;   break;
-                case "wave":      targetDir = STGCatalog.WavesDir;      break;
+                case "spellcard":  targetDir = STGCatalog.SpellCardsDir;  break;
+                case "pattern":    targetDir = STGCatalog.PatternsDir;    break;
+                case "wave":       targetDir = STGCatalog.WavesDir;       break;
+                case "enemytype":  targetDir = STGCatalog.EnemyTypesDir;  break;
                 default:
                     Debug.LogError($"[OverrideManager] Unknown resource type: {resourceType}");
                     return null;
@@ -185,9 +186,10 @@ namespace STGEngine.Editor.UI.FileManager
             // Register in catalog
             switch (resourceType.ToLower())
             {
-                case "spellcard": catalog.AddOrUpdateSpellCard(newId, newId); break;
-                case "pattern":   catalog.AddOrUpdatePattern(newId, newId);   break;
-                case "wave":      catalog.AddOrUpdateWave(newId, newId);      break;
+                case "spellcard":  catalog.AddOrUpdateSpellCard(newId, newId);  break;
+                case "pattern":    catalog.AddOrUpdatePattern(newId, newId);    break;
+                case "wave":       catalog.AddOrUpdateWave(newId, newId);       break;
+                case "enemytype":  catalog.AddOrUpdateEnemyType(newId, newId);  break;
             }
             STGCatalog.Save(catalog);
 
