@@ -28,7 +28,7 @@ namespace STGEngine.Editor.UI.Timeline
         public float TimeOffset;
         /// <summary>World-space offset applied to all enemy positions.</summary>
         public Vector3 SpawnOffset;
-    }
+        }
 
     /// <summary>
     /// Main timeline editor view. Composes breadcrumb, toolbar, segment list,
@@ -987,7 +987,7 @@ namespace STGEngine.Editor.UI.Timeline
             historyBtn.tooltip = "Command History";
             _toolbar.Add(historyBtn);
 
-            var saveBtn = new Button(OnSaveStage) { text = "Save" };
+            var saveBtn = new Button(SaveCurrentLayerExplicit) { text = "Save" };
             saveBtn.style.width = 44;
             saveBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
             saveBtn.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
@@ -4723,6 +4723,74 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// Explicit save triggered by Ctrl+S or Save button.
+        /// Context-aware: saves the current layer's data and shows a brief confirmation flash.
+        /// For Stage/MidStage layers, opens the Stage save dialog (existing behavior).
+        /// For resource layers (Wave/EnemyType/SpellCard/Pattern), saves immediately.
+        /// </summary>
+        private void SaveCurrentLayerExplicit()
+        {
+            if (_currentLayer == null) return;
+
+            string savedWhat = null;
+
+            if (_currentLayer is PatternLayer patLayer)
+            {
+                SaveEditedPattern(patLayer.Pattern, patLayer.PatternId, GetPatternOverrideContext());
+                savedWhat = $"Pattern: {_catalog?.FindPattern(patLayer.PatternId)?.Name ?? patLayer.PatternId}";
+            }
+            else if (_currentLayer is EnemyTypeLayer etLayer)
+            {
+                SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId, etLayer.ContextId);
+                savedWhat = $"EnemyType: {etLayer.DisplayName}";
+            }
+            else if (_currentLayer is WaveLayer waveLayer)
+            {
+                SaveWaveData(waveLayer);
+                savedWhat = $"Wave: {waveLayer.DisplayName}";
+            }
+            else if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+                savedWhat = $"SpellCard: {scLayer.DisplayName}";
+            }
+            else if (_currentLayer is BossFightLayer bfLayer)
+            {
+                for (int i = 0; i < bfLayer.BlockCount; i++)
+                {
+                    var blk = bfLayer.GetBlock(i);
+                    if (blk is SpellCardBlock scBlk && blk.DataSource is SpellCard sc)
+                        SaveSpellCardInContext(sc, scBlk.SpellCardId, scBlk.InstanceContextId);
+                }
+                AutoSaveStage();
+                savedWhat = $"BossFight: {bfLayer.DisplayName}";
+            }
+            else
+            {
+                // Stage / MidStage — open Stage save dialog
+                OnSaveStage();
+                return;
+            }
+
+            if (savedWhat != null)
+                ShowSaveFlash(savedWhat);
+        }
+
+        /// <summary>
+        /// Show a brief green flash on the toolbar to confirm a save operation.
+        /// </summary>
+        private void ShowSaveFlash(string message)
+        {
+            var flash = new Label($"\u2713 Saved: {message}");
+            flash.style.color = new Color(0.5f, 1f, 0.5f);
+            flash.style.fontSize = 10;
+            flash.style.marginLeft = 8;
+            flash.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _toolbar.Add(flash);
+            flash.schedule.Execute(() => flash.RemoveFromHierarchy()).StartingIn(2000);
+        }
+
+        /// <summary>
         /// Persist the current Stage to disk. Called after any structural or property change
         /// to Segments or MidStage Events (which are stored inside the Stage YAML).
         /// Silently skips if the stage has no known file path (e.g. unsaved new stage).
@@ -5339,10 +5407,10 @@ namespace STGEngine.Editor.UI.Timeline
                 return true;
             }
 
-            // Ctrl+S → Save
+            // Ctrl+S → Context-aware save
             if (ctrl && keyCode == KeyCode.S)
             {
-                OnSaveStage();
+                SaveCurrentLayerExplicit();
                 return true;
             }
 
