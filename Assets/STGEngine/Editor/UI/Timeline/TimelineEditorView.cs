@@ -4791,6 +4791,174 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// "Save As" for the current layer — serialize current in-memory data to a new template file.
+        /// Works regardless of Override state (unlike SaveAsNewTemplate which requires an Override file).
+        /// For Stage/MidStage, falls back to OnSaveStage dialog.
+        /// </summary>
+        private void SaveCurrentLayerAs()
+        {
+            if (_currentLayer == null || _catalog == null) return;
+
+            string resourceType = null;
+            string currentName = null;
+            System.Func<string, bool> doSave = null;
+
+            if (_currentLayer is PatternLayer patLayer)
+            {
+                resourceType = "pattern";
+                currentName = _catalog.FindPattern(patLayer.PatternId)?.Name ?? patLayer.PatternId;
+                doSave = newId =>
+                {
+                    var path = System.IO.Path.Combine(STGCatalog.PatternsDir, $"{newId}.yaml");
+                    if (System.IO.File.Exists(path)) return false;
+                    YamlSerializer.SerializeToFile(patLayer.Pattern, path);
+                    _catalog.AddOrUpdatePattern(newId, currentName);
+                    STGCatalog.Save(_catalog);
+                    return true;
+                };
+            }
+            else if (_currentLayer is EnemyTypeLayer etLayer)
+            {
+                resourceType = "enemytype";
+                currentName = etLayer.DisplayName;
+                doSave = newId =>
+                {
+                    var path = System.IO.Path.Combine(STGCatalog.EnemyTypesDir, $"{newId}.yaml");
+                    if (System.IO.File.Exists(path)) return false;
+                    YamlSerializer.SerializeEnemyTypeToFile(etLayer.EnemyType, path);
+                    _catalog.AddOrUpdateEnemyType(newId, currentName);
+                    STGCatalog.Save(_catalog);
+                    return true;
+                };
+            }
+            else if (_currentLayer is WaveLayer waveLayer)
+            {
+                resourceType = "wave";
+                currentName = waveLayer.DisplayName;
+                doSave = newId =>
+                {
+                    var path = System.IO.Path.Combine(STGCatalog.WavesDir, $"{newId}.yaml");
+                    if (System.IO.File.Exists(path)) return false;
+                    YamlSerializer.SerializeWaveToFile(waveLayer.Wave, path);
+                    _catalog.AddOrUpdateWave(newId, currentName);
+                    STGCatalog.Save(_catalog);
+                    return true;
+                };
+            }
+            else if (_currentLayer is SpellCardDetailLayer scLayer)
+            {
+                resourceType = "spellcard";
+                currentName = scLayer.DisplayName;
+                doSave = newId =>
+                {
+                    var path = System.IO.Path.Combine(STGCatalog.SpellCardsDir, $"{newId}.yaml");
+                    if (System.IO.File.Exists(path)) return false;
+                    var yaml = YamlSerializer.SerializeSpellCard(scLayer.SpellCard);
+                    System.IO.File.WriteAllText(path, yaml);
+                    _catalog.AddOrUpdateSpellCard(newId, currentName);
+                    STGCatalog.Save(_catalog);
+                    return true;
+                };
+            }
+            else
+            {
+                // Stage / MidStage / BossFight — use Stage save dialog
+                OnSaveStage();
+                return;
+            }
+
+            // Show "Save As" dialog
+            ShowSaveAsDialog(resourceType, currentName, doSave);
+        }
+
+        private void ShowSaveAsDialog(string resourceType, string currentName, System.Func<string, bool> doSave)
+        {
+            var dialog = new VisualElement();
+            dialog.style.position = Position.Absolute;
+            dialog.style.left = dialog.style.right = dialog.style.top = dialog.style.bottom = 0;
+            dialog.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+            dialog.style.alignItems = Align.Center;
+            dialog.style.justifyContent = Justify.Center;
+
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.2f, 0.2f, 0.25f);
+            panel.style.paddingTop = panel.style.paddingBottom = 12;
+            panel.style.paddingLeft = panel.style.paddingRight = 16;
+            panel.style.borderTopLeftRadius = panel.style.borderTopRightRadius =
+                panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
+            panel.style.width = 320;
+
+            var title = new Label($"Save {resourceType} As New Template");
+            title.style.fontSize = 14;
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            panel.Add(title);
+
+            var desc = new Label($"Current: {currentName}");
+            desc.style.color = new Color(0.7f, 0.7f, 0.7f);
+            desc.style.marginBottom = 8;
+            panel.Add(desc);
+
+            var nameField = new TextField("Name:") { value = $"{currentName} (copy)" };
+            nameField.style.marginBottom = 8;
+            panel.Add(nameField);
+
+            var statusLabel = new Label("");
+            statusLabel.style.color = new Color(1f, 0.5f, 0.3f);
+            statusLabel.style.fontSize = 10;
+            statusLabel.style.marginBottom = 4;
+            panel.Add(statusLabel);
+
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.justifyContent = Justify.FlexEnd;
+
+            var saveBtn = new Button(() =>
+            {
+                var name = nameField.value?.Trim();
+                if (string.IsNullOrEmpty(name))
+                {
+                    statusLabel.text = "Name cannot be empty.";
+                    return;
+                }
+                var newId = Guid.NewGuid().ToString("N").Substring(0, 12);
+                if (doSave(newId))
+                {
+                    // Update the name in catalog
+                    switch (resourceType.ToLower())
+                    {
+                        case "pattern":    _catalog.AddOrUpdatePattern(newId, name);    break;
+                        case "enemytype":  _catalog.AddOrUpdateEnemyType(newId, name);  break;
+                        case "wave":       _catalog.AddOrUpdateWave(newId, name);       break;
+                        case "spellcard":  _catalog.AddOrUpdateSpellCard(newId, name);  break;
+                    }
+                    STGCatalog.Save(_catalog);
+                    ShowSaveFlash($"New {resourceType}: {name}");
+                    dialog.RemoveFromHierarchy();
+                }
+                else
+                {
+                    statusLabel.text = "Failed to save. File may already exist.";
+                }
+            }) { text = "Save As" };
+            saveBtn.style.backgroundColor = new Color(0.2f, 0.5f, 0.3f);
+            saveBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+
+            var cancelBtn = new Button(() => dialog.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginLeft = 8;
+
+            btnRow.Add(saveBtn);
+            btnRow.Add(cancelBtn);
+            panel.Add(btnRow);
+            dialog.Add(panel);
+
+            Root.panel.visualTree.Add(dialog);
+        }
+
+        /// <summary>
         /// Persist the current Stage to disk. Called after any structural or property change
         /// to Segments or MidStage Events (which are stored inside the Stage YAML).
         /// Silently skips if the stage has no known file path (e.g. unsaved new stage).
@@ -5407,8 +5575,15 @@ namespace STGEngine.Editor.UI.Timeline
                 return true;
             }
 
+            // Ctrl+Shift+S → Save As (new template from current layer)
+            if (ctrl && shift && keyCode == KeyCode.S)
+            {
+                SaveCurrentLayerAs();
+                return true;
+            }
+
             // Ctrl+S → Context-aware save
-            if (ctrl && keyCode == KeyCode.S)
+            if (ctrl && !shift && keyCode == KeyCode.S)
             {
                 SaveCurrentLayerExplicit();
                 return true;
