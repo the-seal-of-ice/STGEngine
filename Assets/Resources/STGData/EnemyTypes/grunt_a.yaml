@@ -1,9 +1,9 @@
-id: grunt_a
+id: f92ba9ea5258
 name: 小兵A
 health: 10
 scale: 1
 patterns:
-- pattern_id: demo_ring_split
+- pattern_id: 4cf7ab95555b
   delay: 0
   duration: 5
   offset: {x: 0, y: 0, z: 0}

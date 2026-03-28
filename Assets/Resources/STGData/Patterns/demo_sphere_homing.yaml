@@ -1,7 +1,7 @@
 # Demo pattern: sphere emitter with homing modifier
 # Showcases Phase 2 simulation modifier with delay-based homing.
 
-id: demo_sphere_homing
+id: 3f93f01c3aff
 name: Sphere Homing Demo
 emitter:
   type: sphere

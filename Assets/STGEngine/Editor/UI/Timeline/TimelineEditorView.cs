@@ -1986,6 +1986,29 @@ namespace STGEngine.Editor.UI.Timeline
                     _trackArea.SelectBlock(blk);
                     _trackArea.DeleteSelectedEvent();
                 };
+                midLayer.OnRenameRequested = blk =>
+                {
+                    if (blk?.DataSource is SpawnPatternEvent sp)
+                    {
+                        var curName = _catalog?.FindPattern(sp.PatternId)?.Name ?? sp.PatternId;
+                        ShowRenameDialog("Pattern", curName, newName =>
+                        {
+                            RenameResource("Pattern", sp.PatternId, newName);
+                            _trackArea.RebuildBlocks();
+                            ShowLayerSummary(_currentLayer);
+                        });
+                    }
+                    else if (blk?.DataSource is SpawnWaveEvent sw)
+                    {
+                        var curName = _catalog?.FindWave(sw.WaveId)?.Name ?? sw.WaveId;
+                        ShowRenameDialog("Wave", curName, newName =>
+                        {
+                            RenameResource("Wave", sw.WaveId, newName);
+                            _trackArea.RebuildBlocks();
+                            ShowLayerSummary(_currentLayer);
+                        });
+                    }
+                };
             }
             else if (layer is BossFightLayer bfLayer)
             {
@@ -2093,6 +2116,20 @@ namespace STGEngine.Editor.UI.Timeline
                     SaveWaveData(waveLayer);
                     _trackArea.RebuildBlocks();
                 };
+                waveLayer.OnRenameEnemyTypeRequested = blk =>
+                {
+                    if (blk?.DataSource is EnemyInstance ei)
+                    {
+                        var curName = _catalog?.FindEnemyType(ei.EnemyTypeId)?.Name ?? ei.EnemyTypeId;
+                        ShowRenameDialog("EnemyType", curName, newName =>
+                        {
+                            RenameResource("EnemyType", ei.EnemyTypeId, newName);
+                            waveLayer.InvalidateBlocks();
+                            _trackArea.RebuildBlocks();
+                            ShowLayerSummary(_currentLayer);
+                        });
+                    }
+                };
             }
             else if (layer is EnemyTypeLayer etLayer)
             {
@@ -2119,10 +2156,24 @@ namespace STGEngine.Editor.UI.Timeline
                         }
                     }
                 };
+                etLayer.OnRenamePatternRequested = blk =>
+                {
+                    if (blk?.DataSource is EnemyPattern ep)
+                    {
+                        var curName = _catalog?.FindPattern(ep.PatternId)?.Name ?? ep.PatternId;
+                        ShowRenameDialog("Pattern", curName, newName =>
+                        {
+                            RenameResource("Pattern", ep.PatternId, newName);
+                            etLayer.InvalidateBlocks();
+                            _trackArea.RebuildBlocks();
+                            ShowLayerSummary(_currentLayer);
+                        });
+                    }
+                };
             }
         }
 
-        private void ShowRenameIdDialog(string resourceType, string currentId, Action<string> onConfirm)
+        private void ShowRenameDialog(string resourceType, string currentName, Action<string> onConfirm)
         {
             var dialog = new VisualElement();
             dialog.style.position = Position.Absolute;
@@ -2139,16 +2190,16 @@ namespace STGEngine.Editor.UI.Timeline
                 panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 6;
             panel.style.width = 300;
 
-            var title = new Label($"Rename {resourceType} ID");
+            var title = new Label($"Rename {resourceType}");
             title.style.fontSize = 14;
             title.style.color = new Color(0.9f, 0.9f, 0.9f);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.marginBottom = 8;
             panel.Add(title);
 
-            var idField = new TextField("New ID:") { value = currentId };
-            idField.style.marginBottom = 8;
-            panel.Add(idField);
+            var nameField = new TextField("Name:") { value = currentName };
+            nameField.style.marginBottom = 8;
+            panel.Add(nameField);
 
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
@@ -2156,13 +2207,13 @@ namespace STGEngine.Editor.UI.Timeline
 
             var confirmBtn = new Button(() =>
             {
-                var newId = idField.value?.Trim();
-                if (string.IsNullOrEmpty(newId) || newId == currentId)
+                var newName = nameField.value?.Trim();
+                if (string.IsNullOrEmpty(newName) || newName == currentName)
                 {
                     dialog.RemoveFromHierarchy();
                     return;
                 }
-                onConfirm?.Invoke(newId);
+                onConfirm?.Invoke(newName);
                 dialog.RemoveFromHierarchy();
             }) { text = "Rename" };
             confirmBtn.style.backgroundColor = new Color(0.2f, 0.4f, 0.5f);
@@ -2179,6 +2230,54 @@ namespace STGEngine.Editor.UI.Timeline
             dialog.Add(panel);
 
             Root.panel.visualTree.Add(dialog);
+        }
+
+        /// <summary>
+        /// Rename a resource's display Name in catalog and YAML file.
+        /// UUID-based: only changes Name, never touches Id, file path, or references.
+        /// </summary>
+        private void RenameResource(string resourceType, string uuid, string newName)
+        {
+            if (_catalog == null || string.IsNullOrEmpty(uuid)) return;
+
+            CatalogEntry entry = resourceType switch
+            {
+                "Pattern" => _catalog.FindPattern(uuid),
+                "Wave" => _catalog.FindWave(uuid),
+                "EnemyType" => _catalog.FindEnemyType(uuid),
+                "SpellCard" => _catalog.FindSpellCard(uuid),
+                _ => null
+            };
+
+            if (entry == null)
+            {
+                Debug.LogWarning($"[Rename] {resourceType} '{uuid}' not found in catalog.");
+                return;
+            }
+
+            entry.Name = newName;
+            STGCatalog.Save(_catalog);
+
+            // Also update the Name field inside the YAML file
+            var filePath = System.IO.Path.Combine(STGCatalog.BasePath, entry.File);
+            if (System.IO.File.Exists(filePath))
+            {
+                try
+                {
+                    var content = System.IO.File.ReadAllText(filePath);
+                    // Replace "name: ..." line
+                    content = System.Text.RegularExpressions.Regex.Replace(
+                        content, @"(?<=^name:\s).+$", newName,
+                        System.Text.RegularExpressions.RegexOptions.Multiline);
+                    System.IO.File.WriteAllText(filePath, content);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[Rename] Failed to update YAML name: {e.Message}");
+                }
+            }
+
+            Debug.Log($"[Rename] {resourceType} '{uuid}' renamed to '{newName}'");
         }
 
         private void ShowSaveAsNewTemplateDialog(string contextId, string resourceId, string resourceType)
@@ -3103,32 +3202,18 @@ namespace STGEngine.Editor.UI.Timeline
             editBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
             container.Add(editBtn);
 
-            // Rename SpellCard ID
+            // Rename SpellCard
+            var currentScName = _catalog?.FindSpellCard(scId)?.Name ?? scId;
             var renameBtn = new Button(() =>
             {
-                ShowRenameIdDialog("SpellCard", scId, newId =>
+                ShowRenameDialog("SpellCard", currentScName, newName =>
                 {
-                    // Update catalog
-                    var entry = _catalog.FindSpellCard(scId);
-                    if (entry != null) entry.Id = newId;
-                    var oldPath = _catalog.GetSpellCardPath(scId);
-                    entry.File = $"SpellCards/{newId}.yaml";
-                    STGCatalog.Save(_catalog);
-
-                    // Rename file on disk
-                    var newPath = _catalog.GetSpellCardPath(newId);
-                    if (System.IO.File.Exists(oldPath) && !System.IO.File.Exists(newPath))
-                        System.IO.File.Move(oldPath, newPath);
-
-                    // Update all references in the segment
-                    var ids = bfLayer.Segment.SpellCardIds;
-                    int idx = ids.IndexOf(scId);
-                    if (idx >= 0) ids[idx] = newId;
-
+                    RenameResource("SpellCard", scId, newName);
                     bfLayer.InvalidateBlocks();
                     _trackArea.RebuildBlocks();
+                    ShowLayerSummary(_currentLayer);
                 });
-            }) { text = "Rename ID..." };
+            }) { text = "Rename..." };
             renameBtn.style.marginTop = 4;
             renameBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.2f);
             renameBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
@@ -3305,6 +3390,24 @@ namespace STGEngine.Editor.UI.Timeline
             idLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             idLabel.style.marginBottom = 4;
             container.Add(idLabel);
+
+            // Rename EnemyType button
+            var renameEtBtn = new Button(() =>
+            {
+                var curName = _catalog?.FindEnemyType(ei.EnemyTypeId)?.Name ?? "";
+                ShowRenameDialog("EnemyType", curName, newName =>
+                {
+                    RenameResource("EnemyType", ei.EnemyTypeId, newName);
+                    waveLayer.InvalidateBlocks();
+                    _trackArea.RebuildBlocks();
+                    BuildEnemyInstanceProperties(ei, waveLayer);
+                });
+            }) { text = "Rename..." };
+            renameEtBtn.style.marginTop = 2;
+            renameEtBtn.style.marginBottom = 4;
+            renameEtBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.2f);
+            renameEtBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            container.Add(renameEtBtn);
 
             // SpawnDelay
             var delayField = new FloatField("Spawn Delay") { value = ei.SpawnDelay };
@@ -3800,6 +3903,22 @@ namespace STGEngine.Editor.UI.Timeline
             waveLabel.style.marginTop = 4;
             props.Add(waveLabel);
 
+            // Rename Wave button
+            var renameWaveBtn = new Button(() =>
+            {
+                var curName = _catalog?.FindWave(evt.WaveId)?.Name ?? "";
+                ShowRenameDialog("Wave", curName, newName =>
+                {
+                    RenameResource("Wave", evt.WaveId, newName);
+                    _trackArea.RebuildBlocks();
+                    ShowSpawnWaveProperties(evt);
+                });
+            }) { text = "Rename..." };
+            renameWaveBtn.style.marginTop = 2;
+            renameWaveBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.2f);
+            renameWaveBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            props.Add(renameWaveBtn);
+
             // Spawn Offset
             var offLabel = new Label("Spawn Offset");
             offLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
@@ -3884,6 +4003,22 @@ namespace STGEngine.Editor.UI.Timeline
             patternLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
             patternLabel.style.marginTop = 4;
             eventProps.Add(patternLabel);
+
+            // Rename Pattern button
+            var renamePatBtn = new Button(() =>
+            {
+                var curName = _catalog?.FindPattern(evt.PatternId)?.Name ?? "";
+                ShowRenameDialog("Pattern", curName, newName =>
+                {
+                    RenameResource("Pattern", evt.PatternId, newName);
+                    _trackArea.RebuildBlocks();
+                    ShowSpawnPatternProperties(evt);
+                });
+            }) { text = "Rename..." };
+            renamePatBtn.style.marginTop = 2;
+            renamePatBtn.style.backgroundColor = new Color(0.3f, 0.3f, 0.2f);
+            renamePatBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            eventProps.Add(renamePatBtn);
 
             // Spawn Position
             var posLabel = new Label("Spawn Position");

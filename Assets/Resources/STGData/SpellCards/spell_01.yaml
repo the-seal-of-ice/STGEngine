@@ -1,7 +1,7 @@
-id: spell_01
+id: 6b81c96539f5
 name: 星符「流星雨」
 patterns:
-- pattern_id: demo_ring_wave
+- pattern_id: fbd54cab4147
   delay: 9.02069
   duration: 15
   offset: {x: 0, y: 0, z: 0}

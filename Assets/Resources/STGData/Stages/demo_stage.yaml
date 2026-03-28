@@ -1,4 +1,4 @@
-id: demo_stage
+id: 146c9235d099
 name: Demo Stage
 seed: 0
 segments:
@@ -11,7 +11,7 @@ segments:
     id: wevt_7b8fe4
     start_time: 0.01483307
     duration: 10
-    wave_id: wave_01
+    wave_id: cb5dcaf6453f
     spawn_offset: {x: 0, y: 0, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
@@ -24,12 +24,12 @@ segments:
     id: evt_004
     start_time: 0
     duration: 10
-    pattern_id: demo_ring_wave
+    pattern_id: fbd54cab4147
     spawn_position: {x: 0, y: 8, z: 0}
   - type: spawn_pattern
     id: evt_005
     start_time: 5
     duration: 10
-    pattern_id: demo_ring_split
+    pattern_id: 4cf7ab95555b
     spawn_position: {x: 0, y: 8, z: 0}
-  spell_card_ids: [spell_01, spell_02]
+  spell_card_ids: [6b81c96539f5, ff6a80680a1d]

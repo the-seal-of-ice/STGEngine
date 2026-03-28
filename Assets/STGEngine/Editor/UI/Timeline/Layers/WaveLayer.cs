@@ -231,6 +231,11 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 entries.Add(new ContextMenuEntry("Delete Selected Enemy",
                     () => OnDeleteEnemyRequested?.Invoke(selectedBlock), true));
+
+                if (selectedBlock?.DataSource is EnemyInstance)
+                {
+                    entries.Add(new ContextMenuEntry("Rename EnemyType...", () => OnRenameEnemyTypeRequested?.Invoke(selectedBlock)));
+                }
             }
 
             return entries;
@@ -322,6 +327,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public Action OnAddEnemyRequested;
         public Action<ITimelineBlock> OnDeleteEnemyRequested;
+
+        /// <summary>Fired when user requests to rename the EnemyType of a selected enemy instance.</summary>
+        public Action<ITimelineBlock> OnRenameEnemyTypeRequested;
 
         /// <summary>Called after wave-level properties (Name, Duration) are changed. Host should save.</summary>
         public Action OnWavePropertiesChanged;

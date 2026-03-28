@@ -1,15 +1,15 @@
-id: spell_02
+id: ff6a80680a1d
 name: 幻符「螺旋追踪弹」
 patterns:
-- pattern_id: demo_sphere_homing
+- pattern_id: 3f93f01c3aff
   delay: 0
   duration: 12
   offset: {x: 3, y: 0, z: 0}
-- pattern_id: demo_ring_wave
+- pattern_id: fbd54cab4147
   delay: 6
   duration: 13.09882
   offset: {x: 0, y: -1, z: 0}
-- pattern_id: demo_sphere_homing
+- pattern_id: 3f93f01c3aff
   delay: 0
   duration: 5
   offset: {x: 0, y: 0, z: 0}

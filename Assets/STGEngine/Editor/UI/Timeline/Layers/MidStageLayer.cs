@@ -120,6 +120,11 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             if (selectedBlock != null)
             {
                 entries.Add(new ContextMenuEntry("Delete Selected Event", () => OnDeleteRequested?.Invoke(selectedBlock), true));
+
+                if (selectedBlock?.DataSource is SpawnPatternEvent || selectedBlock?.DataSource is SpawnWaveEvent)
+                {
+                    entries.Add(new ContextMenuEntry("Rename...", () => OnRenameRequested?.Invoke(selectedBlock)));
+                }
             }
 
             return entries;
@@ -162,6 +167,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>Raised when "Delete Selected Event" is selected from context menu.</summary>
         public System.Action<ITimelineBlock> OnDeleteRequested;
+
+        /// <summary>Fired when user requests to rename a resource referenced by a block.</summary>
+        public System.Action<ITimelineBlock> OnRenameRequested;
 
         // ── Internal ──
 

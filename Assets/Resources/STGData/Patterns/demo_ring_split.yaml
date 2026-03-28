@@ -1,7 +1,7 @@
 # Demo pattern: ring emitter with split modifier
 # Showcases Phase 2 split behavior: bullets split after 1 second.
 
-id: demo_ring_split
+id: 4cf7ab95555b
 name: Ring Split Demo
 emitter:
   type: ring

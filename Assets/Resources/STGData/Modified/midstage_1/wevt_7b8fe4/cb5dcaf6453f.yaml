@@ -1,7 +1,7 @@
-id: wave_01
+id: cb5dcaf6453f
 name: 第一波
 enemies:
-- enemy_type_id: grunt_a
+- enemy_type_id: f92ba9ea5258
   spawn_delay: 0
   path:
   - time: 0

@@ -1,15 +1,15 @@
-id: spell_03
+id: 09de05227a16
 name: 弾符「円錐反射陣」
 patterns:
-- pattern_id: demo_cone_bounce
+- pattern_id: f3881aa5af76
   delay: 0
   duration: 15
   offset: {x: 0, y: 0, z: 0}
-- pattern_id: demo_ring_split
+- pattern_id: 4cf7ab95555b
   delay: 3
   duration: 12
   offset: {x: 1, y: 0, z: 0}
-- pattern_id: demo_ring_split
+- pattern_id: 4cf7ab95555b
   delay: 3
   duration: 12
   offset: {x: -1, y: 0, z: 0}

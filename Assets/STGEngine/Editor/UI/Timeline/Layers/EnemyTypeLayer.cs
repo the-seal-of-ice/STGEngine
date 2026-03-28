@@ -180,6 +180,11 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 entries.Add(new ContextMenuEntry("Delete Selected Pattern",
                     () => OnDeletePatternRequested?.Invoke(selectedBlock), true));
+
+                if (selectedBlock?.DataSource is EnemyPattern)
+                {
+                    entries.Add(new ContextMenuEntry("Rename Pattern...", () => OnRenamePatternRequested?.Invoke(selectedBlock)));
+                }
             }
 
             return entries;
@@ -471,6 +476,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>Called when user wants to delete a pattern block.</summary>
         public Action<ITimelineBlock> OnDeletePatternRequested;
+
+        /// <summary>Fired when user requests to rename the Pattern of a selected enemy pattern.</summary>
+        public Action<ITimelineBlock> OnRenamePatternRequested;
 
         // ── Internal ──
 

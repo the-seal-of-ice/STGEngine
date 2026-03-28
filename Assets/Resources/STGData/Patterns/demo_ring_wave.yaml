@@ -1,7 +1,7 @@
 # Demo pattern: ring emitter with speed curve + wave modifiers
 # This file validates the full YAML serialization pipeline.
 
-id: demo_ring_wave
+id: fbd54cab4147
 name: Ring Wave Demo
 emitter:
   type: ring

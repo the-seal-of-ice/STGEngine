@@ -1,60 +1,60 @@
 # STGEngine Asset Catalog — auto-generated, do not edit manually
 patterns:
-  - id: demo_cone_bounce
+  - id: f3881aa5af76
     name: "Cone Bounce Demo"
     file: Patterns/demo_cone_bounce.yaml
-  - id: demo_ring_split
+  - id: 4cf7ab95555b
     name: "Ring Split Demo"
     file: Patterns/demo_ring_split.yaml
-  - id: demo_ring_wave
+  - id: fbd54cab4147
     name: "Ring Wave Demo"
     file: Patterns/demo_ring_wave.yaml
-  - id: demo_sphere_homing
+  - id: 3f93f01c3aff
     name: "Sphere Homing Demo"
     file: Patterns/demo_sphere_homing.yaml
 stages:
-  - id: demo_stage
+  - id: 146c9235d099
     name: "Demo Stage"
     file: Stages/demo_stage.yaml
-  - id: demo_stage_2
+  - id: 2bdae09cd543
     name: "DEMO_STAGE_2"
     file: Stages/demo_stage_2.yaml
 enemy_types:
-  - id: grunt_a
+  - id: f92ba9ea5258
     name: "小兵A"
     file: EnemyTypes/grunt_a.yaml
-  - id: new_enemy
+  - id: b75094523fb4
     name: "New Enemy"
     file: EnemyTypes/new_enemy.yaml
-  - id: new_enemy_2
+  - id: 5917071cde57
     name: "New Enemy Type"
     file: EnemyTypes/new_enemy_2.yaml
-  - id: new_enemy_3
+  - id: 1ef894da063b
     name: "New Enemy Type"
     file: EnemyTypes/new_enemy_3.yaml
 waves:
-  - id: wave_01
+  - id: cb5dcaf6453f
     name: "123"
     file: Waves/wave_01.yaml
-  - id: new_wave
+  - id: 1231b124bd5d
     name: "New Wave"
     file: Waves/new_wave.yaml
 spell_cards:
-  - id: spell_01
+  - id: 6b81c96539f5
     name: "星符「流星雨」"
     file: SpellCards/spell_01.yaml
-  - id: spell_02
+  - id: ff6a80680a1d
     name: "幻符「螺旋追踪弹」"
     file: SpellCards/spell_02.yaml
-  - id: spell_03
+  - id: 09de05227a16
     name: "弾符「円錐反射陣」"
     file: SpellCards/spell_03.yaml
-  - id: spell_04
+  - id: cda880afbae4
     name: "終符「全方位弾幕結界」"
     file: SpellCards/spell_04.yaml
-  - id: new_spell
+  - id: 0b0e891d61d0
     name: "New SpellCard"
     file: SpellCards/new_spell.yaml
-  - id: new_spell_2
+  - id: 3d3d928e3aeb
     name: "New SpellCard"
     file: SpellCards/new_spell_2.yaml

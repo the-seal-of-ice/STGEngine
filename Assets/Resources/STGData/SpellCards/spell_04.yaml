@@ -1,23 +1,23 @@
-id: spell_04
+id: cda880afbae4
 name: 終符「全方位弾幕結界」
 patterns:
-- pattern_id: demo_sphere_homing
+- pattern_id: 3f93f01c3aff
   delay: 0
   duration: 8
   offset: {x: 0, y: 0, z: 0}
-- pattern_id: demo_cone_bounce
+- pattern_id: f3881aa5af76
   delay: 2
   duration: 10
   offset: {x: 0, y: -1, z: 0}
-- pattern_id: demo_ring_wave
+- pattern_id: fbd54cab4147
   delay: 4
   duration: 12
   offset: {x: 2, y: 0, z: 0}
-- pattern_id: demo_ring_wave
+- pattern_id: fbd54cab4147
   delay: 4
   duration: 12
   offset: {x: -2, y: 0, z: 0}
-- pattern_id: demo_ring_split
+- pattern_id: 4cf7ab95555b
   delay: 8
   duration: 10
   offset: {x: 0, y: 1, z: 0}
