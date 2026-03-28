@@ -1,5 +1,5 @@
 id: cb5dcaf6453f
-name: "第一波"
+name: Wave1
 duration: 10
 enemies:
 - enemy_type_id: f92ba9ea5258

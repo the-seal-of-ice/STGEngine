@@ -50,6 +50,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     public class EventBlock : ITimelineBlock, IModifierThumbnailProvider
     {
         private readonly TimelineEvent _event;
+        private readonly Func<string, string> _resolvePatternName;
+        private readonly Func<string, string> _resolveWaveName;
         private bool _trajectoryComputed;
 
         // Emitter-only trajectories (no modifiers)
@@ -61,17 +63,23 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         // Modifier labels
         private List<string> _modifierLabels;
 
-        public EventBlock(TimelineEvent evt)
+        public EventBlock(TimelineEvent evt,
+            Func<string, string> resolvePatternName = null,
+            Func<string, string> resolveWaveName = null)
         {
             _event = evt;
+            _resolvePatternName = resolvePatternName;
+            _resolveWaveName = resolveWaveName;
         }
 
         public string Id => _event.Id;
 
         public string DisplayLabel => _event switch
         {
-            SpawnPatternEvent sp => sp.ResolvedPattern?.Name ?? sp.PatternId.Substring(0, Math.Min(8, sp.PatternId.Length)),
-            SpawnWaveEvent sw => $"\u2693 {sw.WaveId.Substring(0, Math.Min(8, sw.WaveId.Length))}",
+            SpawnPatternEvent sp => _resolvePatternName?.Invoke(sp.PatternId)
+                ?? sp.ResolvedPattern?.Name
+                ?? sp.PatternId.Substring(0, Math.Min(8, sp.PatternId.Length)),
+            SpawnWaveEvent sw => $"⚓ {_resolveWaveName?.Invoke(sw.WaveId) ?? sw.WaveId.Substring(0, Math.Min(8, sw.WaveId.Length))}",
             _ => _event.Id
         };
 

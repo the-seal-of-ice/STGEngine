@@ -34,7 +34,7 @@ enemy_types:
     file: EnemyTypes/new_enemy_3.yaml
 waves:
   - id: cb5dcaf6453f
-    name: "123"
+    name: "Wave1"
     file: Waves/wave_01.yaml
   - id: 1231b124bd5d
     name: "New Wave"

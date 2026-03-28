@@ -1979,6 +1979,7 @@ namespace STGEngine.Editor.UI.Timeline
                 midLayer.Library = _library;
                 midLayer.Catalog = _catalog;
                 midLayer.ContextId = midLayer.Segment?.Id;
+                midLayer.InvalidateBlocks(); // Rebuild blocks now that Catalog is set
                 midLayer.OnAddPatternRequested = time => OnAddEventRequested(time);
                 midLayer.OnAddWaveRequested = time => OnAddWaveEventRequested(time);
                 midLayer.OnDeleteRequested = blk =>
@@ -2134,6 +2135,7 @@ namespace STGEngine.Editor.UI.Timeline
             else if (layer is EnemyTypeLayer etLayer)
             {
                 etLayer.Library = _library;
+                etLayer.InvalidateBlocks(); // Rebuild blocks now that Library is set
                 etLayer.OnEnemyTypeChanged = () =>
                 {
                     SaveEnemyType(etLayer.EnemyType, etLayer.EnemyTypeId);

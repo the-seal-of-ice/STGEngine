@@ -183,7 +183,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
             foreach (var evt in _segment.Events)
             {
-                _blocks.Add(new EventBlock(evt));
+                _blocks.Add(new EventBlock(evt,
+                    pid => Catalog?.FindPattern(pid)?.Name,
+                    wid => Catalog?.FindWave(wid)?.Name));
             }
         }
     }
