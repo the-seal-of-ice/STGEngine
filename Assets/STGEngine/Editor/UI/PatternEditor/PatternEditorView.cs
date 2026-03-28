@@ -63,6 +63,12 @@ namespace STGEngine.Editor.UI
         private Slider _speedSlider;
         private FloatField _speedField;
 
+        /// <summary>
+        /// When set, this editor is in override mode (editing a pattern inside a SpellCard context).
+        /// Save/Load buttons are hidden; changes are auto-saved by the parent TimelineEditorView.
+        /// </summary>
+        public string OverrideContextId { get; set; }
+
         // Trajectory thumbnails (live-updating)
         private const float ThumbnailSize = 100f;
         private VisualElement _emitterThumbnail;
@@ -92,9 +98,10 @@ namespace STGEngine.Editor.UI
         public VisualElement Root => _outerContainer;
         public CommandStack Commands => _commandStack;
 
-        public PatternEditorView(PatternPreviewer previewer)
+        public PatternEditorView(PatternPreviewer previewer, string overrideContextId = null)
         {
             _previewer = previewer;
+            OverrideContextId = overrideContextId;
 
             // ── 最外层容器（定位、尺寸、背景色） ──
             _outerContainer = new VisualElement();
@@ -390,6 +397,17 @@ namespace STGEngine.Editor.UI
         private void BuildFileSection()
         {
             _root.Add(MakeHeader("File"));  // 区段标题 "File"
+
+            if (!string.IsNullOrEmpty(OverrideContextId))
+            {
+                var overrideLabel = new Label("Override mode — changes auto-saved");
+                overrideLabel.style.color = new Color(1f, 0.7f, 0.3f);
+                overrideLabel.style.fontSize = 11;
+                overrideLabel.style.marginLeft = 4;
+                overrideLabel.style.marginBottom = 4;
+                _root.Add(overrideLabel);
+                return;
+            }
 
             // 文件操作栏（水平排列：Save + Load）
             var fileBar = new VisualElement();

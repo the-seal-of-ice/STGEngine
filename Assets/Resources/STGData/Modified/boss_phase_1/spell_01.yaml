@@ -3,7 +3,7 @@ name: 星符「流星雨」
 patterns:
 - pattern_id: demo_ring_wave
   delay: 9.02069
-  duration: 15
+  duration: 12.00494
   offset: {x: 0, y: 0, z: 0}
 boss_path:
 - time: 0

@@ -1655,7 +1655,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             // 2. Set _currentLayer
             _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library,
-                OverrideManager.SpellCardContext(segment.Id, spellCardId));
+                OverrideManager.SpellCardContext(segment.Id, spellCardId), _catalog);
 
             // 3. WireLayerToTrackArea (binds Add/Delete callbacks)
             WireLayerToTrackArea(_currentLayer);
@@ -2945,7 +2945,7 @@ namespace STGEngine.Editor.UI.Timeline
             container.Add(patternHeader);
 
             _singlePreviewer.Pattern = patLayer.Pattern;
-            _patternEditor = new PatternEditorView(_singlePreviewer);
+            _patternEditor = new PatternEditorView(_singlePreviewer, GetPatternOverrideContext());
             _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
             _patternEditor.SetPattern(patLayer.Pattern);
             _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
@@ -3274,7 +3274,7 @@ namespace STGEngine.Editor.UI.Timeline
                 container.Add(patternHeader);
 
                 _singlePreviewer.Pattern = resolvedPattern;
-                _patternEditor = new PatternEditorView(_singlePreviewer);
+                _patternEditor = new PatternEditorView(_singlePreviewer, GetPatternOverrideContext());
                 _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
                 _patternEditor.SetPattern(resolvedPattern);
                 _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
@@ -3461,7 +3461,7 @@ namespace STGEngine.Editor.UI.Timeline
                 container.Add(patternHeader);
 
                 _singlePreviewer.Pattern = resolvedPattern;
-                _patternEditor = new PatternEditorView(_singlePreviewer);
+                _patternEditor = new PatternEditorView(_singlePreviewer, GetPatternOverrideContext());
                 _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
                 _patternEditor.SetPattern(resolvedPattern);
                 _patternEditor.Commands.OnStateChanged += OnPatternEditorChanged;
@@ -3945,7 +3945,7 @@ namespace STGEngine.Editor.UI.Timeline
                     eventProps.Add(CreateOriginalFileWarning("Pattern"));
 
                 _singlePreviewer.Pattern = evt.ResolvedPattern;
-                _patternEditor = new PatternEditorView(_singlePreviewer);
+                _patternEditor = new PatternEditorView(_singlePreviewer, GetPatternOverrideContext());
                 _patternEditor.OnMeshTypeChanged = OnMeshTypeChanged;
                 _patternEditor.SetPattern(evt.ResolvedPattern);
 

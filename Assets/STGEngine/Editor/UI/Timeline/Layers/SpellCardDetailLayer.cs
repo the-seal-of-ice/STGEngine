@@ -5,6 +5,8 @@ using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Modifiers;
 using STGEngine.Core.Timeline;
+using STGEngine.Core.Serialization;
+using STGEngine.Editor.UI.FileManager;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Bullet;
 using STGEngine.Runtime.Preview;
@@ -172,14 +174,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         private readonly string _spellCardId;
         private readonly PatternLibrary _library;
         private readonly string _contextId;
+        private readonly STGCatalog _catalog;
         private readonly List<SpellCardPatternBlock> _blocks = new();
 
-        public SpellCardDetailLayer(SpellCard spellCard, string spellCardId, PatternLibrary library, string contextId = null)
+        public SpellCardDetailLayer(SpellCard spellCard, string spellCardId, PatternLibrary library, string contextId = null, STGCatalog catalog = null)
         {
             _spellCard = spellCard;
             _spellCardId = spellCardId;
             _library = library;
             _contextId = contextId;
+            _catalog = catalog;
             RebuildBlockList();
         }
 
@@ -226,10 +230,32 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (block is SpellCardPatternBlock scpBlock && scpBlock.DataSource is SpellCardPattern scp)
             {
-                // Clone to avoid mutating the shared cache instance
-                var resolved = _library?.ResolveClone(scp.PatternId);
+                BulletPattern resolved = null;
+
+                // Try loading override version first
+                if (!string.IsNullOrEmpty(_contextId) && _catalog != null)
+                {
+                    var overridePath = OverrideManager.ResolvePatternPath(_catalog, _contextId, scp.PatternId);
+                    if (overridePath != null && OverrideManager.HasOverride(_contextId, scp.PatternId))
+                    {
+                        try
+                        {
+                            resolved = YamlSerializer.DeserializeFromFile(overridePath);
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogWarning($"[SpellCardDetailLayer] Failed to load pattern override '{scp.PatternId}': {e.Message}");
+                        }
+                    }
+                }
+
+                // Fallback to library clone
+                if (resolved == null)
+                    resolved = _library?.ResolveClone(scp.PatternId);
+
                 if (resolved != null)
                     return new PatternLayer(resolved, scp.PatternId);
+
                 Debug.LogWarning($"[SpellCardDetailLayer] Cannot resolve pattern '{scp.PatternId}' — library missing or pattern not found.");
             }
             return null;
