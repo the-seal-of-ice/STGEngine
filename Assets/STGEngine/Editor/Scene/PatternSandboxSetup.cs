@@ -759,6 +759,9 @@ namespace STGEngine.Editor.Scene
                 };
             }
 
+            // Inject homing target provider into previewers so bullets can track the player
+            System.Func<Vector3> homingTarget = null; // will be set after player creation
+
             if (aiMode)
             {
                 // ── AI Simulated Player ──
@@ -809,6 +812,25 @@ namespace STGEngine.Editor.Scene
                 Debug.Log("[PatternSandbox] Manual Player mode ON — WASD move, Mouse aim, Ctrl slow, ESC exit");
             }
 
+            // Wire homing target: bullets with HomingModifier will track the active player
+            if (_activePlayer != null)
+            {
+                homingTarget = () => _activePlayer.Position;
+                if (_editorMode == EditorMode.PatternEdit && _previewer != null)
+                {
+                    _previewer.HomingTargetProvider = homingTarget;
+                    _previewer.ForceRefresh();
+                }
+                else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
+                {
+                    foreach (var ae in _timelinePlayback.ActiveEvents)
+                    {
+                        if (ae.Previewer != null)
+                            ae.Previewer.HomingTargetProvider = homingTarget;
+                    }
+                }
+            }
+
             // HUD
             if (_playerHudLabel == null && _uiDocument != null)
             {
@@ -839,6 +861,17 @@ namespace STGEngine.Editor.Scene
         {
             _playerModeActive = false;
             _activePlayer = null;
+
+            // Clear homing target from previewers
+            if (_previewer != null) _previewer.HomingTargetProvider = null;
+            if (_timelinePlayback != null)
+            {
+                foreach (var ae in _timelinePlayback.ActiveEvents)
+                {
+                    if (ae.Previewer != null)
+                        ae.Previewer.HomingTargetProvider = null;
+                }
+            }
 
             // Restore editor shortcuts + UI (only needed for manual mode)
             if (!_playerModeIsAI)

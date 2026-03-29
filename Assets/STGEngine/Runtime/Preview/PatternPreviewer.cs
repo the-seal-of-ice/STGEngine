@@ -35,7 +35,10 @@ namespace STGEngine.Runtime.Preview
                     // Determine evaluation path
                     _useSimulation = SimulationEvaluator.RequiresSimulation(_pattern);
                     if (_useSimulation)
+                    {
                         _simEvaluator = new SimulationEvaluator(_pattern);
+                        _simEvaluator.HomingTargetProvider = HomingTargetProvider;
+                    }
                     else
                         _simEvaluator = null;
                 }
@@ -58,6 +61,13 @@ namespace STGEngine.Runtime.Preview
 
         /// <summary>Current bullet states for external consumers (e.g. CollisionVisualizer).</summary>
         public List<BulletState> CurrentStates => _currStates;
+
+        /// <summary>
+        /// Dynamic target provider for HomingModifier. When set, homing bullets
+        /// track this position instead of their static TargetPosition.
+        /// Typically set to IPlayerProvider.Position.
+        /// </summary>
+        public System.Func<Vector3> HomingTargetProvider { get; set; }
 
         private void Awake()
         {
@@ -110,12 +120,21 @@ namespace STGEngine.Runtime.Preview
             if (needsSim != _useSimulation || (needsSim && _simEvaluator == null))
             {
                 _useSimulation = needsSim;
-                _simEvaluator = needsSim ? new SimulationEvaluator(_pattern) : null;
+                if (needsSim)
+                {
+                    _simEvaluator = new SimulationEvaluator(_pattern);
+                    _simEvaluator.HomingTargetProvider = HomingTargetProvider;
+                }
+                else
+                {
+                    _simEvaluator = null;
+                }
             }
             else if (_useSimulation)
             {
                 // Rebuild evaluator to pick up newly added/removed modifiers
                 _simEvaluator = new SimulationEvaluator(_pattern);
+                _simEvaluator.HomingTargetProvider = HomingTargetProvider;
             }
 
             if (_useSimulation)

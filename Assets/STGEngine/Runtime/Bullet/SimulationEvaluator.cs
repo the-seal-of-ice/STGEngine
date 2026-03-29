@@ -42,6 +42,13 @@ namespace STGEngine.Runtime.Bullet
         // Cached spawn modifiers
         private List<ISpawnModifier> _spawnMods;
 
+        /// <summary>
+        /// Dynamic target provider for HomingModifier. When set, all HomingModifier
+        /// instances update their TargetPosition each tick. Set to player position
+        /// provider for live tracking.
+        /// </summary>
+        public System.Func<Vector3> HomingTargetProvider { get; set; }
+
         public SimulationEvaluator(BulletPattern pattern) : this(pattern, pattern?.Seed ?? 0) { }
 
         public SimulationEvaluator(BulletPattern pattern, int seed)
@@ -90,6 +97,12 @@ namespace STGEngine.Runtime.Bullet
 
             _currentTime += dt;
 
+            // Update homing targets if a dynamic provider is set
+            Vector3 homingTarget = default;
+            bool hasHomingTarget = HomingTargetProvider != null;
+            if (hasHomingTarget)
+                homingTarget = HomingTargetProvider();
+
             // Temporary list for new bullets from splits
             List<BulletInstance> newBullets = null;
 
@@ -97,6 +110,16 @@ namespace STGEngine.Runtime.Bullet
             {
                 var b = _bullets[i];
                 if (!b.Active) continue;
+
+                // Update HomingModifier targets before stepping
+                if (hasHomingTarget)
+                {
+                    foreach (var mod in b.SimMods)
+                    {
+                        if (mod is HomingModifier hm)
+                            hm.TargetPosition = homingTarget;
+                    }
+                }
 
                 // Apply simulation modifiers (they modify velocity, not position)
                 foreach (var mod in b.SimMods)
