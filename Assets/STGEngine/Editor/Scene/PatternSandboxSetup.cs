@@ -702,6 +702,9 @@ namespace STGEngine.Editor.Scene
             // Suppress editor shortcuts (WASD/Space/etc. belong to player now)
             if (_timelineView != null) _timelineView.SuppressShortcuts = true;
 
+            // Blur all UI elements so focused buttons/fields don't consume key events
+            _uiRoot?.focusController?.BlurFocusedElement();
+
             var cam = Camera.main;
             if (cam == null) return;
 

@@ -5527,6 +5527,14 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void OnKeyDown(KeyDownEvent evt)
         {
+            // Player mode: swallow ALL key events so they don't reach UI elements
+            if (SuppressShortcuts)
+            {
+                evt.StopPropagation();
+                evt.PreventDefault();
+                return;
+            }
+
             bool ctrl = evt.ctrlKey || evt.commandKey;
             bool shift = evt.shiftKey;
 
