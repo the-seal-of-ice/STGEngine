@@ -703,7 +703,7 @@ namespace STGEngine.Editor.Scene
             if (_timelineView != null) _timelineView.SuppressShortcuts = true;
 
             // Blur all UI elements so focused buttons/fields don't consume key events
-            _uiRoot?.focusController?.BlurFocusedElement();
+            (_uiRoot?.focusController?.focusedElement as VisualElement)?.Blur();
 
             var cam = Camera.main;
             if (cam == null) return;
