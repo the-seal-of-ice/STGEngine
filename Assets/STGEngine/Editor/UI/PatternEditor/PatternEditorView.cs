@@ -654,7 +654,10 @@ namespace STGEngine.Editor.UI
                 label.style.unityFontStyleAndWeight = FontStyle.Bold;
                 label.style.color = labelColor;
                 if (mod is ISpawnModifier)
+                {
                     label.tooltip = "Spawn modifier \u2014 modifies bullet data at emission time";
+                    label.AddToClassList("preserve-color");
+                }
                 header.Add(label);
 
                 var removeBtn = new Button(() =>  // [×] 删除按钮
@@ -1442,9 +1445,17 @@ namespace STGEngine.Editor.UI
             var inputBg = new Color(0.22f, 0.22f, 0.22f);
             var labelWidth = new Length(38, LengthUnit.Percent);
 
-            // 所有 Label 和 TextElement 设为浅色
-            root.Query<Label>().ForEach(l => l.style.color = lightText);
-            root.Query<TextElement>().ForEach(t => t.style.color = lightText);
+            // 所有 Label 和 TextElement 设为浅色（跳过 preserve-color 标记的元素）
+            root.Query<Label>().ForEach(l =>
+            {
+                if (!l.ClassListContains("preserve-color"))
+                    l.style.color = lightText;
+            });
+            root.Query<TextElement>().ForEach(t =>
+            {
+                if (!t.ClassListContains("preserve-color"))
+                    t.style.color = lightText;
+            });
             // 输入框：浅色文字 + 深灰背景
             root.Query(className: "unity-base-field__input").ForEach(e =>
             {
