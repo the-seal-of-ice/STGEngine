@@ -59,6 +59,9 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>Fired when the current layer changes (navigation). Used to refresh asset library button states.</summary>
         public Action OnLayerChanged;
 
+        /// <summary>Fired when the Player button on the toolbar is clicked.</summary>
+        public Action OnPlayerModeRequested;
+
         private readonly TimelinePlaybackController _playback;
         private readonly PatternLibrary _library;
         private readonly CommandStack _commandStack = new();
@@ -1000,6 +1003,17 @@ namespace STGEngine.Editor.UI.Timeline
             loadBtn.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
             loadBtn.style.marginLeft = 4;
             _toolbar.Add(loadBtn);
+
+            // ── Player mode toggle ──
+            var playerBtn = new Button(() => OnPlayerModeRequested?.Invoke())
+            { text = "\u25b6 Player" };
+            playerBtn.style.width = 64;
+            playerBtn.style.color = new Color(0.8f, 1f, 0.8f);
+            playerBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+            playerBtn.style.marginLeft = 8;
+            playerBtn.style.fontSize = 11;
+            playerBtn.tooltip = "Toggle player mode (Spawn player + game camera)";
+            _toolbar.Add(playerBtn);
         }
 
         private VisualElement _snapPopup;

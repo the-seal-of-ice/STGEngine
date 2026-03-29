@@ -353,6 +353,7 @@ namespace STGEngine.Editor.Scene
             _timelineView.OnSpellCardEditingChanged += OnSpellCardEditingChanged;
             _timelineView.OnWaveEditingChanged += OnWaveEditingChanged;
             _timelineView.OnLayerChanged += () => _assetLibrary?.RefreshButtonStates();
+            _timelineView.OnPlayerModeRequested += TogglePlayerMode;
             _timelineView.OnMeshTypeChanged += mt =>
             {
                 EnsureBulletVisuals(mt);
@@ -569,18 +570,6 @@ namespace STGEngine.Editor.Scene
                 }
             });
             bar.Add(modeDropdown);
-
-            // Player mode toggle button
-            var playerBtn = new Button(() => TogglePlayerMode())
-            { text = "\u25b6 Player" };
-            playerBtn.style.width = 70;
-            playerBtn.style.height = 22;
-            playerBtn.style.marginLeft = 12;
-            playerBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
-            playerBtn.style.color = new Color(0.8f, 1f, 0.8f);
-            playerBtn.style.fontSize = 11;
-            playerBtn.tooltip = "Toggle player mode (spawn player + game camera)";
-            bar.Add(playerBtn);
 
             root.Add(bar);
         }
