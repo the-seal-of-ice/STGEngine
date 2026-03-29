@@ -9,7 +9,7 @@ segments:
   events:
   - type: spawn_pattern
     id: evt_54a325
-    start_time: 2.463039
+    start_time: 2.447988
     duration: 11.56065
     pattern_id: f3881aa5af76
     spawn_position: {x: 0, y: 5, z: 0}

@@ -92,6 +92,7 @@ namespace STGEngine.Editor.UI
             { "wave", () => new WaveModifier() },
             { "wave_independent", () => new IndependentWaveModifier() },
             { "homing", () => new HomingModifier() },
+            { "player_homing", () => new PlayerHomingModifier() },
             { "bounce", () => new BounceModifier() },
             { "split", () => new SplitModifier() },
         };
@@ -747,6 +748,35 @@ namespace STGEngine.Editor.UI
                             }
                         });
                         container.Add(apDropdown);
+                        break;
+
+                    case PlayerHomingModifier phm:
+                        var phmTurnField = new FloatField("TurnSpeed");
+                        binder.Bind(phmTurnField, phm,
+                            nameof(PlayerHomingModifier.TurnSpeed), _commandStack);
+                        container.Add(phmTurnField);
+
+                        var phmDelayField = new FloatField("Delay");
+                        binder.Bind(phmDelayField, phm,
+                            nameof(PlayerHomingModifier.Delay), _commandStack);
+                        container.Add(phmDelayField);
+
+                        var phmApModes = new List<string> { "Random", "Fixed", "None" };
+                        var phmApDropdown = new DropdownField("AntiParallel", phmApModes,
+                            phmApModes.IndexOf(phm.AntiParallel.ToString()));
+                        phmApDropdown.RegisterValueChangedCallback(phmApEvt =>
+                        {
+                            if (Enum.TryParse<AntiParallelMode>(phmApEvt.newValue, out var mode))
+                            {
+                                var phmApCmd = new PropertyChangeCommand<AntiParallelMode>(
+                                    $"Change AntiParallel to {phmApEvt.newValue}",
+                                    () => phm.AntiParallel,
+                                    v => phm.AntiParallel = v,
+                                    mode);
+                                _commandStack.Execute(phmApCmd);
+                            }
+                        });
+                        container.Add(phmApDropdown);
                         break;
 
                     case BounceModifier bm:

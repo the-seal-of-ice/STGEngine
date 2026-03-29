@@ -43,9 +43,9 @@ namespace STGEngine.Runtime.Bullet
         private List<ISpawnModifier> _spawnMods;
 
         /// <summary>
-        /// Dynamic target provider for HomingModifier. When set, all HomingModifier
-        /// instances update their TargetPosition each tick. Set to player position
-        /// provider for live tracking.
+        /// Dynamic target provider for PlayerHomingModifier. When set, all
+        /// PlayerHomingModifier instances update their TargetPosition each tick.
+        /// Set to player position provider for live tracking.
         /// </summary>
         public System.Func<Vector3> HomingTargetProvider { get; set; }
 
@@ -111,13 +111,13 @@ namespace STGEngine.Runtime.Bullet
                 var b = _bullets[i];
                 if (!b.Active) continue;
 
-                // Update HomingModifier targets before stepping
+                // Update PlayerHomingModifier targets before stepping
                 if (hasHomingTarget)
                 {
                     foreach (var mod in b.SimMods)
                     {
-                        if (mod is HomingModifier hm)
-                            hm.TargetPosition = homingTarget;
+                        if (mod is PlayerHomingModifier phm)
+                            phm.TargetPosition = homingTarget;
                     }
                 }
 
@@ -339,6 +339,17 @@ namespace STGEngine.Runtime.Bullet
         private ISimulationModifier CloneSimModifier(IModifier mod, DeterministicRng rng)
         {
             // Create a new instance with same parameters but fresh state
+            if (mod is PlayerHomingModifier phm)
+            {
+                return new PlayerHomingModifier
+                {
+                    TargetPosition = phm.TargetPosition,
+                    TurnSpeed = phm.TurnSpeed,
+                    Delay = phm.Delay,
+                    AntiParallel = phm.AntiParallel,
+                    Rng = rng
+                };
+            }
             if (mod is HomingModifier hm)
             {
                 return new HomingModifier

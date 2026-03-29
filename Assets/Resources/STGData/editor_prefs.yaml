@@ -1,0 +1,3 @@
+previewFpsLimit: 240
+previewerPoolSize: 6
+thumbnailSampleDuration: 10

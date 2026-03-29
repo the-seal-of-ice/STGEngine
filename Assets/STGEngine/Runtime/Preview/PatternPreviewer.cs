@@ -63,9 +63,8 @@ namespace STGEngine.Runtime.Preview
         public List<BulletState> CurrentStates => _currStates;
 
         /// <summary>
-        /// Dynamic target provider for HomingModifier. When set, homing bullets
-        /// track this position instead of their static TargetPosition.
-        /// Typically set to IPlayerProvider.Position.
+        /// Dynamic target provider for PlayerHomingModifier. When set, player-homing
+        /// bullets track this position each tick. Typically set to IPlayerProvider.Position.
         /// </summary>
         public System.Func<Vector3> HomingTargetProvider { get; set; }
 

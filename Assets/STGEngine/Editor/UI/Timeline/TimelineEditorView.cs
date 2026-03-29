@@ -1009,7 +1009,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             // ── Player mode buttons ──
             var playerManualBtn = new Button(() => OnPlayerModeRequested?.Invoke())
-            { text = "\u25b6 Player" };
+            { text = "\u25b6 Player", focusable = false };
             playerManualBtn.style.width = 56;
             playerManualBtn.style.color = new Color(0.8f, 1f, 0.8f);
             playerManualBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
@@ -1019,7 +1019,7 @@ namespace STGEngine.Editor.UI.Timeline
             _toolbar.Add(playerManualBtn);
 
             var playerAIBtn = new Button(() => OnPlayerAIModeRequested?.Invoke())
-            { text = "\u2699 AI Sim" };
+            { text = "\u2699 AI Sim", focusable = false };
             playerAIBtn.style.width = 56;
             playerAIBtn.style.color = new Color(0.8f, 0.9f, 1f);
             playerAIBtn.style.backgroundColor = new Color(0.15f, 0.25f, 0.35f);

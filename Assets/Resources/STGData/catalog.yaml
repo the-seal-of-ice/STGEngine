@@ -39,6 +39,9 @@ waves:
   - id: 1231b124bd5d
     name: "New Wave"
     file: Waves/new_wave.yaml
+  - id: 97ad0ca6f22d
+    name: "New Wave"
+    file: Waves/new_wave_2.yaml
 spell_cards:
   - id: 6b81c96539f5
     name: "星符「流星雨」"
@@ -55,6 +58,3 @@ spell_cards:
   - id: 0b0e891d61d0
     name: "New SpellCard"
     file: SpellCards/new_spell.yaml
-  - id: 3d3d928e3aeb
-    name: "New SpellCard"
-    file: SpellCards/new_spell_2.yaml

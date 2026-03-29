@@ -778,8 +778,6 @@ namespace STGEngine.Editor.Scene
                 };
                 _simulatedPlayer.Initialize(brain, bulletProvider);
                 _activePlayer = _simulatedPlayer;
-
-                Debug.Log($"[PatternSandbox] AI Player mode ON — Seed: {brain.Seed}, ESC to exit");
             }
             else
             {
@@ -808,11 +806,9 @@ namespace STGEngine.Editor.Scene
                 _playerController.Initialize(_playerCamera, bulletProvider);
                 _playerCamera.SetCursorLock(true);
                 _activePlayer = _playerController;
-
-                Debug.Log("[PatternSandbox] Manual Player mode ON — WASD move, Mouse aim, Ctrl slow, ESC exit");
             }
 
-            // Wire homing target: bullets with HomingModifier will track the active player
+            // Wire homing target: bullets with PlayerHomingModifier will track the active player
             if (_activePlayer != null)
             {
                 homingTarget = () => _activePlayer.Position;
@@ -921,8 +917,6 @@ namespace STGEngine.Editor.Scene
                 _playerHudLabel.RemoveFromHierarchy();
                 _playerHudLabel = null;
             }
-
-            Debug.Log("[PatternSandbox] Player mode OFF — player destroyed, free camera restored");
         }
 
         private void UpdatePlayerMode()
