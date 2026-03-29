@@ -656,7 +656,6 @@ namespace STGEngine.Editor.UI
                 if (mod is ISpawnModifier)
                 {
                     label.tooltip = "Spawn modifier \u2014 modifies bullet data at emission time";
-                    label.AddToClassList("preserve-color");
                 }
                 header.Add(label);
 
@@ -1441,39 +1440,26 @@ namespace STGEngine.Editor.UI
         /// </summary>
         private static void ForceApplyTheme(VisualElement root)
         {
-            var lightText = new Color(0.85f, 0.85f, 0.85f);
             var inputBg = new Color(0.22f, 0.22f, 0.22f);
+            var btnBg = new Color(0.28f, 0.28f, 0.28f);
             var labelWidth = new Length(38, LengthUnit.Percent);
 
-            // 所有 Label 和 TextElement 设为浅色（跳过 preserve-color 标记的元素）
-            root.Query<Label>().ForEach(l =>
-            {
-                if (!l.ClassListContains("preserve-color"))
-                    l.style.color = lightText;
-            });
-            root.Query<TextElement>().ForEach(t =>
-            {
-                if (!t.ClassListContains("preserve-color"))
-                    t.style.color = lightText;
-            });
-            // 输入框：浅色文字 + 深灰背景
+            // Default text color via CSS inheritance — children inherit unless they
+            // set their own inline style.color at creation time.
+            root.style.color = new Color(0.85f, 0.85f, 0.85f);
+
+            // Input field backgrounds (backgroundColor is NOT inherited)
             root.Query(className: "unity-base-field__input").ForEach(e =>
             {
-                e.style.color = lightText;
                 e.style.backgroundColor = inputBg;
             });
-            root.Query(className: "unity-text-element").ForEach(e =>
-            {
-                e.style.color = lightText;
-            });
-            // 按钮：浅色文字 + 稍亮灰色背景
+            // Buttons: background only (text color inherited)
             root.Query<Button>().ForEach(b =>
             {
-                b.style.color = lightText;
-                b.style.backgroundColor = new Color(0.28f, 0.28f, 0.28f);
+                b.style.backgroundColor = btnBg;
             });
 
-            // ── 统一 label 宽度（跳过 compact-field） ──
+            // ── Layout: label widths (跳过 compact-field) ──
             root.Query<FloatField>().ForEach(f =>
             {
                 if (f.ClassListContains("compact-field"))
@@ -1502,10 +1488,8 @@ namespace STGEngine.Editor.UI
             // IntegerField
             root.Query<IntegerField>().ForEach(f =>
             {
-                f.labelElement.style.color = lightText;
                 if (f.ClassListContains("seed-field"))
                 {
-                    // Seed field: compact style to fit in tight spaces
                     f.style.fontSize = 10;
                     f.style.paddingTop = 0;
                     f.style.paddingBottom = 0;
@@ -1515,8 +1499,7 @@ namespace STGEngine.Editor.UI
                     f.labelElement.style.paddingBottom = 0;
                     f.Query(className: "unity-base-field__input").ForEach(inp =>
                     {
-                        inp.style.color = lightText;
-                        inp.style.backgroundColor = new Color(0.22f, 0.22f, 0.22f);
+                        inp.style.backgroundColor = inputBg;
                         inp.style.paddingTop = 0;
                         inp.style.paddingBottom = 0;
                         inp.style.paddingLeft = 2;
@@ -1527,13 +1510,11 @@ namespace STGEngine.Editor.UI
                 }
                 else
                 {
-                    // Normal IntegerField: same layout as FloatField
                     f.labelElement.style.minWidth = labelWidth;
                     f.labelElement.style.maxWidth = labelWidth;
                     f.Query(className: "unity-base-field__input").ForEach(inp =>
                     {
-                        inp.style.color = lightText;
-                        inp.style.backgroundColor = new Color(0.22f, 0.22f, 0.22f);
+                        inp.style.backgroundColor = inputBg;
                     });
                 }
             });

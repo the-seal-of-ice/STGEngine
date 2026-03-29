@@ -5245,22 +5245,19 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         internal static void ApplyThemeToTree(VisualElement root)
         {
-            // All text → light color
-            root.Query<Label>().ForEach(l => l.style.color = Lt);
-            root.Query<TextElement>().ForEach(t => t.style.color = Lt);
-            root.Query(className: "unity-text-element").ForEach(e => e.style.color = Lt);
+            // Default text color via CSS inheritance — children inherit unless they
+            // set their own inline style.color at creation time.
+            root.style.color = Lt;
 
-            // Input fields
+            // Input field backgrounds (backgroundColor is NOT inherited)
             root.Query(className: "unity-base-field__input").ForEach(e =>
             {
-                e.style.color = Lt;
                 e.style.backgroundColor = InputBg;
             });
 
-            // Buttons: light text, fixed size, no stretch
+            // Buttons: layout only (color inherited from root)
             root.Query<Button>().ForEach(b =>
             {
-                b.style.color = Lt;
                 b.style.backgroundColor = BtnBg;
                 b.style.flexGrow = 0;
                 b.style.flexShrink = 0;
@@ -5270,19 +5267,17 @@ namespace STGEngine.Editor.UI.Timeline
                     b.style.borderLeftColor = b.style.borderRightColor = BtnBorder;
             });
 
-            // Sliders
+            // Sliders: label width only
             root.Query<Slider>().ForEach(f =>
             {
-                f.labelElement.style.color = Lt;
                 f.labelElement.style.minWidth = 50;
                 f.labelElement.style.maxWidth = 50;
             });
 
-            // FloatField label width (property panel)
+            // FloatField: label width
             var labelWidth = new Length(38, LengthUnit.Percent);
             root.Query<FloatField>().ForEach(f =>
             {
-                f.labelElement.style.color = Lt;
                 if (!f.ClassListContains("compact-field"))
                 {
                     f.labelElement.style.minWidth = labelWidth;
@@ -5290,10 +5285,9 @@ namespace STGEngine.Editor.UI.Timeline
                 }
             });
 
-            // IntegerField
+            // IntegerField: layout
             root.Query<IntegerField>().ForEach(f =>
             {
-                f.labelElement.style.color = Lt;
                 if (f.ClassListContains("seed-field"))
                 {
                     f.style.fontSize = 10;
@@ -5305,7 +5299,6 @@ namespace STGEngine.Editor.UI.Timeline
                     f.labelElement.style.paddingBottom = 0;
                     f.Query(className: "unity-base-field__input").ForEach(e =>
                     {
-                        e.style.color = Lt;
                         e.style.backgroundColor = InputBg;
                         e.style.paddingTop = 0;
                         e.style.paddingBottom = 0;
@@ -5317,25 +5310,22 @@ namespace STGEngine.Editor.UI.Timeline
                 }
                 else
                 {
+                    f.labelElement.style.minWidth = labelWidth;
+                    f.labelElement.style.maxWidth = labelWidth;
                     f.Query(className: "unity-base-field__input").ForEach(e =>
                     {
-                        e.style.color = Lt;
                         e.style.backgroundColor = InputBg;
                     });
                 }
             });
 
-            // DropdownField
+            // DropdownField: background only
             root.Query<DropdownField>().ForEach(f =>
             {
-                f.style.color = Lt;
-                f.labelElement.style.color = Lt;
                 f.Query(className: "unity-base-field__input").ForEach(e =>
                 {
-                    e.style.color = Lt;
                     e.style.backgroundColor = InputBg;
                 });
-                f.Query(className: "unity-text-element").ForEach(e => e.style.color = Lt);
             });
         }
 
