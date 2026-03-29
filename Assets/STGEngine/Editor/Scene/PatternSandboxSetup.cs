@@ -202,6 +202,14 @@ namespace STGEngine.Editor.Scene
                     ep.SetTime(t);
             }
 
+            // ── Player mode update (takes priority over all editor shortcuts) ──
+            if (_playerModeActive && _playerController != null)
+            {
+                UpdatePlayerMode();
+                _playerController.FixedTick(Time.deltaTime);
+                return; // Skip all editor shortcuts while in player mode
+            }
+
             // Global keyboard shortcuts — works even when scene viewport has focus
             if (_editorMode == EditorMode.TimelineEdit && _timelineView != null)
             {
@@ -232,15 +240,6 @@ namespace STGEngine.Editor.Scene
                         PollGlobalShortcuts();
                     }
                 }
-            }
-
-            // ── Player mode update ──
-            if (_playerModeActive && _playerController != null)
-            {
-                UpdatePlayerMode();
-                // Drive player logic in sync with simulation tick rate
-                // (simplified: use Time.deltaTime for now, proper SimulationLoop integration later)
-                _playerController.FixedTick(Time.deltaTime);
             }
         }
 
@@ -699,6 +698,10 @@ namespace STGEngine.Editor.Scene
         private void EnterPlayerMode()
         {
             _playerModeActive = true;
+
+            // Suppress editor shortcuts (WASD/Space/etc. belong to player now)
+            if (_timelineView != null) _timelineView.SuppressShortcuts = true;
+
             var cam = Camera.main;
             if (cam == null) return;
 
@@ -785,6 +788,10 @@ namespace STGEngine.Editor.Scene
         private void ExitPlayerMode()
         {
             _playerModeActive = false;
+
+            // Restore editor shortcuts
+            if (_timelineView != null) _timelineView.SuppressShortcuts = false;
+
             var cam = Camera.main;
 
             // Re-enable free camera

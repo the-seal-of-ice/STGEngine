@@ -5538,12 +5538,19 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// When true, all keyboard shortcuts are suppressed.
+        /// Set by PatternSandboxSetup when player mode is active.
+        /// </summary>
+        public bool SuppressShortcuts { get; set; }
+
+        /// <summary>
         /// Process a keyboard shortcut. Returns true if the key was handled.
         /// Called from OnKeyDown (UI Toolkit focus) and from PatternSandboxSetup.Update
         /// (global Input polling) so shortcuts work even when the scene viewport has focus.
         /// </summary>
         public bool HandleKeyboardShortcut(KeyCode keyCode, bool ctrl, bool shift)
         {
+            if (SuppressShortcuts) return false;
             // Ctrl+Z → Undo
             if (ctrl && !shift && keyCode == KeyCode.Z)
             {
