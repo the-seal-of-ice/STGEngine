@@ -209,11 +209,24 @@ namespace STGEngine.Editor.Scene
             if (_playerModeActive)
             {
                 UpdatePlayerMode();
-                if (_playerModeIsAI && _simulatedPlayer != null)
-                    _simulatedPlayer.FixedTick(Time.deltaTime);
-                else if (!_playerModeIsAI && _playerController != null)
-                    _playerController.FixedTick(Time.deltaTime);
-                return; // Skip all editor shortcuts while in player mode
+
+                // Only tick player when playback is running (pause = freeze)
+                bool playbackActive = false;
+                if (_editorMode == EditorMode.PatternEdit && _previewer != null)
+                    playbackActive = _previewer.Playback.IsPlaying;
+                else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
+                    playbackActive = _timelinePlayback.IsPlaying;
+
+                if (playbackActive)
+                {
+                    if (_playerModeIsAI && _simulatedPlayer != null)
+                        _simulatedPlayer.FixedTick(Time.deltaTime);
+                    else if (!_playerModeIsAI && _playerController != null)
+                        _playerController.FixedTick(Time.deltaTime);
+                }
+
+                if (!_playerModeIsAI)
+                    return; // Manual mode: skip editor shortcuts
             }
 
             // Global keyboard shortcuts — works even when scene viewport has focus
