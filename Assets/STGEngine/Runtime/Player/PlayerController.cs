@@ -5,10 +5,7 @@ using STGEngine.Runtime.Bullet;
 namespace STGEngine.Runtime.Player
 {
     /// <summary>
-    /// 玩家控制器。处理输入、移动、碰撞检测集成。
-    /// 
-    /// 核心模型：WASD 移动的是摄像头，玩家球体始终位于屏幕固定位置
-    /// （视角中心向下偏一定角度、固定距离处）。球体世界位置由摄像头推算。
+    /// 玩家控制器。WASD 直接移动球体，摄像头从动跟随。
     /// 
     /// 移动方向（参考操作逻辑设计文档）：
     /// - WASD：主导平面移动（相对摄像头视角的上下左右）
@@ -30,16 +27,13 @@ namespace STGEngine.Runtime.Player
         [Header("视觉")]
         [SerializeField] private float _hitboxVisualAlpha = 0.4f;
 
-        // ── 运行时状态 ──
         private PlayerState _state;
         private PlayerCamera _playerCamera;
         private Vector3 _inputDirection;
 
-        // ── 碰撞数据源（由外部注入） ──
         private System.Func<IReadOnlyList<BulletState>> _bulletStateProvider;
         private float _bulletCollisionRadius = 0.1f;
 
-        // ── 事件 ──
         public event System.Action OnPlayerHit;
         public event System.Action<int> OnGraze;
         public event System.Action OnPlayerDeath;
@@ -47,9 +41,6 @@ namespace STGEngine.Runtime.Player
         public PlayerState State => _state;
         public PlayerCamera Camera => _playerCamera;
 
-        /// <summary>
-        /// 初始化玩家。由场景管理器调用。
-        /// </summary>
         public void Initialize(PlayerCamera camera,
             System.Func<IReadOnlyList<BulletState>> bulletProvider = null,
             float bulletRadius = 0.1f)
@@ -58,19 +49,16 @@ namespace STGEngine.Runtime.Player
             _bulletStateProvider = bulletProvider;
             _bulletCollisionRadius = bulletRadius;
 
-            // 摄像头初始化：用当前摄像头位置作为起点
-            if (camera != null)
-                camera.Initialize(camera.transform.position);
-
-            // 球体初始位置由摄像头推算
-            var startPos = camera != null ? camera.ComputePlayerWorldPos() : transform.position;
             _state = new PlayerState
             {
-                Position = startPos,
+                Position = transform.position,
                 HitboxRadius = _hitboxRadius,
                 GrazeRadius = _grazeRadius
             };
-            transform.position = startPos;
+
+            // 摄像头跟随球体
+            if (camera != null)
+                camera.SetTarget(transform);
         }
 
         private void Update()
@@ -79,24 +67,15 @@ namespace STGEngine.Runtime.Player
         }
 
         /// <summary>
-        /// 逻辑 tick。移动摄像头，球体位置由摄像头推算。
+        /// 逻辑 tick。移动球体，摄像头在 LateUpdate 中自动跟随。
         /// </summary>
         public void FixedTick(float dt)
         {
             if (_state == null) return;
 
-            // ── 移动摄像头 ──
+            // ── 移动球体 ──
             float speed = _state.IsSlow ? _moveSpeed * _slowMultiplier : _moveSpeed;
-            if (_playerCamera != null)
-            {
-                _playerCamera.MoveCamera(_inputDirection * speed * dt);
-                // 球体位置由摄像头推算（始终在屏幕固定位置）
-                _state.Position = _playerCamera.ComputePlayerWorldPos();
-            }
-            else
-            {
-                _state.Position += _inputDirection * speed * dt;
-            }
+            _state.Position += _inputDirection * speed * dt;
             transform.position = _state.Position;
 
             // ── 无敌计时 ──
@@ -135,7 +114,6 @@ namespace STGEngine.Runtime.Player
             }
         }
 
-        /// <summary>收集本帧输入，转换为世界空间方向向量。</summary>
         private void GatherInput()
         {
             if (_state == null) return;
