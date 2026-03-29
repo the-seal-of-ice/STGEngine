@@ -634,15 +634,27 @@ namespace STGEngine.Editor.UI
                 container.style.paddingBottom = 6;   // ★ modifier 块内底部内边距，影响最后一个字段到分隔线的距离
                 container.style.marginBottom = 6;    // ★ modifier 块之间的外间距
 
-                // modifier 标题行（水平排列：类型名 + [×] 删除按钮）
+                // modifier 标题行（水平排列：类型名 + 标记 + [×] 删除按钮）
                 var header = new VisualElement();
                 header.style.flexDirection = FlexDirection.Row;
                 header.style.marginBottom = 4;  // 标题行与下方参数字段的间距
 
-                var label = new Label(mod.TypeName);  // modifier 类型名标签（橙色粗体）
+                var labelText = mod.TypeName;
+                var labelColor = new Color(0.9f, 0.7f, 0.3f); // 默认橙色
+
+                // ISpawnModifier 特殊标记
+                if (mod is ISpawnModifier)
+                {
+                    labelText = "\u2726 " + labelText; // ✦ 前缀
+                    labelColor = new Color(0.5f, 0.9f, 0.7f); // 绿色调，区分于飞行修饰器
+                }
+
+                var label = new Label(labelText);
                 label.style.flexGrow = 1;
                 label.style.unityFontStyleAndWeight = FontStyle.Bold;
-                label.style.color = new Color(0.9f, 0.7f, 0.3f);
+                label.style.color = labelColor;
+                if (mod is ISpawnModifier)
+                    label.tooltip = "Spawn modifier \u2014 modifies bullet data at emission time";
                 header.Add(label);
 
                 var removeBtn = new Button(() =>  // [×] 删除按钮
