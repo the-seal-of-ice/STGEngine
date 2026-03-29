@@ -105,6 +105,19 @@ namespace STGEngine.Runtime.Preview
         {
             if (_pattern == null) return;
 
+            // Re-evaluate whether simulation is needed (modifier list may have changed)
+            bool needsSim = SimulationEvaluator.RequiresSimulation(_pattern);
+            if (needsSim != _useSimulation || (needsSim && _simEvaluator == null))
+            {
+                _useSimulation = needsSim;
+                _simEvaluator = needsSim ? new SimulationEvaluator(_pattern) : null;
+            }
+            else if (_useSimulation)
+            {
+                // Rebuild evaluator to pick up newly added/removed modifiers
+                _simEvaluator = new SimulationEvaluator(_pattern);
+            }
+
             if (_useSimulation)
             {
                 // For simulation path, reset and re-simulate to current time
