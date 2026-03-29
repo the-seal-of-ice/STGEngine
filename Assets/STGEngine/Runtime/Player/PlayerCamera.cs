@@ -3,19 +3,19 @@ using UnityEngine;
 namespace STGEngine.Runtime.Player
 {
     /// <summary>
-    /// 玩家摄像头：鼠标控制视角（俯仰+航向），跟随玩家位置。
+    /// 玩家摄像头：鼠标控制视角（俯仰+航向），刚性绑定在玩家身上。
     /// 提供 Forward/Right/Up 向量供 PlayerController 做相对移动。
     /// 
-    /// 设计参考：传统指向式（FPS 习惯，仅俯仰和航向，无横滚）。
-    /// 摄像头位置 = 玩家位置 + 仅受 yaw 旋转的偏移（不受 pitch 影响）。
-    /// 摄像头朝向 = yaw + pitch 直接决定（无 LookAt，无惯性）。
+    /// 摄像头作为玩家的子物体，位置由 localPosition 固定偏移决定，
+    /// 仅 yaw 旋转偏移方向，朝向由 yaw+pitch 直接控制。
+    /// 后期可在此基础上添加可选的惯性/弹簧效果。
     /// </summary>
     [AddComponentMenu("STGEngine/Player Camera")]
     public class PlayerCamera : MonoBehaviour
     {
-        [Header("跟随")]
-        [Tooltip("摄像头相对玩家的偏移（仅受 yaw 旋转，不受 pitch 影响）")]
-        [SerializeField] private Vector3 _followOffset = new(0f, 3f, -8f);
+        [Header("偏移")]
+        [Tooltip("摄像头相对玩家的本地偏移（仅受 yaw 旋转）")]
+        [SerializeField] private Vector3 _localOffset = new(0f, 3f, -8f);
 
         [Header("视角")]
         [SerializeField] private float _mouseSensitivity = 2f;
@@ -39,17 +39,21 @@ namespace STGEngine.Runtime.Player
         public float Yaw => _yaw;
         public float Pitch => _pitch;
 
-        /// <summary>设置跟随目标。</summary>
+        /// <summary>
+        /// 绑定到玩家。摄像头脱离原父级，改为独立跟随（不做 SetParent，
+        /// 因为摄像头旋转需要独立于玩家 Transform）。
+        /// </summary>
         public void SetTarget(Transform target)
         {
             _target = target;
             if (target != null)
             {
-                // 从当前摄像头朝向初始化 yaw/pitch
                 var euler = transform.eulerAngles;
                 _yaw = euler.y;
                 _pitch = euler.x;
                 if (_pitch > 180f) _pitch -= 360f;
+                // 立即同步位置
+                ApplyTransform();
             }
         }
 
@@ -65,7 +69,6 @@ namespace STGEngine.Runtime.Player
         {
             if (_target == null) return;
 
-            // 鼠标视角控制（仅在光标锁定时）
             if (_cursorLocked)
             {
                 _yaw += Input.GetAxis("Mouse X") * _mouseSensitivity;
@@ -73,12 +76,15 @@ namespace STGEngine.Runtime.Player
                 _pitch = Mathf.Clamp(_pitch, _minPitch, _maxPitch);
             }
 
-            // 摄像头位置：玩家位置 + 仅受 yaw 旋转的偏移
-            // pitch 不影响偏移，避免低头时摄像头钻地、抬头时飞天
-            var yawRotation = Quaternion.Euler(0f, _yaw, 0f);
-            transform.position = _target.position + yawRotation * _followOffset;
+            ApplyTransform();
+        }
 
-            // 摄像头朝向：直接由 yaw + pitch 决定，无 LookAt，无惯性
+        /// <summary>刚性同步：位置 = 玩家位置 + yaw 旋转后的偏移，朝向 = yaw+pitch。</summary>
+        private void ApplyTransform()
+        {
+            if (_target == null) return;
+            var yawRot = Quaternion.Euler(0f, _yaw, 0f);
+            transform.position = _target.position + yawRot * _localOffset;
             transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
         }
 
