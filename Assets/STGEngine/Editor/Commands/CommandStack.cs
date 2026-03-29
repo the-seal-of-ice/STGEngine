@@ -15,6 +15,9 @@ namespace STGEngine.Editor.Commands
         /// <summary>Fired after any Execute/Undo/Redo to refresh UI.</summary>
         public event Action OnStateChanged;
 
+        /// <summary>Manually fire OnStateChanged (for direct property edits that bypass Execute).</summary>
+        public void NotifyChanged() => OnStateChanged?.Invoke();
+
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
 

@@ -39,6 +39,8 @@ namespace STGEngine.Runtime.Bullet
         // Cached formula modifiers (shared, stateless)
         private List<IFormulaModifier> _formulaMods;
         private SpeedCurveModifier _speedCurveMod;
+        // Cached spawn modifiers
+        private List<ISpawnModifier> _spawnMods;
 
         public SimulationEvaluator(BulletPattern pattern) : this(pattern, pattern?.Seed ?? 0) { }
 
@@ -247,6 +249,15 @@ namespace STGEngine.Runtime.Bullet
             for (int i = 0; i < count; i++)
             {
                 var spawn = emitter.Evaluate(i, 0f);
+
+                // Apply spawn modifiers (position scatter, direction jitter, speed variation)
+                if (_spawnMods != null)
+                {
+                    var spawnRng = _seedManager.NextRng();
+                    foreach (var sm in _spawnMods)
+                        sm.Apply(ref spawn, i, spawnRng);
+                }
+
                 var dir = spawn.Direction;
                 if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
                 else dir.Normalize();
@@ -393,7 +404,12 @@ namespace STGEngine.Runtime.Bullet
             _formulaMods = new List<IFormulaModifier>();
             foreach (var mod in _pattern.Modifiers)
             {
-                if (mod is IFormulaModifier fm)
+                if (mod is ISpawnModifier sm)
+                {
+                    _spawnMods ??= new List<ISpawnModifier>();
+                    _spawnMods.Add(sm);
+                }
+                else if (mod is IFormulaModifier fm)
                 {
                     _formulaMods.Add(fm);
                     if (mod is SpeedCurveModifier scm)

@@ -1,18 +1,22 @@
 using UnityEngine;
+using STGEngine.Core.Emitters;
+using STGEngine.Core.Random;
 
 namespace STGEngine.Core.Modifiers
 {
     /// <summary>
     /// Base modifier interface.
-    /// Two subtypes: IFormulaModifier (stateless, seekable) and
-    /// ISimulationModifier (stateful, frame-stepped).
+    /// Three subtypes:
+    /// - IFormulaModifier (stateless, seekable position offset)
+    /// - ISimulationModifier (stateful, frame-stepped)
+    /// - ISpawnModifier (one-shot, modifies BulletSpawnData at emission time)
     /// </summary>
     public interface IModifier
     {
         /// <summary>YAML type tag.</summary>
         string TypeName { get; }
 
-        /// <summary>True = simulation modifier, false = formula modifier.</summary>
+        /// <summary>True = simulation modifier, false = formula or spawn modifier.</summary>
         bool RequiresSimulation { get; }
     }
 
@@ -45,5 +49,21 @@ namespace STGEngine.Core.Modifiers
 
         /// <summary>Restore internal state from a snapshot.</summary>
         void RestoreState(object state);
+    }
+
+    /// <summary>
+    /// Spawn modifier: one-shot modification of BulletSpawnData at emission time.
+    /// Applied after Emitter.Evaluate, before flight calculation begins.
+    /// Use for initial position scatter, direction jitter, speed variation, etc.
+    /// </summary>
+    public interface ISpawnModifier : IModifier
+    {
+        /// <summary>
+        /// Modify spawn data in-place. Called once per bullet at emission time.
+        /// </summary>
+        /// <param name="spawn">Spawn data to modify (Position, Direction, Speed).</param>
+        /// <param name="bulletIndex">Index of this bullet in the emission batch.</param>
+        /// <param name="rng">Deterministic random source for this bullet.</param>
+        void Apply(ref BulletSpawnData spawn, int bulletIndex, DeterministicRng rng);
     }
 }

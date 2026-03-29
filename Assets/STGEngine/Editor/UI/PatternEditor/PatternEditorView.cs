@@ -87,6 +87,7 @@ namespace STGEngine.Editor.UI
 
         private static readonly Dictionary<string, Func<IModifier>> ModifierFactories = new()
         {
+            { "spawn_offset", () => new SpawnOffsetModifier() },
             { "speed_curve", () => new SpeedCurveModifier() },
             { "wave", () => new WaveModifier() },
             { "wave_independent", () => new IndependentWaveModifier() },
@@ -602,6 +603,15 @@ namespace STGEngine.Editor.UI
             _commandStack.Execute(cmd);
         }
 
+        /// <summary>
+        /// Notify that a modifier property was changed directly (without CommandStack).
+        /// Triggers preview refresh via OnStateChanged.
+        /// </summary>
+        private void OnModifierChanged()
+        {
+            _commandStack.NotifyChanged();
+        }
+
         // 动态重建 modifier 列表（添加/删除/Undo 时调用）
         private void RebuildModifierList()
         {
@@ -755,6 +765,80 @@ namespace STGEngine.Editor.UI
                         binder.Bind(destroyParentToggle, sm,
                             nameof(SplitModifier.DestroyParent), _commandStack);
                         container.Add(destroyParentToggle);
+                        break;
+
+                    case SpawnOffsetModifier so:
+                        // Distribution mode
+                        var modeNames = new List<string> { "Uniform", "Normal" };
+                        var modeDropdown = new DropdownField("Distribution", modeNames,
+                            so.Mode == SpawnOffsetModifier.DistributionMode.Normal ? 1 : 0);
+                        modeDropdown.RegisterValueChangedCallback(e =>
+                        {
+                            so.Mode = e.newValue == "Normal"
+                                ? SpawnOffsetModifier.DistributionMode.Normal
+                                : SpawnOffsetModifier.DistributionMode.Uniform;
+                            OnModifierChanged();
+                        });
+                        container.Add(modeDropdown);
+
+                        // Position range (Vector3)
+                        var posLabel = new Label("Position Range (XYZ)");
+                        posLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+                        posLabel.style.marginTop = 4;
+                        container.Add(posLabel);
+                        var posXField = new FloatField("X") { value = so.PositionRange.x };
+                        posXField.isDelayed = true;
+                        posXField.RegisterValueChangedCallback(e =>
+                        {
+                            so.PositionRange = new Vector3(Mathf.Max(0f, e.newValue), so.PositionRange.y, so.PositionRange.z);
+                            OnModifierChanged();
+                        });
+                        container.Add(posXField);
+                        var posYField = new FloatField("Y") { value = so.PositionRange.y };
+                        posYField.isDelayed = true;
+                        posYField.RegisterValueChangedCallback(e =>
+                        {
+                            so.PositionRange = new Vector3(so.PositionRange.x, Mathf.Max(0f, e.newValue), so.PositionRange.z);
+                            OnModifierChanged();
+                        });
+                        container.Add(posYField);
+                        var posZField = new FloatField("Z") { value = so.PositionRange.z };
+                        posZField.isDelayed = true;
+                        posZField.RegisterValueChangedCallback(e =>
+                        {
+                            so.PositionRange = new Vector3(so.PositionRange.x, so.PositionRange.y, Mathf.Max(0f, e.newValue));
+                            OnModifierChanged();
+                        });
+                        container.Add(posZField);
+
+                        // Direction jitter
+                        var dirJitterField = new FloatField("Direction Jitter (\u00b0)") { value = so.DirectionJitter };
+                        dirJitterField.isDelayed = true;
+                        dirJitterField.RegisterValueChangedCallback(e =>
+                        {
+                            so.DirectionJitter = Mathf.Max(0f, e.newValue);
+                            OnModifierChanged();
+                        });
+                        container.Add(dirJitterField);
+
+                        // Link direction to offset
+                        var linkToggle = new Toggle("Link Direction to Offset") { value = so.LinkDirectionToOffset };
+                        linkToggle.RegisterValueChangedCallback(e =>
+                        {
+                            so.LinkDirectionToOffset = e.newValue;
+                            OnModifierChanged();
+                        });
+                        container.Add(linkToggle);
+
+                        // Speed jitter
+                        var speedJitterField = new FloatField("Speed Jitter") { value = so.SpeedJitter };
+                        speedJitterField.isDelayed = true;
+                        speedJitterField.RegisterValueChangedCallback(e =>
+                        {
+                            so.SpeedJitter = Mathf.Max(0f, e.newValue);
+                            OnModifierChanged();
+                        });
+                        container.Add(speedJitterField);
                         break;
                 }
 

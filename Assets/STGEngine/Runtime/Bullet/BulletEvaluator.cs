@@ -3,6 +3,7 @@ using UnityEngine;
 using STGEngine.Core.DataModel;
 using STGEngine.Core.Emitters;
 using STGEngine.Core.Modifiers;
+using STGEngine.Core.Random;
 
 namespace STGEngine.Runtime.Bullet
 {
@@ -36,8 +37,9 @@ namespace STGEngine.Runtime.Bullet
             int count = emitter.Count;
             var results = new List<BulletState>(count);
 
-            // Separate formula modifiers (evaluated per-bullet)
+            // Classify modifiers
             List<IFormulaModifier> formulaMods = null;
+            List<ISpawnModifier> spawnMods = null;
             bool hasSpeedCurve = false;
             SpeedCurveModifier speedCurveMod = null;
             bool hasIndependentWave = false;
@@ -47,7 +49,12 @@ namespace STGEngine.Runtime.Bullet
                 formulaMods = new List<IFormulaModifier>(pattern.Modifiers.Count);
                 foreach (var mod in pattern.Modifiers)
                 {
-                    if (mod is IFormulaModifier fm)
+                    if (mod is ISpawnModifier sm)
+                    {
+                        spawnMods ??= new List<ISpawnModifier>();
+                        spawnMods.Add(sm);
+                    }
+                    else if (mod is IFormulaModifier fm)
                     {
                         formulaMods.Add(fm);
                         if (mod is SpeedCurveModifier scm)
@@ -62,9 +69,23 @@ namespace STGEngine.Runtime.Bullet
                 }
             }
 
+            // SeedManager for deterministic spawn modifier RNG
+            SeedManager seedMgr = null;
+            if (spawnMods != null && spawnMods.Count > 0)
+                seedMgr = new SeedManager(pattern.Seed);
+
             for (int i = 0; i < count; i++)
             {
                 var spawn = emitter.Evaluate(i, t);
+
+                // Apply spawn modifiers (position scatter, direction jitter, speed variation)
+                if (spawnMods != null)
+                {
+                    var rng = seedMgr.NextRng();
+                    foreach (var sm in spawnMods)
+                        sm.Apply(ref spawn, i, rng);
+                }
+
                 var dir = spawn.Direction;
                 if (dir.sqrMagnitude < 0.0001f)
                     dir = Vector3.forward;
@@ -113,7 +134,7 @@ namespace STGEngine.Runtime.Bullet
                 }
                 else
                 {
-                    // No modifiers: simple linear motion
+                    // No formula modifiers: simple linear motion
                     pos += dir * (spawn.Speed * t);
                 }
 
