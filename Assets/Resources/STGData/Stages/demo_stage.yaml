@@ -19,6 +19,12 @@ segments:
     duration: 5.807982
     pattern_id: 4cf7ab95555b
     spawn_position: {x: 0, y: 5, z: 0}
+  - type: spawn_wave
+    id: wevt_5b20e1
+    start_time: 0
+    duration: 10
+    wave_id: cb5dcaf6453f
+    spawn_offset: {x: 0, y: 0, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
