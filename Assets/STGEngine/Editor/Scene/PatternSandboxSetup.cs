@@ -10,6 +10,7 @@ using STGEngine.Editor.UI.FileManager;
 using STGEngine.Editor.UI.Settings;
 using STGEngine.Editor.UI.Timeline;
 using STGEngine.Runtime;
+using STGEngine.Runtime.Player;
 using STGEngine.Runtime.Preview;
 using STGEngine.Runtime.Rendering;
 
@@ -90,6 +91,12 @@ namespace STGEngine.Editor.Scene
         private SettingsPanel _settingsPanel;
         private bool _wasPlayingBeforePause;
         private List<WavePlaceholderData> _activeWaves;
+
+        // Player mode
+        private PlayerController _playerController;
+        private PlayerCamera _playerCamera;
+        private bool _playerModeActive;
+        private Label _playerHudLabel;
 
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
@@ -225,6 +232,15 @@ namespace STGEngine.Editor.Scene
                         PollGlobalShortcuts();
                     }
                 }
+            }
+
+            // ── Player mode update ──
+            if (_playerModeActive && _playerController != null)
+            {
+                UpdatePlayerMode();
+                // Drive player logic in sync with simulation tick rate
+                // (simplified: use Time.deltaTime for now, proper SimulationLoop integration later)
+                _playerController.FixedTick(Time.deltaTime);
             }
         }
 
@@ -555,6 +571,18 @@ namespace STGEngine.Editor.Scene
             });
             bar.Add(modeDropdown);
 
+            // Player mode toggle button
+            var playerBtn = new Button(() => TogglePlayerMode())
+            { text = "\u25b6 Player" };
+            playerBtn.style.width = 70;
+            playerBtn.style.height = 22;
+            playerBtn.style.marginLeft = 12;
+            playerBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+            playerBtn.style.color = new Color(0.8f, 1f, 0.8f);
+            playerBtn.style.fontSize = 11;
+            playerBtn.tooltip = "Toggle player mode (spawn player + game camera)";
+            bar.Add(playerBtn);
+
             root.Add(bar);
         }
 
@@ -655,6 +683,149 @@ namespace STGEngine.Editor.Scene
             {
                 var go = new GameObject("SandboxBoundary");
                 go.AddComponent<SandboxBoundary>();
+            }
+        }
+
+        // ─── Player Mode ───
+
+        private void TogglePlayerMode()
+        {
+            if (_playerModeActive)
+                ExitPlayerMode();
+            else
+                EnterPlayerMode();
+        }
+
+        private void EnterPlayerMode()
+        {
+            _playerModeActive = true;
+            var cam = Camera.main;
+            if (cam == null) return;
+
+            // Disable free camera
+            var freeCam = cam.GetComponent<FreeCameraController>();
+            if (freeCam != null) freeCam.enabled = false;
+
+            // Create or find player
+            if (_playerController == null)
+            {
+                var playerGo = new GameObject("Player");
+                playerGo.transform.position = new Vector3(0f, 0f, -5f);
+
+                // Simple visual: small sphere
+                var visual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                visual.transform.SetParent(playerGo.transform);
+                visual.transform.localPosition = Vector3.zero;
+                visual.transform.localScale = Vector3.one * 0.4f;
+                // Remove collider (we use our own collision system)
+                var col = visual.GetComponent<Collider>();
+                if (col != null) DestroyImmediate(col);
+                var renderer = visual.GetComponent<Renderer>();
+                if (renderer != null)
+                    renderer.material.color = new Color(0.3f, 0.8f, 1f);
+
+                _playerController = playerGo.AddComponent<PlayerController>();
+            }
+
+            // Setup camera
+            _playerCamera = cam.gameObject.GetComponent<PlayerCamera>();
+            if (_playerCamera == null)
+                _playerCamera = cam.gameObject.AddComponent<PlayerCamera>();
+            _playerCamera.enabled = true;
+
+            // Provide bullet data for collision detection
+            System.Func<IReadOnlyList<STGEngine.Runtime.Bullet.BulletState>> bulletProvider = null;
+            if (_editorMode == EditorMode.PatternEdit && _previewer != null)
+            {
+                bulletProvider = () => _previewer.CurrentStates;
+            }
+            else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
+            {
+                // Aggregate bullet states from all active previewers
+                bulletProvider = () =>
+                {
+                    var all = new List<STGEngine.Runtime.Bullet.BulletState>();
+                    foreach (var ae in _timelinePlayback.ActiveEvents)
+                    {
+                        var states = ae.Previewer?.CurrentStates;
+                        if (states != null) all.AddRange(states);
+                    }
+                    return all;
+                };
+            }
+
+            _playerController.Initialize(_playerCamera, bulletProvider);
+            _playerCamera.SetCursorLock(true);
+
+            // HUD
+            if (_playerHudLabel == null && _uiDocument != null)
+            {
+                _playerHudLabel = new Label();
+                _playerHudLabel.style.position = Position.Absolute;
+                _playerHudLabel.style.right = 10;
+                _playerHudLabel.style.top = 10;
+                _playerHudLabel.style.color = new Color(0.3f, 1f, 0.5f);
+                _playerHudLabel.style.fontSize = 12;
+                _playerHudLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                _playerHudLabel.style.backgroundColor = new Color(0, 0, 0, 0.5f);
+                _playerHudLabel.style.paddingLeft = 6;
+                _playerHudLabel.style.paddingRight = 6;
+                _playerHudLabel.style.paddingTop = 3;
+                _playerHudLabel.style.paddingBottom = 3;
+                _playerHudLabel.style.borderTopLeftRadius = _playerHudLabel.style.borderTopRightRadius =
+                    _playerHudLabel.style.borderBottomLeftRadius = _playerHudLabel.style.borderBottomRightRadius = 4;
+                _uiDocument.rootVisualElement.Add(_playerHudLabel);
+            }
+            if (_playerHudLabel != null)
+                _playerHudLabel.style.display = DisplayStyle.Flex;
+
+            Debug.Log("[PatternSandbox] Player mode ON — WASD move, Mouse aim, Ctrl slow, ESC exit");
+        }
+
+        private void ExitPlayerMode()
+        {
+            _playerModeActive = false;
+            var cam = Camera.main;
+
+            // Re-enable free camera
+            if (cam != null)
+            {
+                var freeCam = cam.GetComponent<FreeCameraController>();
+                if (freeCam != null) freeCam.enabled = true;
+            }
+
+            // Disable player camera
+            if (_playerCamera != null)
+            {
+                _playerCamera.SetCursorLock(false);
+                _playerCamera.enabled = false;
+            }
+
+            // Hide HUD
+            if (_playerHudLabel != null)
+                _playerHudLabel.style.display = DisplayStyle.None;
+
+            Debug.Log("[PatternSandbox] Player mode OFF — free camera restored");
+        }
+
+        private void UpdatePlayerMode()
+        {
+            if (!_playerModeActive || _playerController == null) return;
+
+            // ESC exits player mode
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                ExitPlayerMode();
+                return;
+            }
+
+            // Update HUD
+            if (_playerHudLabel != null)
+            {
+                var s = _playerController.State;
+                _playerHudLabel.text = $"Lives: {s.Lives}  Graze: {s.GrazeTotal}" +
+                    (s.IsSlow ? "  [SLOW]" : "") +
+                    (s.IsInvincible ? "  [INV]" : "");
             }
         }
 
