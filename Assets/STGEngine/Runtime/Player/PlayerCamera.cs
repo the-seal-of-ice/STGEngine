@@ -16,8 +16,8 @@ namespace STGEngine.Runtime.Player
     {
         [Header("视角")]
         [SerializeField] private float _mouseSensitivity = 2f;
-        [SerializeField] private float _minPitch = -30f;
-        [SerializeField] private float _maxPitch = 60f;
+        [SerializeField] private float _minPitch = -89f;
+        [SerializeField] private float _maxPitch = 89f;
 
         [Header("摄像头与球体的位置关系")]
         [Tooltip("摄像头距离球体的固定距离")]
