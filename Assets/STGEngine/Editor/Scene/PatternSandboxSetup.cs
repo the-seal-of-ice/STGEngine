@@ -702,15 +702,17 @@ namespace STGEngine.Editor.Scene
             _playerModeActive = true;
             _playerModeIsAI = aiMode;
 
-            // Suppress editor shortcuts
-            if (_timelineView != null) _timelineView.SuppressShortcuts = true;
-
-            // Disable entire UI interaction
-            if (_uiRoot != null)
+            // Manual mode: suppress shortcuts + disable UI (keys belong to player)
+            // AI mode: keep UI fully interactive (user can edit while AI runs)
+            if (!aiMode)
             {
-                (_uiRoot.focusController?.focusedElement as VisualElement)?.Blur();
-                _uiRoot.pickingMode = PickingMode.Ignore;
-                _uiRoot.SetEnabled(false);
+                if (_timelineView != null) _timelineView.SuppressShortcuts = true;
+                if (_uiRoot != null)
+                {
+                    (_uiRoot.focusController?.focusedElement as VisualElement)?.Blur();
+                    _uiRoot.pickingMode = PickingMode.Ignore;
+                    _uiRoot.SetEnabled(false);
+                }
             }
 
             var cam = Camera.main;
@@ -821,14 +823,15 @@ namespace STGEngine.Editor.Scene
             _playerModeActive = false;
             _activePlayer = null;
 
-            // Restore editor shortcuts
-            if (_timelineView != null) _timelineView.SuppressShortcuts = false;
-
-            // Restore UI interaction
-            if (_uiRoot != null)
+            // Restore editor shortcuts + UI (only needed for manual mode)
+            if (!_playerModeIsAI)
             {
-                _uiRoot.SetEnabled(true);
-                _uiRoot.pickingMode = PickingMode.Position;
+                if (_timelineView != null) _timelineView.SuppressShortcuts = false;
+                if (_uiRoot != null)
+                {
+                    _uiRoot.SetEnabled(true);
+                    _uiRoot.pickingMode = PickingMode.Position;
+                }
             }
 
             var cam = Camera.main;
