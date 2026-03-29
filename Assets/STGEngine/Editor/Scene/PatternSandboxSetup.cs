@@ -702,8 +702,14 @@ namespace STGEngine.Editor.Scene
             // Suppress editor shortcuts (WASD/Space/etc. belong to player now)
             if (_timelineView != null) _timelineView.SuppressShortcuts = true;
 
-            // Blur all UI elements so focused buttons/fields don't consume key events
-            (_uiRoot?.focusController?.focusedElement as VisualElement)?.Blur();
+            // Disable entire UI interaction so focused buttons can't consume Space/Enter
+            if (_uiRoot != null)
+            {
+                (_uiRoot.focusController?.focusedElement as VisualElement)?.Blur();
+                _uiRoot.pickingMode = PickingMode.Ignore;
+                _uiRoot.SetEnabled(false);
+            }
+            // Re-enable just the HUD (added later, after SetEnabled(false))
 
             var cam = Camera.main;
             if (cam == null) return;
@@ -783,7 +789,10 @@ namespace STGEngine.Editor.Scene
                 _uiDocument.rootVisualElement.Add(_playerHudLabel);
             }
             if (_playerHudLabel != null)
+            {
                 _playerHudLabel.style.display = DisplayStyle.Flex;
+                _playerHudLabel.SetEnabled(true); // Re-enable after parent was disabled
+            }
 
             Debug.Log("[PatternSandbox] Player mode ON — WASD move, Mouse aim, Ctrl slow, ESC exit");
         }
@@ -794,6 +803,13 @@ namespace STGEngine.Editor.Scene
 
             // Restore editor shortcuts
             if (_timelineView != null) _timelineView.SuppressShortcuts = false;
+
+            // Restore UI interaction
+            if (_uiRoot != null)
+            {
+                _uiRoot.SetEnabled(true);
+                _uiRoot.pickingMode = PickingMode.Position;
+            }
 
             var cam = Camera.main;
 
