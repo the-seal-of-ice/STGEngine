@@ -16,8 +16,8 @@ namespace STGEngine.Runtime.Player
     {
         [Header("视角")]
         [SerializeField] private float _mouseSensitivity = 2f;
-        [SerializeField] private float _minPitch = -89f;
-        [SerializeField] private float _maxPitch = 89f;
+        [SerializeField] private float _minPitch = -89.99f;
+        [SerializeField] private float _maxPitch = 89.99f;
 
         [Header("摄像头与球体的位置关系")]
         [Tooltip("摄像头距离球体的固定距离")]
@@ -83,13 +83,12 @@ namespace STGEngine.Runtime.Player
         {
             if (_target == null) return;
 
-            // 摄像头在球体的"后上方"：视线方向取反，再向上偏 _elevationOffset 度
-            var lookPitch = _pitch - _elevationOffset; // 摄像头实际俯仰比视角 pitch 更高
+            var lookPitch = _pitch - _elevationOffset;
             var backDir = Quaternion.Euler(lookPitch, _yaw, 0f) * Vector3.back;
 
             transform.position = _target.position + backDir * _distance;
-            // 直接看向球体，球体自然出现在屏幕中心偏下
-            transform.LookAt(_target.position);
+            // 用 Quaternion 直接设朝向，避免 LookAt 在极端俯仰角的万向锁
+            transform.rotation = Quaternion.Euler(lookPitch, _yaw, 0f);
         }
 
         private void OnDisable()
