@@ -279,6 +279,10 @@ namespace STGEngine.Editor.Scene
 
         private void OnDestroy()
         {
+            // Clean up player mode if active
+            if (_playerModeActive)
+                ExitPlayerMode();
+
             EngineSettingsManager.OnSettingsChanged -= OnSettingsChanged;
             _editorView?.Dispose();
             _timelineView?.Dispose();
@@ -809,18 +813,29 @@ namespace STGEngine.Editor.Scene
                 if (freeCam != null) freeCam.enabled = true;
             }
 
-            // Disable player camera
+            // Destroy player camera component
             if (_playerCamera != null)
             {
                 _playerCamera.SetCursorLock(false);
-                _playerCamera.enabled = false;
+                Destroy(_playerCamera);
+                _playerCamera = null;
             }
 
-            // Hide HUD
-            if (_playerHudLabel != null)
-                _playerHudLabel.style.display = DisplayStyle.None;
+            // Destroy player game object (sphere + controller)
+            if (_playerController != null)
+            {
+                Destroy(_playerController.gameObject);
+                _playerController = null;
+            }
 
-            Debug.Log("[PatternSandbox] Player mode OFF — free camera restored");
+            // Remove HUD
+            if (_playerHudLabel != null)
+            {
+                _playerHudLabel.RemoveFromHierarchy();
+                _playerHudLabel = null;
+            }
+
+            Debug.Log("[PatternSandbox] Player mode OFF — player destroyed, free camera restored");
         }
 
         private void UpdatePlayerMode()
