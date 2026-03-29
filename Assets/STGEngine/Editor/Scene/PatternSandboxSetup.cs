@@ -94,8 +94,11 @@ namespace STGEngine.Editor.Scene
 
         // Player mode
         private PlayerController _playerController;
+        private SimulatedPlayer _simulatedPlayer;
+        private IPlayerProvider _activePlayer; // 当前活跃的玩家（真人或 AI）
         private PlayerCamera _playerCamera;
         private bool _playerModeActive;
+        private bool _playerModeIsAI;
         private Label _playerHudLabel;
 
         /// <summary>Current editor mode.</summary>
@@ -203,10 +206,13 @@ namespace STGEngine.Editor.Scene
             }
 
             // ── Player mode update (takes priority over all editor shortcuts) ──
-            if (_playerModeActive && _playerController != null)
+            if (_playerModeActive)
             {
                 UpdatePlayerMode();
-                _playerController.FixedTick(Time.deltaTime);
+                if (_playerModeIsAI && _simulatedPlayer != null)
+                    _simulatedPlayer.FixedTick(Time.deltaTime);
+                else if (!_playerModeIsAI && _playerController != null)
+                    _playerController.FixedTick(Time.deltaTime);
                 return; // Skip all editor shortcuts while in player mode
             }
 
@@ -357,7 +363,8 @@ namespace STGEngine.Editor.Scene
             _timelineView.OnSpellCardEditingChanged += OnSpellCardEditingChanged;
             _timelineView.OnWaveEditingChanged += OnWaveEditingChanged;
             _timelineView.OnLayerChanged += () => _assetLibrary?.RefreshButtonStates();
-            _timelineView.OnPlayerModeRequested += TogglePlayerMode;
+            _timelineView.OnPlayerModeRequested += () => TogglePlayerMode(false);
+            _timelineView.OnPlayerAIModeRequested += () => TogglePlayerMode(true);
             _timelineView.OnMeshTypeChanged += mt =>
             {
                 EnsureBulletVisuals(mt);
@@ -680,29 +687,31 @@ namespace STGEngine.Editor.Scene
 
         // ─── Player Mode ───
 
-        private void TogglePlayerMode()
+        private void TogglePlayerMode(bool aiMode)
         {
             if (_playerModeActive)
+            {
                 ExitPlayerMode();
-            else
-                EnterPlayerMode();
+                return;
+            }
+            EnterPlayerMode(aiMode);
         }
 
-        private void EnterPlayerMode()
+        private void EnterPlayerMode(bool aiMode)
         {
             _playerModeActive = true;
+            _playerModeIsAI = aiMode;
 
-            // Suppress editor shortcuts (WASD/Space/etc. belong to player now)
+            // Suppress editor shortcuts
             if (_timelineView != null) _timelineView.SuppressShortcuts = true;
 
-            // Disable entire UI interaction so focused buttons can't consume Space/Enter
+            // Disable entire UI interaction
             if (_uiRoot != null)
             {
                 (_uiRoot.focusController?.focusedElement as VisualElement)?.Blur();
                 _uiRoot.pickingMode = PickingMode.Ignore;
                 _uiRoot.SetEnabled(false);
             }
-            // Re-enable just the HUD (added later, after SetEnabled(false))
 
             var cam = Camera.main;
             if (cam == null) return;
@@ -711,34 +720,7 @@ namespace STGEngine.Editor.Scene
             var freeCam = cam.GetComponent<FreeCameraController>();
             if (freeCam != null) freeCam.enabled = false;
 
-            // Create or find player
-            if (_playerController == null)
-            {
-                var playerGo = new GameObject("Player");
-                playerGo.transform.position = new Vector3(0f, 0f, -5f);
-
-                // Simple visual: small sphere
-                var visual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                visual.transform.SetParent(playerGo.transform);
-                visual.transform.localPosition = Vector3.zero;
-                visual.transform.localScale = Vector3.one * 0.4f;
-                // Remove collider (we use our own collision system)
-                var col = visual.GetComponent<Collider>();
-                if (col != null) DestroyImmediate(col);
-                var renderer = visual.GetComponent<Renderer>();
-                if (renderer != null)
-                    renderer.material.color = new Color(0.3f, 0.8f, 1f);
-
-                _playerController = playerGo.AddComponent<PlayerController>();
-            }
-
-            // Setup camera
-            _playerCamera = cam.gameObject.GetComponent<PlayerCamera>();
-            if (_playerCamera == null)
-                _playerCamera = cam.gameObject.AddComponent<PlayerCamera>();
-            _playerCamera.enabled = true;
-
-            // Provide bullet data for collision detection
+            // Build bullet provider
             System.Func<IReadOnlyList<STGEngine.Runtime.Bullet.BulletState>> bulletProvider = null;
             if (_editorMode == EditorMode.PatternEdit && _previewer != null)
             {
@@ -746,7 +728,6 @@ namespace STGEngine.Editor.Scene
             }
             else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
             {
-                // Aggregate bullet states from all active previewers
                 bulletProvider = () =>
                 {
                     var all = new List<STGEngine.Runtime.Bullet.BulletState>();
@@ -759,8 +740,55 @@ namespace STGEngine.Editor.Scene
                 };
             }
 
-            _playerController.Initialize(_playerCamera, bulletProvider);
-            _playerCamera.SetCursorLock(true);
+            if (aiMode)
+            {
+                // ── AI Simulated Player ──
+                var playerGo = new GameObject("SimulatedPlayer");
+                playerGo.transform.position = new Vector3(0f, 0f, -5f);
+                _simulatedPlayer = playerGo.AddComponent<SimulatedPlayer>();
+
+                var brain = new RandomWalkBrain
+                {
+                    Seed = UnityEngine.Random.Range(0, int.MaxValue),
+                    WanderInterval = 1.5f,
+                    SlowdownTendency = 0.3f,
+                    BoundaryAvoidance = 0.6f
+                };
+                _simulatedPlayer.Initialize(brain, bulletProvider);
+                _activePlayer = _simulatedPlayer;
+
+                Debug.Log($"[PatternSandbox] AI Player mode ON — Seed: {brain.Seed}, ESC to exit");
+            }
+            else
+            {
+                // ── Manual Player ──
+                var playerGo = new GameObject("Player");
+                playerGo.transform.position = new Vector3(0f, 0f, -5f);
+
+                var visual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                visual.transform.SetParent(playerGo.transform);
+                visual.transform.localPosition = Vector3.zero;
+                visual.transform.localScale = Vector3.one * 0.4f;
+                var col = visual.GetComponent<Collider>();
+                if (col != null) DestroyImmediate(col);
+                var renderer = visual.GetComponent<Renderer>();
+                if (renderer != null)
+                    renderer.material.color = new Color(0.3f, 0.8f, 1f);
+
+                _playerController = playerGo.AddComponent<PlayerController>();
+
+                // Setup camera
+                _playerCamera = cam.gameObject.GetComponent<PlayerCamera>();
+                if (_playerCamera == null)
+                    _playerCamera = cam.gameObject.AddComponent<PlayerCamera>();
+                _playerCamera.enabled = true;
+
+                _playerController.Initialize(_playerCamera, bulletProvider);
+                _playerCamera.SetCursorLock(true);
+                _activePlayer = _playerController;
+
+                Debug.Log("[PatternSandbox] Manual Player mode ON — WASD move, Mouse aim, Ctrl slow, ESC exit");
+            }
 
             // HUD
             if (_playerHudLabel == null && _uiDocument != null)
@@ -784,15 +812,14 @@ namespace STGEngine.Editor.Scene
             if (_playerHudLabel != null)
             {
                 _playerHudLabel.style.display = DisplayStyle.Flex;
-                _playerHudLabel.SetEnabled(true); // Re-enable after parent was disabled
+                _playerHudLabel.SetEnabled(true);
             }
-
-            Debug.Log("[PatternSandbox] Player mode ON — WASD move, Mouse aim, Ctrl slow, ESC exit");
         }
 
         private void ExitPlayerMode()
         {
             _playerModeActive = false;
+            _activePlayer = null;
 
             // Restore editor shortcuts
             if (_timelineView != null) _timelineView.SuppressShortcuts = false;
@@ -821,11 +848,18 @@ namespace STGEngine.Editor.Scene
                 _playerCamera = null;
             }
 
-            // Destroy player game object (sphere + controller)
+            // Destroy manual player
             if (_playerController != null)
             {
                 Destroy(_playerController.gameObject);
                 _playerController = null;
+            }
+
+            // Destroy AI player
+            if (_simulatedPlayer != null)
+            {
+                Destroy(_simulatedPlayer.gameObject);
+                _simulatedPlayer = null;
             }
 
             // Remove HUD
@@ -840,7 +874,7 @@ namespace STGEngine.Editor.Scene
 
         private void UpdatePlayerMode()
         {
-            if (!_playerModeActive || _playerController == null) return;
+            if (!_playerModeActive) return;
 
             // ESC exits player mode
             if (Input.GetKeyDown(KeyCode.Escape))
@@ -850,10 +884,11 @@ namespace STGEngine.Editor.Scene
             }
 
             // Update HUD
-            if (_playerHudLabel != null)
+            if (_playerHudLabel != null && _activePlayer != null)
             {
-                var s = _playerController.State;
-                _playerHudLabel.text = $"Lives: {s.Lives}  Graze: {s.GrazeTotal}" +
+                var s = _activePlayer.State;
+                var modeTag = _playerModeIsAI ? "[AI]" : "[Manual]";
+                _playerHudLabel.text = $"{modeTag}  Lives: {s.Lives}  Graze: {s.GrazeTotal}" +
                     (s.IsSlow ? "  [SLOW]" : "") +
                     (s.IsInvincible ? "  [INV]" : "");
             }

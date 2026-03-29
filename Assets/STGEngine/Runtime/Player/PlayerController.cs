@@ -14,7 +14,7 @@ namespace STGEngine.Runtime.Player
     /// - 左Ctrl：低速模式（精确闪避）
     /// </summary>
     [AddComponentMenu("STGEngine/Player Controller")]
-    public class PlayerController : MonoBehaviour
+    public class PlayerController : MonoBehaviour, IPlayerProvider
     {
         [Header("移动")]
         [SerializeField] private float _moveSpeed = 8f;
@@ -40,6 +40,11 @@ namespace STGEngine.Runtime.Player
 
         public PlayerState State => _state;
         public PlayerCamera Camera => _playerCamera;
+
+        // ── IPlayerProvider ──
+        Vector3 IPlayerProvider.Position => _state?.Position ?? transform.position;
+        Vector3 IPlayerProvider.Forward => _playerCamera != null ? _playerCamera.ViewForward : transform.forward;
+        bool IPlayerProvider.IsActive => _state != null && enabled;
 
         public void Initialize(PlayerCamera camera,
             System.Func<IReadOnlyList<BulletState>> bulletProvider = null,

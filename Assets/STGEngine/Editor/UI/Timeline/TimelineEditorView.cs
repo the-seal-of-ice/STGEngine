@@ -62,6 +62,9 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>Fired when the Player button on the toolbar is clicked.</summary>
         public Action OnPlayerModeRequested;
 
+        /// <summary>Fired when the AI Sim button on the toolbar is clicked.</summary>
+        public Action OnPlayerAIModeRequested;
+
         private readonly TimelinePlaybackController _playback;
         private readonly PatternLibrary _library;
         private readonly CommandStack _commandStack = new();
@@ -1004,16 +1007,26 @@ namespace STGEngine.Editor.UI.Timeline
             loadBtn.style.marginLeft = 4;
             _toolbar.Add(loadBtn);
 
-            // ── Player mode toggle ──
-            var playerBtn = new Button(() => OnPlayerModeRequested?.Invoke())
+            // ── Player mode buttons ──
+            var playerManualBtn = new Button(() => OnPlayerModeRequested?.Invoke())
             { text = "\u25b6 Player" };
-            playerBtn.style.width = 64;
-            playerBtn.style.color = new Color(0.8f, 1f, 0.8f);
-            playerBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
-            playerBtn.style.marginLeft = 8;
-            playerBtn.style.fontSize = 11;
-            playerBtn.tooltip = "Toggle player mode (Spawn player + game camera)";
-            _toolbar.Add(playerBtn);
+            playerManualBtn.style.width = 56;
+            playerManualBtn.style.color = new Color(0.8f, 1f, 0.8f);
+            playerManualBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+            playerManualBtn.style.marginLeft = 8;
+            playerManualBtn.style.fontSize = 10;
+            playerManualBtn.tooltip = "Manual player mode (WASD + mouse)";
+            _toolbar.Add(playerManualBtn);
+
+            var playerAIBtn = new Button(() => OnPlayerAIModeRequested?.Invoke())
+            { text = "\u2699 AI Sim" };
+            playerAIBtn.style.width = 56;
+            playerAIBtn.style.color = new Color(0.8f, 0.9f, 1f);
+            playerAIBtn.style.backgroundColor = new Color(0.15f, 0.25f, 0.35f);
+            playerAIBtn.style.marginLeft = 2;
+            playerAIBtn.style.fontSize = 10;
+            playerAIBtn.tooltip = "AI simulated player (random walk)";
+            _toolbar.Add(playerAIBtn);
         }
 
         private VisualElement _snapPopup;
