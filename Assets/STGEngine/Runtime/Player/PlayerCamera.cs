@@ -3,29 +3,34 @@ using UnityEngine;
 namespace STGEngine.Runtime.Player
 {
     /// <summary>
-    /// 玩家摄像头：鼠标控制视角（俯仰+航向），刚性绑定在玩家身上。
-    /// 提供 Forward/Right/Up 向量供 PlayerController 做相对移动。
+    /// 玩家摄像头：鼠标控制视角（俯仰+航向）。
     /// 
-    /// 摄像头作为玩家的子物体，位置由 localPosition 固定偏移决定，
-    /// 仅 yaw 旋转偏移方向，朝向由 yaw+pitch 直接控制。
-    /// 后期可在此基础上添加可选的惯性/弹簧效果。
+    /// 核心设计：摄像头是主体，玩家球体的世界位置由摄像头推算。
+    /// 球体始终位于屏幕上的固定位置（视角中心向下偏一定角度、固定距离处）。
+    /// 类似传统 STG 的"自机固定在画面下方"，但扩展到 3D。
+    /// 
+    /// 移动 WASD 实际上是在移动摄像头，球体跟着摄像头走。
     /// </summary>
     [AddComponentMenu("STGEngine/Player Camera")]
     public class PlayerCamera : MonoBehaviour
     {
-        [Header("偏移")]
-        [Tooltip("摄像头相对玩家的本地偏移（仅受 yaw 旋转）")]
-        [SerializeField] private Vector3 _localOffset = new(0f, 3f, -8f);
-
         [Header("视角")]
         [SerializeField] private float _mouseSensitivity = 2f;
         [SerializeField] private float _minPitch = -60f;
         [SerializeField] private float _maxPitch = 75f;
 
+        [Header("自机屏幕位置")]
+        [Tooltip("自机相对视角中心向下偏的角度（度）")]
+        [SerializeField] private float _playerDownAngle = 15f;
+        [Tooltip("自机距离摄像头的固定距离")]
+        [SerializeField] private float _playerDistance = 12f;
+
         private float _yaw;
         private float _pitch = 20f;
-        private Transform _target;
         private bool _cursorLocked;
+
+        // 摄像头自身的世界位置（由 PlayerController 的移动驱动）
+        private Vector3 _cameraWorldPos;
 
         /// <summary>视角方向的前方（水平投影，Y=0 归一化）。用于玩家相对移动。</summary>
         public Vector3 ViewForward => Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward;
@@ -40,21 +45,32 @@ namespace STGEngine.Runtime.Player
         public float Pitch => _pitch;
 
         /// <summary>
-        /// 绑定到玩家。摄像头脱离原父级，改为独立跟随（不做 SetParent，
-        /// 因为摄像头旋转需要独立于玩家 Transform）。
+        /// 计算玩家球体应该在的世界位置。
+        /// = 摄像头位置 + 沿(视角中心向下偏 _playerDownAngle 度)方向 * _playerDistance。
         /// </summary>
-        public void SetTarget(Transform target)
+        public Vector3 ComputePlayerWorldPos()
         {
-            _target = target;
-            if (target != null)
-            {
-                var euler = transform.eulerAngles;
-                _yaw = euler.y;
-                _pitch = euler.x;
-                if (_pitch > 180f) _pitch -= 360f;
-                // 立即同步位置
-                ApplyTransform();
-            }
+            var camRotation = Quaternion.Euler(_pitch, _yaw, 0f);
+            // 从视角中心向下偏一定角度
+            var playerDir = camRotation * Quaternion.Euler(_playerDownAngle, 0f, 0f) * Vector3.forward;
+            return _cameraWorldPos + playerDir * _playerDistance;
+        }
+
+        /// <summary>初始化摄像头位置和朝向。</summary>
+        public void Initialize(Vector3 startPos)
+        {
+            _cameraWorldPos = startPos;
+            var euler = transform.eulerAngles;
+            _yaw = euler.y;
+            _pitch = euler.x;
+            if (_pitch > 180f) _pitch -= 360f;
+            ApplyTransform();
+        }
+
+        /// <summary>移动摄像头（由 PlayerController 调用，WASD 驱动的是摄像头位移）。</summary>
+        public void MoveCamera(Vector3 worldDelta)
+        {
+            _cameraWorldPos += worldDelta;
         }
 
         /// <summary>锁定/解锁鼠标光标。</summary>
@@ -67,8 +83,6 @@ namespace STGEngine.Runtime.Player
 
         private void LateUpdate()
         {
-            if (_target == null) return;
-
             if (_cursorLocked)
             {
                 _yaw += Input.GetAxis("Mouse X") * _mouseSensitivity;
@@ -79,12 +93,9 @@ namespace STGEngine.Runtime.Player
             ApplyTransform();
         }
 
-        /// <summary>刚性同步：位置 = 玩家位置 + yaw 旋转后的偏移，朝向 = yaw+pitch。</summary>
         private void ApplyTransform()
         {
-            if (_target == null) return;
-            var yawRot = Quaternion.Euler(0f, _yaw, 0f);
-            transform.position = _target.position + yawRot * _localOffset;
+            transform.position = _cameraWorldPos;
             transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
         }
 
