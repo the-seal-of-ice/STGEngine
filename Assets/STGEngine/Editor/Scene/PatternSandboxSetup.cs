@@ -718,9 +718,13 @@ namespace STGEngine.Editor.Scene
             var cam = Camera.main;
             if (cam == null) return;
 
-            // Disable free camera
-            var freeCam = cam.GetComponent<FreeCameraController>();
-            if (freeCam != null) freeCam.enabled = false;
+            // Manual mode: disable free camera (PlayerCamera takes over)
+            // AI mode: keep free camera so user can orbit/pan to observe
+            if (!aiMode)
+            {
+                var freeCam = cam.GetComponent<FreeCameraController>();
+                if (freeCam != null) freeCam.enabled = false;
+            }
 
             // Build bullet provider
             System.Func<IReadOnlyList<STGEngine.Runtime.Bullet.BulletState>> bulletProvider = null;
@@ -836,8 +840,8 @@ namespace STGEngine.Editor.Scene
 
             var cam = Camera.main;
 
-            // Re-enable free camera
-            if (cam != null)
+            // Re-enable free camera (only disabled in manual mode)
+            if (!_playerModeIsAI && cam != null)
             {
                 var freeCam = cam.GetComponent<FreeCameraController>();
                 if (freeCam != null) freeCam.enabled = true;
