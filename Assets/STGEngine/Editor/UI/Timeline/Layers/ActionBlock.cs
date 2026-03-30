@@ -41,7 +41,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public float Duration
         {
-            get => EffectiveWidth;
+            get => _event.Duration;
             set => _event.Duration = value;
         }
 
@@ -68,24 +68,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         /// <summary>
         /// Whether this block should render as a zero-width marker instead of a rectangular block.
-        /// True when the event is instant (Duration=0) and has no timeout.
+        /// True when Duration=0 (instant event or infinite-wait blocker).
         /// </summary>
-        public bool IsMarker => _event.Duration <= 0f && _event.Timeout <= 0f;
-
-        /// <summary>
-        /// Effective display width in seconds.
-        /// Blocking + Timeout > 0 → Timeout; otherwise → Duration.
-        /// Marker events return 0.
-        /// </summary>
-        public float EffectiveWidth
-        {
-            get
-            {
-                if (_event.Blocking && _event.Timeout > 0f)
-                    return _event.Timeout;
-                return _event.Duration;
-            }
-        }
+        public bool IsMarker => _event.Duration <= 0f;
 
         /// <summary>The underlying ActionEvent data.</summary>
         public ActionEvent ActionEvent => _event;

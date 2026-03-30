@@ -206,7 +206,7 @@ namespace STGEngine.Runtime.Preview
                 if (BlockingConditionResolver != null)
                     resolved = BlockingConditionResolver(_blockingEvent);
                 // Check timeout (0 = infinite)
-                if (!resolved && _blockingEvent.Timeout > 0f && _blockingElapsed >= _blockingEvent.Timeout)
+                if (!resolved && _blockingEvent.Duration > 0f && _blockingElapsed >= _blockingEvent.Duration)
                     resolved = true;
 
                 if (resolved)

@@ -724,7 +724,6 @@ namespace STGEngine.Editor.UI.Timeline
                                 Duration = ae.Duration,
                                 ActionType = ae.ActionType,
                                 Blocking = ae.Blocking,
-                                Timeout = ae.Timeout,
                                 Params = ae.Params
                             });
                         }
@@ -4926,16 +4925,12 @@ namespace STGEngine.Editor.UI.Timeline
         {
             bool defaultBlocking = actionType == ActionType.ScoreTally
                                 || actionType == ActionType.WaitCondition;
-            float defaultTimeout = actionType switch
-            {
-                ActionType.ScoreTally => 3f,
-                ActionType.WaitCondition => 30f,
-                _ => 0f
-            };
             float defaultDuration = actionType switch
             {
                 ActionType.ShowTitle => 3f,
                 ActionType.ScreenEffect => 1f,
+                ActionType.ScoreTally => 3f,
+                ActionType.WaitCondition => 30f,
                 _ => 0f
             };
 
@@ -4946,7 +4941,6 @@ namespace STGEngine.Editor.UI.Timeline
                 Duration = defaultDuration,
                 ActionType = actionType,
                 Blocking = defaultBlocking,
-                Timeout = defaultTimeout,
                 Params = ActionParamsRegistry.CreateDefault(actionType)
             };
 
@@ -5023,24 +5017,6 @@ namespace STGEngine.Editor.UI.Timeline
                 OnStageDataChanged();
             });
             props.Add(blockingToggle);
-
-            // Timeout (only visible when Blocking)
-            var timeoutField = new FloatField("Timeout (0=∞)") { value = ae.Timeout };
-            timeoutField.isDelayed = true;
-            timeoutField.style.display = ae.Blocking ? DisplayStyle.Flex : DisplayStyle.None;
-            timeoutField.RegisterValueChangedCallback(e =>
-            {
-                ae.Timeout = Mathf.Max(0f, e.newValue);
-                _trackArea.RebuildBlocks();
-                OnStageDataChanged();
-            });
-            props.Add(timeoutField);
-
-            // Update timeout visibility when blocking changes
-            blockingToggle.RegisterValueChangedCallback(e2 =>
-            {
-                timeoutField.style.display = e2.newValue ? DisplayStyle.Flex : DisplayStyle.None;
-            });
 
             // ── Type-specific params ──
             if (ae.Params != null)

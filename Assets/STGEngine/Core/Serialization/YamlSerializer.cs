@@ -487,11 +487,6 @@ namespace STGEngine.Core.Serialization
                                     EmitScalar(emitter, "blocking");
                                     EmitScalar(emitter, "true");
                                 }
-                                if (ae.Timeout > 0f)
-                                {
-                                    EmitScalar(emitter, "timeout");
-                                    EmitScalar(emitter, Fmt(ae.Timeout));
-                                }
                                 if (ae.Params != null)
                                 {
                                     EmitScalar(emitter, "params");
@@ -660,8 +655,6 @@ namespace STGEngine.Core.Serialization
                         ae.ActionType = (ActionType)System.Enum.Parse(typeof(ActionType), SnakeToPascal(atVal.ToString()), true);
                     if (dict.TryGetValue("blocking", out var blk))
                         ae.Blocking = blk.ToString().Equals("true", System.StringComparison.OrdinalIgnoreCase);
-                    if (dict.TryGetValue("timeout", out var tmo))
-                        ae.Timeout = ParseFloat(tmo);
                     if (dict.TryGetValue("params", out var paramsObj2))
                     {
                         var paramsType = ActionParamsRegistry.Resolve(ae.ActionType);
