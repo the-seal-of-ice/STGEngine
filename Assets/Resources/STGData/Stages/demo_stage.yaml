@@ -15,10 +15,22 @@ segments:
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_25c900
-    start_time: 2.803611
+    start_time: 0.7116373
     duration: 6.584649
     pattern_id: demo_sphere_homing
     spawn_position: {x: 0, y: 5, z: 0}
+  - type: spawn_pattern
+    id: evt_fa559c
+    start_time: 0
+    duration: 5
+    pattern_id: 4cf7ab95555b
+    spawn_position: {x: 0, y: 5, z: 0}
+  - type: spawn_pattern
+    id: evt_fa2fb8
+    start_time: 8.653845
+    duration: 5
+    pattern_id: fbd54cab4147
+    spawn_position: {x: 0, y: 0, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
@@ -38,4 +50,4 @@ segments:
     duration: 10
     pattern_id: 4cf7ab95555b
     spawn_position: {x: 0, y: 8, z: 0}
-  spell_card_ids: [ff6a80680a1d, 09de05227a16, 6b81c96539f5]
+  spell_card_ids: [6b81c96539f5, ff6a80680a1d]

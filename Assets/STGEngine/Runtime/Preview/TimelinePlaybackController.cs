@@ -69,6 +69,13 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Currently active events.</summary>
         public IReadOnlyList<ActiveEvent> ActiveEvents => _activeEvents;
 
+        /// <summary>
+        /// Dynamic target provider for PlayerHomingModifier. When set, newly activated
+        /// previewers automatically inherit this provider so player-homing bullets
+        /// track the live player position.
+        /// </summary>
+        public System.Func<Vector3> HomingTargetProvider { get; set; }
+
         private readonly SimulationLoop _simLoop = new();
         private readonly List<ActiveEvent> _activeEvents = new();
         private PreviewerPool _pool;
@@ -254,6 +261,7 @@ namespace STGEngine.Runtime.Preview
             if (spawnEvt.ResolvedPattern == null) return;
 
             var previewer = _pool.Acquire();
+            previewer.HomingTargetProvider = HomingTargetProvider;
             previewer.Pattern = spawnEvt.ResolvedPattern;
             previewer.transform.position = spawnEvt.SpawnPosition;
 

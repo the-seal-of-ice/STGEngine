@@ -561,6 +561,15 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             seg.SpellCardIds.Add(spellCardId);
+
+            // Rebuild BossFightLayer blocks so the newly added spell card is visible
+            if (_currentLayer is BossFightLayer bfLayer2)
+            {
+                bfLayer2.InvalidateBlocks();
+                WireLayerToTrackArea(bfLayer2);
+                _trackArea.RebuildBlocks();
+            }
+
             ShowLayerSummary(_currentLayer);
             LoadBossFightPreview(seg);
             OnStageDataChanged();

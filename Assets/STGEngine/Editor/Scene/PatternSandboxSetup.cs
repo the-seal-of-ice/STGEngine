@@ -819,6 +819,8 @@ namespace STGEngine.Editor.Scene
                 }
                 else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
                 {
+                    // Set on controller so future ActivateEvent calls inherit the provider
+                    _timelinePlayback.HomingTargetProvider = homingTarget;
                     foreach (var ae in _timelinePlayback.ActiveEvents)
                     {
                         if (ae.Previewer != null)
@@ -862,6 +864,7 @@ namespace STGEngine.Editor.Scene
             if (_previewer != null) _previewer.HomingTargetProvider = null;
             if (_timelinePlayback != null)
             {
+                _timelinePlayback.HomingTargetProvider = null;
                 foreach (var ae in _timelinePlayback.ActiveEvents)
                 {
                     if (ae.Previewer != null)
