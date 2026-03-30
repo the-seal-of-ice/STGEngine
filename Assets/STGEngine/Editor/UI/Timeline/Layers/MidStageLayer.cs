@@ -17,7 +17,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
     public class MidStageLayer : ITimelineLayer
     {
         private readonly TimelineSegment _segment;
-        private readonly List<EventBlock> _blocks = new();
+        private readonly List<ITimelineBlock> _blocks = new();
 
         /// <summary>Optional: set to enable double-click into Pattern/Wave layers.</summary>
         public PatternLibrary Library { get; set; }
@@ -120,7 +120,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             var entries = new List<ContextMenuEntry>
             {
                 new("Add Pattern Event", () => OnAddPatternRequested?.Invoke(time)),
-                new("Add Wave Event", () => OnAddWaveRequested?.Invoke(time))
+                new("Add Wave Event", () => OnAddWaveRequested?.Invoke(time)),
+                new("Add Action Event", () => OnAddActionRequested?.Invoke(time))
             };
 
             if (selectedBlock != null)
@@ -171,6 +172,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         /// <summary>Raised when "Add Wave Event" is selected from context menu.</summary>
         public System.Action<float> OnAddWaveRequested;
 
+        /// <summary>Raised when "Add Action Event" is selected from context menu.</summary>
+        public System.Action<float> OnAddActionRequested;
+
         /// <summary>Raised when "Delete Selected Event" is selected from context menu.</summary>
         public System.Action<ITimelineBlock> OnDeleteRequested;
 
@@ -189,9 +193,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
             foreach (var evt in _segment.Events)
             {
-                _blocks.Add(new EventBlock(evt,
-                    pid => Catalog?.FindPattern(pid)?.Name,
-                    wid => Catalog?.FindWave(wid)?.Name));
+                if (evt is ActionEvent ae)
+                    _blocks.Add(new ActionBlock(ae));
+                else
+                    _blocks.Add(new EventBlock(evt,
+                        pid => Catalog?.FindPattern(pid)?.Name,
+                        wid => Catalog?.FindWave(wid)?.Name));
             }
         }
     }

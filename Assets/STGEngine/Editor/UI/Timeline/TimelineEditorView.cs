@@ -2133,6 +2133,7 @@ namespace STGEngine.Editor.UI.Timeline
                 midLayer.InvalidateBlocks(); // Rebuild blocks now that Catalog is set
                 midLayer.OnAddPatternRequested = time => OnAddEventRequested(time);
                 midLayer.OnAddWaveRequested = time => OnAddWaveEventRequested(time);
+                midLayer.OnAddActionRequested = time => OnAddActionEventRequested(time);
                 midLayer.OnDeleteRequested = blk =>
                 {
                     _trackArea.SelectBlock(blk);
@@ -4745,6 +4746,92 @@ namespace STGEngine.Editor.UI.Timeline
                 Duration = duration,
                 WaveId = waveId,
                 SpawnOffset = Vector3.zero
+            };
+
+            _trackArea.AddEvent(evt);
+        }
+
+        // ── Action Event creation ──
+
+        private void OnAddActionEventRequested(float atTime)
+        {
+            if (_stage == null) return;
+            ShowActionTypePicker(atTime);
+        }
+
+        private void ShowActionTypePicker(float atTime)
+        {
+            var picker = new VisualElement();
+            picker.style.position = Position.Absolute;
+            picker.style.left = Length.Percent(30);
+            picker.style.top = Length.Percent(20);
+            picker.style.backgroundColor = new Color(0.18f, 0.18f, 0.18f, 0.98f);
+            picker.style.borderTopWidth = picker.style.borderBottomWidth =
+                picker.style.borderLeftWidth = picker.style.borderRightWidth = 1;
+            picker.style.borderTopColor = picker.style.borderBottomColor =
+                picker.style.borderLeftColor = picker.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+            picker.style.paddingTop = picker.style.paddingBottom = 8;
+            picker.style.paddingLeft = picker.style.paddingRight = 12;
+            picker.style.minWidth = 180;
+
+            var title = new Label("Select Action Type");
+            title.style.color = new Color(0.9f, 0.9f, 0.9f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.marginBottom = 8;
+            picker.Add(title);
+
+            foreach (ActionType at in System.Enum.GetValues(typeof(ActionType)))
+            {
+                var color = ActionBlock.GetActionColor(at);
+                var btn = new Button(() =>
+                {
+                    picker.RemoveFromHierarchy();
+                    CreateActionEvent(at, atTime);
+                })
+                { text = at.ToString() };
+                btn.style.backgroundColor = new Color(color.r * 0.4f, color.g * 0.4f, color.b * 0.4f);
+                btn.style.color = new Color(0.95f, 0.95f, 0.95f);
+                btn.style.marginBottom = 2;
+                btn.style.borderLeftWidth = 3;
+                btn.style.borderLeftColor = color;
+                picker.Add(btn);
+            }
+
+            var cancelBtn = new Button(() => picker.RemoveFromHierarchy()) { text = "Cancel" };
+            cancelBtn.style.backgroundColor = new Color(0.3f, 0.2f, 0.2f);
+            cancelBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            cancelBtn.style.marginTop = 4;
+            picker.Add(cancelBtn);
+
+            Root.panel.visualTree.Add(picker);
+        }
+
+        private void CreateActionEvent(ActionType actionType, float atTime)
+        {
+            bool defaultBlocking = actionType == ActionType.ScoreTally
+                                || actionType == ActionType.WaitCondition;
+            float defaultTimeout = actionType switch
+            {
+                ActionType.ScoreTally => 3f,
+                ActionType.WaitCondition => 30f,
+                _ => 0f
+            };
+            float defaultDuration = actionType switch
+            {
+                ActionType.ShowTitle => 3f,
+                ActionType.ScreenEffect => 1f,
+                _ => 0f
+            };
+
+            var evt = new ActionEvent
+            {
+                Id = $"act_{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                StartTime = atTime,
+                Duration = defaultDuration,
+                ActionType = actionType,
+                Blocking = defaultBlocking,
+                Timeout = defaultTimeout,
+                Params = ActionParamsRegistry.CreateDefault(actionType)
             };
 
             _trackArea.AddEvent(evt);

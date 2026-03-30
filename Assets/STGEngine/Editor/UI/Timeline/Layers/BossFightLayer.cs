@@ -257,6 +257,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     timeOffset += sc.TransitionDuration;
                 }
             }
+
+            // ActionEvents in BossFight — insert by StartTime
+            if (_segment.Events != null)
+            {
+                foreach (var evt in _segment.Events)
+                {
+                    if (evt is ActionEvent ae)
+                        _blocks.Add(new ActionBlock(ae));
+                }
+            }
         }
     }
 }
