@@ -569,6 +569,8 @@ namespace STGEngine.Editor.UI.Timeline
                     if (w > 0f && h > 0f)
                         blk.DrawThumbnail(ctx.painter2D, w, h);
                 };
+                // Ensure repaint after first layout (resolvedStyle may be 0 during initial generateVisualContent)
+                element.RegisterCallback<GeometryChangedEvent>(_ => element.MarkDirtyRepaint());
             }
 
             // DesignEstimate green line (drawn via generateVisualContent)
@@ -768,6 +770,9 @@ namespace STGEngine.Editor.UI.Timeline
                 float snappedEnd = SnapTime(startTime + rawDuration);
                 float newDuration = Mathf.Clamp(snappedEnd - startTime, 0.5f, maxDuration);
                 blk.Duration = newDuration;
+
+                // Repaint thumbnail with clip-based rendering during drag
+                _dragBlockInfo.Element.MarkDirtyRepaint();
             }
             else if (_dragMode == DragMode.Reorder)
             {
@@ -838,6 +843,9 @@ namespace STGEngine.Editor.UI.Timeline
                     if (blk.DataSource is TimelineEvent resizeEvt)
                         OnEventValuesChanged?.Invoke(resizeEvt);
                 }
+
+                // Trigger thumbnail repaint after resize
+                _dragBlockInfo.Element.MarkDirtyRepaint();
             }
             else if (_dragMode == DragMode.Reorder)
             {

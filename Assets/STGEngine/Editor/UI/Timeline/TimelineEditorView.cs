@@ -817,6 +817,7 @@ namespace STGEngine.Editor.UI.Timeline
         {
             // Prefer STGData catalog path
             var catalog = STGCatalog.Load();
+            _catalog = catalog; // Set early so StageLayer can build BossFight thumbnails
             string path = catalog.GetStagePath("demo_stage");
             if (File.Exists(path))
             {
@@ -1902,6 +1903,12 @@ namespace STGEngine.Editor.UI.Timeline
             // Return to BossFight layer and reload preview
             if (_editingBossFightSegment != null)
             {
+                // Rebuild blocks so SpellCardBlock thumbnails pick up Delay/Duration changes
+                if (_currentLayer is BossFightLayer bf)
+                {
+                    bf.InvalidateBlocks();
+                    _trackArea.SetLayer(bf);
+                }
                 ShowLayerSummary(_currentLayer);
                 LoadBossFightPreview(_editingBossFightSegment);
                 // LoadBossFightPreview already fires OnSpellCardEditingChanged with combined SC
@@ -1981,6 +1988,14 @@ namespace STGEngine.Editor.UI.Timeline
                 parentEt.Library = _library; // ensure latest library cache
                 parentEt.InvalidateBlocks();
             }
+            else if (_currentLayer is BossFightLayer parentBf)
+            {
+                parentBf.InvalidateBlocks();
+            }
+            else if (_currentLayer is StageLayer parentStage)
+            {
+                parentStage.InvalidateBlocks();
+            }
 
             WireLayerToTrackArea(_currentLayer);
             _trackArea.SetLayer(_currentLayer);
@@ -2024,6 +2039,14 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     parentEt.Library = _library;
                     parentEt.InvalidateBlocks();
+                }
+                else if (_currentLayer is BossFightLayer parentBf)
+                {
+                    parentBf.InvalidateBlocks();
+                }
+                else if (_currentLayer is StageLayer parentStage)
+                {
+                    parentStage.InvalidateBlocks();
                 }
 
                 WireLayerToTrackArea(_currentLayer);

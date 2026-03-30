@@ -2,15 +2,15 @@ id: 6b81c96539f5
 name: 星符「流星雨」
 patterns:
 - pattern_id: fbd54cab4147
-  delay: 9.02069
-  duration: 12.00494
+  delay: 5.872589
+  duration: 20.28483
   offset: {x: 0, y: 0, z: 0}
 boss_path:
 - time: 0
   position: {x: 0, y: 6, z: 0}
 - time: 5
   position: {x: 7, y: 6, z: 0}
-time_limit: 20.7893
+time_limit: 26.15742
 health: 1000
 design_estimate: -1
 transition_duration: 1.5

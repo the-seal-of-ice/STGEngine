@@ -100,17 +100,28 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (_thumbnailBars == null || _thumbnailBars.Count == 0) return;
 
+            float duration = _spellCard.TimeLimit;
+            if (duration <= 0f) return;
+            float pxPerSec = blockWidth / duration;
+
             float barAreaTop = 14f;
             float barAreaHeight = blockHeight - barAreaTop - 2f;
             if (barAreaHeight < 2f) return;
 
-            // All patterns on row 0 (they can overlap in a spell card)
             float barH = Mathf.Min(barAreaHeight, 6f);
 
             foreach (var bar in _thumbnailBars)
             {
-                float x = bar.NormalizedStart * blockWidth;
-                float w = Mathf.Max(bar.NormalizedWidth * blockWidth, 2f);
+                float x = bar.AbsoluteStart * pxPerSec;
+                float w = bar.AbsoluteWidth * pxPerSec;
+
+                // Clip to block bounds
+                if (x >= blockWidth) continue;
+                if (x + w <= 0f) continue;
+                if (x < 0f) { w += x; x = 0f; }
+                if (x + w > blockWidth) w = blockWidth - x;
+                w = Mathf.Max(w, 2f);
+
                 float y = barAreaTop + bar.Row * (barH + 1f);
                 float h = barH;
 
@@ -158,11 +169,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 {
                     NormalizedStart = Mathf.Clamp01(scp.Delay / timeLimit),
                     NormalizedWidth = Mathf.Clamp01(scp.Duration / timeLimit),
+                    AbsoluteStart = scp.Delay,
+                    AbsoluteWidth = scp.Duration,
                     Color = color,
                     Row = row
                 });
             }
         }
+
+        /// <summary>Rebuild thumbnail bars (e.g. after TimeLimit resize).</summary>
+        public void InvalidateThumbnailCache() => BuildThumbnailBars();
     }
 
     /// <summary>

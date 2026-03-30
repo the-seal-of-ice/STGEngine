@@ -56,6 +56,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         /// <summary>Force rebuild of block list from stage segments.</summary>
         public void InvalidateBlocks()
         {
+            _spellCardTimeLimitCache.Clear();
             RebuildBlockList();
         }
 
@@ -354,6 +355,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     {
                         NormalizedStart = Mathf.Clamp01(evt.StartTime / segDur),
                         NormalizedWidth = Mathf.Clamp01(evt.Duration / segDur),
+                        AbsoluteStart = evt.StartTime,
+                        AbsoluteWidth = evt.Duration,
                         Color = color,
                         Row = row
                     });
@@ -364,9 +367,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 // Spell cards laid out sequentially (cached to avoid repeated disk IO)
                 float scOffset = 0f;
 
-                foreach (var scId in seg.SpellCardIds)
+                for (int i = 0; i < seg.SpellCardIds.Count; i++)
                 {
-                    float timeLimit = GetCachedSpellCardTimeLimit(scId, seg.Id);
+                    var scId = seg.SpellCardIds[i];
+                    float timeLimit = GetCachedSpellCardTimeLimit(scId, seg.Id, i);
                     if (timeLimit <= 0f) continue;
 
                     int hash = scId?.GetHashCode() ?? 0;
@@ -377,6 +381,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     {
                         NormalizedStart = Mathf.Clamp01(scOffset / segDur),
                         NormalizedWidth = Mathf.Clamp01(timeLimit / segDur),
+                        AbsoluteStart = scOffset,
+                        AbsoluteWidth = timeLimit,
                         Color = color,
                         Row = 0
                     });
@@ -388,14 +394,14 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             return bars;
         }
 
-        private float GetCachedSpellCardTimeLimit(string scId, string segmentId)
+        private float GetCachedSpellCardTimeLimit(string scId, string segmentId, int index)
         {
-            // Cache key includes segment context for override-aware lookups
-            var cacheKey = $"{segmentId}/{scId}";
+            // Cache key includes instance context for override-aware lookups
+            var cacheKey = $"{segmentId}/sc_{index}/{scId}";
             if (_spellCardTimeLimitCache.TryGetValue(cacheKey, out float cached))
                 return cached;
 
-            var contextId = OverrideManager.SegmentContext(segmentId);
+            var contextId = OverrideManager.SpellCardInstanceContext(segmentId, index);
             var path = OverrideManager.ResolveSpellCardPath(_catalog, contextId, scId);
             if (!System.IO.File.Exists(path))
             {

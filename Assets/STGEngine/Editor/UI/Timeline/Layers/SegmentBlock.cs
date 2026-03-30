@@ -14,6 +14,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         public float NormalizedStart;
         /// <summary>Normalized width (0..1) within the parent block.</summary>
         public float NormalizedWidth;
+        /// <summary>Absolute start time in seconds (for clip-based rendering during resize).</summary>
+        public float AbsoluteStart;
+        /// <summary>Absolute duration in seconds.</summary>
+        public float AbsoluteWidth;
         /// <summary>Color of this bar.</summary>
         public Color Color;
         /// <summary>Row index for vertical stacking (0-based).</summary>
@@ -102,6 +106,10 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             if (_thumbnailBars == null || _thumbnailBars.Count == 0) return;
 
+            float duration = _segment.Duration;
+            if (duration <= 0f) return;
+            float pxPerSec = blockWidth / duration;
+
             // Find max row for vertical distribution
             int maxRow = 0;
             foreach (var bar in _thumbnailBars)
@@ -116,13 +124,21 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
             foreach (var bar in _thumbnailBars)
             {
-                float x = bar.NormalizedStart * blockWidth;
-                float w = Mathf.Max(bar.NormalizedWidth * blockWidth, 2f);
+                float x = bar.AbsoluteStart * pxPerSec;
+                float w = bar.AbsoluteWidth * pxPerSec;
+
+                // Clip to block bounds
+                if (x >= blockWidth) continue;
+                if (x + w <= 0f) continue;
+                if (x < 0f) { w += x; x = 0f; }
+                if (x + w > blockWidth) w = blockWidth - x;
+                w = Mathf.Max(w, 2f);
+
                 float y = barAreaTop + bar.Row * rowHeight;
                 float h = Mathf.Max(rowHeight - 1f, 2f);
 
                 var color = bar.Color;
-                color.a = 0.6f; // Reduced opacity for thumbnail
+                color.a = 0.6f;
                 painter.fillColor = color;
                 painter.BeginPath();
                 painter.MoveTo(new Vector2(x, y));
