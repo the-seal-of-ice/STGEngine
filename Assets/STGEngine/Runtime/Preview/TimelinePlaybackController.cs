@@ -82,6 +82,23 @@ namespace STGEngine.Runtime.Preview
         private PatternLibrary _library;
         private TimelineSegment _segment;
 
+        // ── Blocking state ──
+        private ActionEvent _blockingEvent;
+        private float _blockingElapsed;
+        private readonly HashSet<string> _executedBlockingIds = new();
+
+        /// <summary>Whether the timeline is currently frozen by a blocking ActionEvent.</summary>
+        public bool IsBlocked => _blockingEvent != null;
+
+        /// <summary>The blocking ActionEvent currently freezing the timeline, or null.</summary>
+        public ActionEvent BlockingEvent => _blockingEvent;
+
+        /// <summary>
+        /// External callback to resolve blocking conditions (e.g. AllEnemiesDefeated, PlayerConfirm).
+        /// Return true to release the block. Called every tick while blocked.
+        /// </summary>
+        public Func<ActionEvent, bool> BlockingConditionResolver { get; set; }
+
         /// <summary>
         /// Initialize with pool and library references.
         /// </summary>
@@ -147,6 +164,18 @@ namespace STGEngine.Runtime.Preview
         {
             CurrentTime = Mathf.Clamp(time, 0f, Duration);
             _simLoop.Reset();
+            _blockingEvent = null;
+            _blockingElapsed = 0f;
+            // Rebuild executed set: mark all blocking events before seek time as already executed
+            _executedBlockingIds.Clear();
+            if (_segment?.Events != null)
+            {
+                foreach (var evt in _segment.Events)
+                {
+                    if (evt is ActionEvent ae && ae.Blocking && CurrentTime > ae.StartTime)
+                        _executedBlockingIds.Add(ae.Id);
+                }
+            }
             RebuildActiveEvents();
             OnTimeChanged?.Invoke(CurrentTime);
         }
@@ -167,6 +196,36 @@ namespace STGEngine.Runtime.Preview
         {
             if (!IsPlaying || _segment == null) return;
 
+            // ── Blocking: freeze timeline progression ──
+            if (_blockingEvent != null)
+            {
+                _blockingElapsed += deltaTime * PlaybackSpeed;
+
+                bool resolved = false;
+                // Check external condition resolver
+                if (BlockingConditionResolver != null)
+                    resolved = BlockingConditionResolver(_blockingEvent);
+                // Check timeout (0 = infinite)
+                if (!resolved && _blockingEvent.Timeout > 0f && _blockingElapsed >= _blockingEvent.Timeout)
+                    resolved = true;
+
+                if (resolved)
+                {
+                    _blockingEvent = null;
+                    _blockingElapsed = 0f;
+                    // Resume all active previewers that were paused
+                    foreach (var active in _activeEvents)
+                        active.Previewer.Playback.Play();
+                }
+                else
+                {
+                    // Still blocked — don't advance CurrentTime, but still fire time changed
+                    // so the UI playhead stays updated
+                    OnTimeChanged?.Invoke(CurrentTime);
+                    return;
+                }
+            }
+
             _simLoop.Update(deltaTime * PlaybackSpeed, dt =>
             {
                 CurrentTime += dt;
@@ -174,11 +233,33 @@ namespace STGEngine.Runtime.Preview
                 if (Loop && Duration > 0f && CurrentTime >= Duration)
                 {
                     CurrentTime %= Duration;
+                    _executedBlockingIds.Clear();
                     RebuildActiveEvents();
                 }
                 else
                 {
                     UpdateActiveEvents();
+                }
+
+                // ── Check for new blocking events ──
+                if (_segment.Events != null)
+                {
+                    foreach (var evt in _segment.Events)
+                    {
+                        if (evt is ActionEvent ae && ae.Blocking
+                            && CurrentTime >= ae.StartTime
+                            && !_executedBlockingIds.Contains(ae.Id))
+                        {
+                            _executedBlockingIds.Add(ae.Id);
+                            _blockingEvent = ae;
+                            _blockingElapsed = 0f;
+                            // Pause all active previewers while blocked
+                            foreach (var active in _activeEvents)
+                                active.Previewer.Playback.Pause();
+                            OnTimeChanged?.Invoke(CurrentTime);
+                            return;
+                        }
+                    }
                 }
 
                 if (CurrentTime >= Duration && !Loop)
@@ -197,6 +278,9 @@ namespace STGEngine.Runtime.Preview
             IsPlaying = false;
             CurrentTime = 0f;
             _simLoop.Reset();
+            _blockingEvent = null;
+            _blockingElapsed = 0f;
+            _executedBlockingIds.Clear();
             ReleaseAllActive();
             OnPlayStateChanged?.Invoke(false);
         }

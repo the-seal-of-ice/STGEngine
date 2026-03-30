@@ -111,7 +111,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             var entries = new List<ContextMenuEntry>
             {
-                new("Add Spell Card", () => OnAddSpellCardRequested?.Invoke())
+                new("Add Spell Card", () => OnAddSpellCardRequested?.Invoke()),
+                new("Add Action Event", () => OnAddActionRequested?.Invoke(time))
             };
 
             if (selectedBlock is SpellCardBlock scBlock)
@@ -133,6 +134,11 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                         OnSaveAsNewTemplateRequested?.Invoke(scBlock.SpellCardId, "spellcard", instanceCtx);
                     }));
                 }
+            }
+            else if (selectedBlock is ActionBlock)
+            {
+                entries.Add(new ContextMenuEntry("Delete Selected Action",
+                    () => OnDeleteActionRequested?.Invoke(selectedBlock), true));
             }
 
             return entries;
@@ -184,6 +190,12 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public Action OnAddSpellCardRequested;
         public Action<ITimelineBlock> OnDeleteSpellCardRequested;
+
+        /// <summary>Raised when "Add Action Event" is selected from context menu.</summary>
+        public Action<float> OnAddActionRequested;
+
+        /// <summary>Raised when "Delete Selected Action" is selected from context menu.</summary>
+        public Action<ITimelineBlock> OnDeleteActionRequested;
 
         /// <summary>Raised when an override is reverted (deleted). UI should refresh.</summary>
         public Action OnOverrideChanged;

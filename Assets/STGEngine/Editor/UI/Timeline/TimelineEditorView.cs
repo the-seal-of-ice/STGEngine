@@ -2201,6 +2201,26 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     ShowSaveAsNewTemplateDialog(instanceCtx, resourceId, resourceType);
                 };
+                bfLayer.OnAddActionRequested = time => OnAddActionEventRequested(time);
+                bfLayer.OnDeleteActionRequested = blk =>
+                {
+                    if (blk is ActionBlock actBlk)
+                    {
+                        var ae = actBlk.ActionEvent;
+                        var seg = bfLayer.Segment;
+                        int idx = seg.Events.IndexOf(ae);
+                        if (idx >= 0)
+                        {
+                            var cmd = ListCommand<TimelineEvent>.Remove(
+                                seg.Events, idx, "Delete Action Event");
+                            _commandStack.Execute(cmd);
+                            bfLayer.InvalidateBlocks();
+                            _trackArea.RebuildBlocks();
+                            ShowLayerSummary(_currentLayer);
+                            OnStageDataChanged();
+                        }
+                    }
+                };
             }
             else if (layer is SpellCardDetailLayer scDetailLayer)
             {
@@ -4900,7 +4920,22 @@ namespace STGEngine.Editor.UI.Timeline
                 Params = ActionParamsRegistry.CreateDefault(actionType)
             };
 
-            _trackArea.AddEvent(evt);
+            // MidStageLayer uses TrackAreaView.AddEvent; BossFightLayer needs direct insertion
+            if (_currentLayer is BossFightLayer bfLayer3)
+            {
+                var seg = bfLayer3.Segment;
+                var cmd = ListCommand<TimelineEvent>.Add(
+                    seg.Events, evt, -1, "Add Action Event");
+                _commandStack.Execute(cmd);
+                bfLayer3.InvalidateBlocks();
+                _trackArea.RebuildBlocks();
+                ShowLayerSummary(_currentLayer);
+                OnStageDataChanged();
+            }
+            else
+            {
+                _trackArea.AddEvent(evt);
+            }
         }
 
         // ── Action Event properties panel ──
