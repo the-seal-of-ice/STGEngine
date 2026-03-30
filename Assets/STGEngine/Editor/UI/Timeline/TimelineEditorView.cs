@@ -3130,6 +3130,11 @@ namespace STGEngine.Editor.UI.Timeline
                     _propertyContent.Clear();
                     BuildTransitionBlockProperties(transBlock, bfLayer);
                 }
+                else if (block is ActionBlock actionBlk && actionBlk.ActionEvent != null)
+                {
+                    _propertyContent.Clear();
+                    BuildActionEventProperties(actionBlk.ActionEvent);
+                }
                 else
                 {
                     _propertyContent.Clear();
@@ -4138,6 +4143,10 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 ShowSpawnWaveProperties(swEvt);
             }
+            else if (evt is ActionEvent actionEvt)
+            {
+                BuildActionEventProperties(actionEvt);
+            }
         }
 
         private void ShowSpawnWaveProperties(SpawnWaveEvent evt)
@@ -4835,6 +4844,182 @@ namespace STGEngine.Editor.UI.Timeline
             };
 
             _trackArea.AddEvent(evt);
+        }
+
+        // ── Action Event properties panel ──
+
+        private void BuildActionEventProperties(ActionEvent ae)
+        {
+            _propertyHeaderLabel.text = $"Action: {ae.ActionType}";
+
+            var props = new VisualElement();
+            props.style.paddingTop = 4;
+            props.style.paddingLeft = 8;
+            props.style.paddingRight = 8;
+
+            // ActionType (read-only label — changing type would require re-creating params)
+            var typeLabel = new Label($"Type: {ae.ActionType}");
+            typeLabel.style.color = ActionBlock.GetActionColor(ae.ActionType);
+            typeLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            typeLabel.style.marginBottom = 6;
+            props.Add(typeLabel);
+
+            // Start Time
+            var startField = new FloatField("Start Time") { value = ae.StartTime };
+            startField.isDelayed = true;
+            startField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Start Time",
+                    () => ae.StartTime, v => ae.StartTime = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
+                _trackArea.RebuildBlocks();
+            });
+            props.Add(startField);
+
+            // Duration
+            var durField = new FloatField("Duration") { value = ae.Duration };
+            durField.isDelayed = true;
+            durField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Duration",
+                    () => ae.Duration, v => ae.Duration = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
+                _trackArea.RebuildBlocks();
+            });
+            props.Add(durField);
+
+            // Blocking toggle
+            var blockingToggle = new Toggle("Blocking") { value = ae.Blocking };
+            blockingToggle.RegisterValueChangedCallback(e =>
+            {
+                ae.Blocking = e.newValue;
+                _trackArea.RebuildBlocks();
+                OnStageDataChanged();
+            });
+            props.Add(blockingToggle);
+
+            // Timeout (only visible when Blocking)
+            var timeoutField = new FloatField("Timeout (0=∞)") { value = ae.Timeout };
+            timeoutField.isDelayed = true;
+            timeoutField.style.display = ae.Blocking ? DisplayStyle.Flex : DisplayStyle.None;
+            timeoutField.RegisterValueChangedCallback(e =>
+            {
+                ae.Timeout = Mathf.Max(0f, e.newValue);
+                _trackArea.RebuildBlocks();
+                OnStageDataChanged();
+            });
+            props.Add(timeoutField);
+
+            // Update timeout visibility when blocking changes
+            blockingToggle.RegisterValueChangedCallback(e2 =>
+            {
+                timeoutField.style.display = e2.newValue ? DisplayStyle.Flex : DisplayStyle.None;
+            });
+
+            // ── Type-specific params ──
+            if (ae.Params != null)
+            {
+                var separator = new VisualElement();
+                separator.style.height = 1;
+                separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                separator.style.marginTop = 8;
+                separator.style.marginBottom = 8;
+                props.Add(separator);
+
+                var paramsLabel = new Label("Parameters");
+                paramsLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+                paramsLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                paramsLabel.style.marginBottom = 4;
+                props.Add(paramsLabel);
+
+                BuildActionParamsUI(props, ae);
+            }
+
+            _propertyContent.Add(props);
+            ApplyLightTextTheme(_propertyContent);
+        }
+
+        private void BuildActionParamsUI(VisualElement container, ActionEvent ae)
+        {
+            var paramsObj = ae.Params;
+            if (paramsObj == null) return;
+
+            var type = paramsObj.GetType();
+            foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (!prop.CanRead || !prop.CanWrite) continue;
+                var val = prop.GetValue(paramsObj);
+
+                if (prop.PropertyType == typeof(string))
+                {
+                    var field = new TextField(prop.Name) { value = val as string ?? "" };
+                    field.isDelayed = true;
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+                else if (prop.PropertyType == typeof(float))
+                {
+                    var field = new FloatField(prop.Name) { value = (float)(val ?? 0f) };
+                    field.isDelayed = true;
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+                else if (prop.PropertyType == typeof(int))
+                {
+                    var field = new IntegerField(prop.Name) { value = (int)(val ?? 0) };
+                    field.isDelayed = true;
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+                else if (prop.PropertyType == typeof(bool))
+                {
+                    var field = new Toggle(prop.Name) { value = (bool)(val ?? false) };
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+                else if (prop.PropertyType.IsEnum)
+                {
+                    var enumVal = (System.Enum)val;
+                    var field = new EnumField(prop.Name, enumVal);
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+                else if (prop.PropertyType == typeof(Vector3))
+                {
+                    var v = (Vector3)(val ?? Vector3.zero);
+                    var field = new Vector3Field(prop.Name) { value = v };
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+            }
         }
 
         private void OnStageDataChanged()
