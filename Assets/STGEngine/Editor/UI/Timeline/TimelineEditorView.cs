@@ -778,13 +778,13 @@ namespace STGEngine.Editor.UI.Timeline
                             });
                         }
 
-                        // Collect boss path keyframes with local time offset
-                        float localTime = scOffset - segmentOffset;
+                        // Collect boss path keyframes with global time offset
+                        // (BossPlaceholder.SetTime receives global playback time)
                         foreach (var kf in sc.BossPath)
                         {
                             localBossPath.Add(new PathKeyframe
                             {
-                                Time = localTime + kf.Time,
+                                Time = scOffset + kf.Time,
                                 Position = kf.Position
                             });
                         }
@@ -810,15 +810,14 @@ namespace STGEngine.Editor.UI.Timeline
                                 }
                             }
 
-                            float localTransStart = scOffset - segmentOffset;
                             localBossPath.Add(new PathKeyframe
                             {
-                                Time = localTransStart,
+                                Time = scOffset,
                                 Position = endPos
                             });
                             localBossPath.Add(new PathKeyframe
                             {
-                                Time = localTransStart + transDur,
+                                Time = scOffset + transDur,
                                 Position = startPos
                             });
 
@@ -1600,6 +1599,11 @@ namespace STGEngine.Editor.UI.Timeline
                     if (idx < segment.SpellCardIds.Count)
                     {
                         segment.SpellCardIds.RemoveAt(idx);
+                        if (_currentLayer is BossFightLayer bfl2)
+                        {
+                            bfl2.InvalidateBlocks();
+                            _trackArea.RebuildBlocks();
+                        }
                         ShowBossFightSpellCards(segment);
                         LoadBossFightPreview(segment);
                         OnStageDataChanged();
@@ -1683,6 +1687,12 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         picker.RemoveFromHierarchy();
                         segment.SpellCardIds.Add(scId);
+                        if (_currentLayer is BossFightLayer bfl)
+                        {
+                            bfl.InvalidateBlocks();
+                            WireLayerToTrackArea(bfl);
+                            _trackArea.RebuildBlocks();
+                        }
                         ShowBossFightSpellCards(segment);
                         LoadBossFightPreview(segment);
                         OnStageDataChanged();
@@ -2215,6 +2225,8 @@ namespace STGEngine.Editor.UI.Timeline
                             var cmd = ListCommand<string>.Remove(
                                 seg.SpellCardIds, idx, "Delete Spell Card");
                             _commandStack.Execute(cmd);
+                            bfLayer.InvalidateBlocks();
+                            _trackArea.RebuildBlocks();
                             ShowLayerSummary(_currentLayer);
                             LoadBossFightPreview(seg);
                             OnStageDataChanged();
