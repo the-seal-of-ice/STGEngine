@@ -27,9 +27,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         {
             get
             {
-                var icon = GetActionIcon(_event.ActionType);
                 var label = GetActionLabel(_event.ActionType);
-                return IsBlocking ? $"||{icon} {label}" : $"{icon} {label}";
+                return IsBlocking ? $"|| {label}" : label;
             }
         }
 
@@ -77,36 +76,20 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         // ── Static helpers ──
 
-        private static string GetActionIcon(ActionType type) => type switch
-        {
-            ActionType.ShowTitle        => "[T]",
-            ActionType.ScreenEffect     => "[FX]",
-            ActionType.BgmControl       => "[M]",
-            ActionType.SePlay           => "[S]",
-            ActionType.BackgroundSwitch => "[BG]",
-            ActionType.BulletClear      => "[X]",
-            ActionType.ItemDrop         => "[+]",
-            ActionType.AutoCollect      => "[C]",
-            ActionType.ScoreTally       => "[SC]",
-            ActionType.WaitCondition    => "[W]",
-            ActionType.BranchJump       => "[>]",
-            _ => "[?]"
-        };
-
         private static string GetActionLabel(ActionType type) => type switch
         {
-            ActionType.ShowTitle        => "Title",
+            ActionType.ShowTitle        => "TITLE",
             ActionType.ScreenEffect     => "FX",
             ActionType.BgmControl       => "BGM",
             ActionType.SePlay           => "SE",
             ActionType.BackgroundSwitch => "BG",
-            ActionType.BulletClear      => "Clear",
-            ActionType.ItemDrop         => "Item",
-            ActionType.AutoCollect      => "Collect",
-            ActionType.ScoreTally       => "Tally",
-            ActionType.WaitCondition    => "Wait",
-            ActionType.BranchJump       => "Branch",
-            _ => "Action"
+            ActionType.BulletClear      => "CLEAR",
+            ActionType.ItemDrop         => "ITEM",
+            ActionType.AutoCollect      => "COLLECT",
+            ActionType.ScoreTally       => "TALLY",
+            ActionType.WaitCondition    => "WAIT",
+            ActionType.BranchJump       => "BRANCH",
+            _ => "ACTION"
         };
 
         internal static Color GetActionColor(ActionType type) => type switch
