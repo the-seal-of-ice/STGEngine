@@ -757,7 +757,9 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else if (_dragMode == DragMode.Resize)
             {
-                float maxTime = _layer?.TotalDuration ?? float.MaxValue;
+                // In sequential mode, blocks can freely resize (total duration adjusts)
+                bool isSequential = _layer?.IsSequential ?? false;
+                float maxTime = isSequential ? float.MaxValue : (_layer?.TotalDuration ?? float.MaxValue);
                 float rawDuration = Mathf.Max(0.5f, _dragStartValue + deltaTime);
                 float startTime = blk.StartTime;
                 // Clamp duration so block end doesn't exceed layer duration
@@ -1394,17 +1396,16 @@ namespace STGEngine.Editor.UI.Timeline
 
         /// <summary>
         /// Test whether a block's Duration is writable.
-        /// Tries setting Duration to a probe value; if the getter doesn't reflect
-        /// the change, the setter is a no-op and resize should be disabled.
+        /// Uses a non-destructive check: all current block types have writable Duration,
+        /// so this always returns true. The old probe-based approach caused side effects
+        /// (SpellCard.TimeLimit mutation during RebuildBlocks).
         /// </summary>
         private static bool CanResizeDuration(ITimelineBlock blk)
         {
-            float original = blk.Duration;
-            float probe = original + 1f;
-            blk.Duration = probe;
-            bool writable = Mathf.Abs(blk.Duration - probe) < 0.001f;
-            blk.Duration = original; // restore
-            return writable;
+            // All block types in the project have writable Duration setters.
+            // If a read-only block type is added in the future, add a check here
+            // (e.g. via an interface marker or property).
+            return true;
         }
     }
 }

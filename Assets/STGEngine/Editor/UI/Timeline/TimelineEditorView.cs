@@ -4698,8 +4698,12 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private void InvalidateCurrentLayerBlocks()
         {
-            if (_currentLayer is BossFightLayer bf) bf.InvalidateBlocks();
-            else if (_currentLayer is MidStageLayer ml) ml.InvalidateBlocks();
+            // Skip BossFightLayer — its blocks hold direct references to SpellCard objects,
+            // so Duration/TimeLimit changes are already reflected without rebuilding.
+            // Rebuilding would reload from disk and discard in-memory edits (e.g. resize).
+            if (_currentLayer is BossFightLayer) return;
+
+            if (_currentLayer is MidStageLayer ml) ml.InvalidateBlocks();
             else if (_currentLayer is SpellCardDetailLayer sc) sc.InvalidateBlocks();
             else if (_currentLayer is StageLayer sl) sl.InvalidateBlocks();
             else if (_currentLayer is WaveLayer wl) wl.InvalidateBlocks();
@@ -4709,11 +4713,16 @@ namespace STGEngine.Editor.UI.Timeline
         private void OnCommandStateChanged()
         {
             // Ensure layer's internal block list is up-to-date before visual rebuild.
-            // All layer types may need this after structural commands (add/remove/move).
             InvalidateCurrentLayerBlocks();
 
-            // Rebuild visual elements so labels, colors, and positions all update on undo/redo.
-            _trackArea.RebuildBlocks();
+            // BossFightLayer: blocks hold direct SpellCard references, no need to
+            // rebuild UI elements for value-only changes (resize/reorder).
+            // Just recalc layout and update positions to avoid losing selection
+            // and re-applying override border styles.
+            if (_currentLayer is BossFightLayer)
+                _trackArea.RefreshBlockPositions();
+            else
+                _trackArea.RebuildBlocks();
 
             // Refresh preview — structural changes (add/remove pattern, enemy, etc.)
             // need the playback segment rebuilt so 3D bullets and placeholders update.
@@ -4742,14 +4751,11 @@ namespace STGEngine.Editor.UI.Timeline
                 ShowLayerSummary(_currentLayer);
             }
 
-            // Auto-save: persist data changes from timeline drag/undo/redo to disk.
-            // Attribute panel edits use ExecAndSave (which saves inline), but timeline
-            // drags only go through PropertyChangeCommand → _commandStack.Execute,
-            // so we need to save here as well.
-            AutoSaveCurrentLayer();
-
             // Refresh wave/enemy placeholders (covers add/remove enemy, undo/redo)
             NotifyWavePlaceholders();
+
+            // Auto-save: persist data changes from timeline drag/undo/redo to disk.
+            AutoSaveCurrentLayer();
 
             // Refresh undo/redo button states + history panel
             RefreshUndoRedoButtons();
@@ -4769,12 +4775,19 @@ namespace STGEngine.Editor.UI.Timeline
             else if (_currentLayer is BossFightLayer bfLayer)
             {
                 // A SpellCard block was resized (TimeLimit) or a Transition was resized
-                // — save all loaded spell cards in this BossFight
+                // — save all loaded spell cards in this BossFight.
+                // Use instance context only if an override already exists (to avoid
+                // creating unnecessary overrides for unmodified spell cards).
                 for (int i = 0; i < bfLayer.BlockCount; i++)
                 {
                     var blk = bfLayer.GetBlock(i);
                     if (blk is SpellCardBlock scBlk && blk.DataSource is SpellCard sc)
-                        SaveSpellCardInContext(sc, scBlk.SpellCardId);
+                    {
+                        var ctx = scBlk.InstanceContextId;
+                        bool hasOverride = !string.IsNullOrEmpty(ctx)
+                            && OverrideManager.HasOverride(ctx, scBlk.SpellCardId);
+                        SaveSpellCardInContext(sc, scBlk.SpellCardId, hasOverride ? ctx : null);
+                    }
                 }
                 // BossFight structure (SpellCardIds list) is part of Stage — save Stage too
                 AutoSaveStage();

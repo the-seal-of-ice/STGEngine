@@ -9,20 +9,20 @@ segments:
   events:
   - type: spawn_pattern
     id: evt_b9544e
-    start_time: 1.595318
-    duration: 5
+    start_time: 0.02708842
+    duration: 4.566591
     pattern_id: 3f93f01c3aff
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_25c900
-    start_time: 0.7990972
-    duration: 5
+    start_time: 2.803611
+    duration: 6.584649
     pattern_id: demo_sphere_homing
     spawn_position: {x: 0, y: 5, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
-  duration: 8.463867
+  duration: 10.2504
   entry_trigger:
     type: immediate
   events:
