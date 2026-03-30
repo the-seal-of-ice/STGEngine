@@ -29,7 +29,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             {
                 var icon = GetActionIcon(_event.ActionType);
                 var label = GetActionLabel(_event.ActionType);
-                return IsBlocking ? $"\u23f8 {icon} {label}" : $"{icon} {label}";
+                return IsBlocking ? $"||{icon} {label}" : $"{icon} {label}";
             }
         }
 
@@ -79,18 +79,18 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         private static string GetActionIcon(ActionType type) => type switch
         {
-            ActionType.ShowTitle        => "\u2139",  // ℹ information
-            ActionType.ScreenEffect     => "\u2726",  // ✦ star
-            ActionType.BgmControl       => "\u266a",  // ♪ note
-            ActionType.SePlay           => "\u266b",  // ♫ notes
-            ActionType.BackgroundSwitch => "\u25a8",  // ▨ square
-            ActionType.BulletClear      => "\u2716",  // ✖ cross
-            ActionType.ItemDrop         => "\u2795",  // ➕ plus (may fallback)
-            ActionType.AutoCollect      => "\u2193",  // ↓ arrow
-            ActionType.ScoreTally       => "\u2605",  // ★ star
-            ActionType.WaitCondition    => "\u2016",  // ‖ double bar
-            ActionType.BranchJump       => "\u2192",  // → arrow
-            _ => "?"
+            ActionType.ShowTitle        => "[T]",
+            ActionType.ScreenEffect     => "[FX]",
+            ActionType.BgmControl       => "[M]",
+            ActionType.SePlay           => "[S]",
+            ActionType.BackgroundSwitch => "[BG]",
+            ActionType.BulletClear      => "[X]",
+            ActionType.ItemDrop         => "[+]",
+            ActionType.AutoCollect      => "[C]",
+            ActionType.ScoreTally       => "[SC]",
+            ActionType.WaitCondition    => "[W]",
+            ActionType.BranchJump       => "[>]",
+            _ => "[?]"
         };
 
         private static string GetActionLabel(ActionType type) => type switch
