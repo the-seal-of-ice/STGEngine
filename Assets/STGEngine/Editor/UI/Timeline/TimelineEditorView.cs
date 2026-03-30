@@ -713,6 +713,21 @@ namespace STGEngine.Editor.UI.Timeline
                             // Expand wave → enemy → pattern for bullet preview
                             tempSegment.Events.AddRange(ExpandWaveEvent(sw, segmentOffset, seg.Id));
                         }
+                        else if (evt is ActionEvent ae)
+                        {
+                            if (ae.StartTime >= seg.Duration) continue;
+                            // Copy ActionEvent with offset time for stage overview blocking
+                            tempSegment.Events.Add(new ActionEvent
+                            {
+                                Id = $"_so_{seg.Id}_{ae.Id}",
+                                StartTime = segmentOffset + ae.StartTime,
+                                Duration = ae.Duration,
+                                ActionType = ae.ActionType,
+                                Blocking = ae.Blocking,
+                                Timeout = ae.Timeout,
+                                Params = ae.Params
+                            });
+                        }
                     }
                 }
                 else if (seg.Type == SegmentType.BossFight && _catalog != null)
@@ -1460,6 +1475,16 @@ namespace STGEngine.Editor.UI.Timeline
                 }
             }
 
+            // Copy ActionEvents from the BossFight segment for blocking during playback
+            if (segment.Events != null)
+            {
+                foreach (var evt in segment.Events)
+                {
+                    if (evt is ActionEvent ae)
+                        tempSegment.Events.Add(ae);
+                }
+            }
+
             tempSegment.Duration = timeOffset > 0f ? timeOffset : segment.Duration;
 
             // Show spell card blocks in TrackArea (not pattern preview blocks)
@@ -1847,6 +1872,11 @@ namespace STGEngine.Editor.UI.Timeline
                     tempSegment.Events.Add(sw);
                     // Expand into pattern events for bullet preview
                     tempSegment.Events.AddRange(ExpandWaveEvent(sw, 0f, segment.Id));
+                }
+                else if (evt is ActionEvent)
+                {
+                    // Preserve ActionEvents for blocking/flow control during playback
+                    tempSegment.Events.Add(evt);
                 }
             }
 

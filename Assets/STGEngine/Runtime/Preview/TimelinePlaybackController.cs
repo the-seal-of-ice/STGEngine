@@ -228,6 +228,9 @@ namespace STGEngine.Runtime.Preview
 
             _simLoop.Update(deltaTime * PlaybackSpeed, dt =>
             {
+                // If we entered blocking state during a previous tick in this frame, skip
+                if (_blockingEvent != null) return;
+
                 CurrentTime += dt;
 
                 if (Loop && Duration > 0f && CurrentTime >= Duration)
@@ -257,7 +260,7 @@ namespace STGEngine.Runtime.Preview
                             foreach (var active in _activeEvents)
                                 active.Previewer.Playback.Pause();
                             OnTimeChanged?.Invoke(CurrentTime);
-                            return;
+                            return; // exits lambda; next tick in this frame will see _blockingEvent != null
                         }
                     }
                 }
