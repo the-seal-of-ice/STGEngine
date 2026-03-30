@@ -445,9 +445,6 @@ namespace STGEngine.Editor.UI
             // Force theme refresh after rebuilding all dynamic UI
             ForceApplyTheme(_root);
 
-            // Notify mesh type change so scene setup can update bullet visuals
-            OnMeshTypeChanged?.Invoke(_pattern.MeshType);
-
             _previewer.SetDefaultPattern(_pattern);
             UpdateTimeSliderRange();
             RefreshThumbnails();

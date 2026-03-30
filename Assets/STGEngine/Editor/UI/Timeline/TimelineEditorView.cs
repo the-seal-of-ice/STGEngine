@@ -1344,16 +1344,19 @@ namespace STGEngine.Editor.UI.Timeline
             var bfContext = OverrideManager.SegmentContext(segment.Id);
 
             // Load all spell cards first so we can reference next SC's start position
-            var loadedCards = new List<(string id, SpellCard sc)>();
-            foreach (var scId in segment.SpellCardIds)
+            var loadedCards = new List<(string id, SpellCard sc, string patCtx)>();
+            for (int idx = 0; idx < segment.SpellCardIds.Count; idx++)
             {
-                var path = OverrideManager.ResolveSpellCardPath(_catalog, bfContext, scId);
+                var scId = segment.SpellCardIds[idx];
+                var instanceCtx = OverrideManager.SpellCardInstanceContext(segment.Id, idx);
+                var path = OverrideManager.ResolveSpellCardPath(_catalog, instanceCtx, scId);
                 if (!System.IO.File.Exists(path)) continue;
 
                 try
                 {
                     var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
-                    loadedCards.Add((scId, sc));
+                    // Pattern override context = instanceCtx/scId
+                    loadedCards.Add((scId, sc, $"{instanceCtx}/{scId}"));
                 }
                 catch (Exception e)
                 {
@@ -1363,12 +1366,19 @@ namespace STGEngine.Editor.UI.Timeline
 
             for (int ci = 0; ci < loadedCards.Count; ci++)
             {
-                var (scId, sc) = loadedCards[ci];
+                var (scId, sc, patCtx) = loadedCards[ci];
 
                 // Add patterns with time offset
                 foreach (var scp in sc.Patterns)
                 {
-                    var pattern = _library?.Resolve(scp.PatternId);
+                    BulletPattern pattern = null;
+                    if (OverrideManager.HasOverride(patCtx, scp.PatternId))
+                    {
+                        try { pattern = YamlSerializer.DeserializeFromFile(
+                            OverrideManager.GetOverridePath(patCtx, scp.PatternId)); }
+                        catch { /* fall through */ }
+                    }
+                    pattern ??= _library?.Resolve(scp.PatternId);
                     if (pattern == null) continue;
 
                     var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
@@ -1731,9 +1741,20 @@ namespace STGEngine.Editor.UI.Timeline
                 Duration = sc.TimeLimit
             };
 
+            var patCtx = GetPatternOverrideContext();
+
             foreach (var scp in sc.Patterns)
             {
-                var pattern = _library?.Resolve(scp.PatternId);
+                BulletPattern pattern = null;
+                // Load per-instance override if available
+                if (!string.IsNullOrEmpty(patCtx)
+                    && OverrideManager.HasOverride(patCtx, scp.PatternId))
+                {
+                    try { pattern = YamlSerializer.DeserializeFromFile(
+                        OverrideManager.GetOverridePath(patCtx, scp.PatternId)); }
+                    catch { /* fall through */ }
+                }
+                pattern ??= _library?.Resolve(scp.PatternId);
                 if (pattern == null)
                 {
                     Debug.LogWarning($"[SpellCardPreview] Pattern '{scp.PatternId}' not found, skipping.");
@@ -1777,7 +1798,16 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 if (evt is SpawnPatternEvent sp)
                 {
-                    var pattern = sp.ResolvedPattern ?? _library?.Resolve(sp.PatternId);
+                    // Check per-event override first
+                    BulletPattern pattern = null;
+                    var evtCtx = $"{segment.Id}/{sp.Id}";
+                    if (OverrideManager.HasOverride(evtCtx, sp.PatternId))
+                    {
+                        try { pattern = YamlSerializer.DeserializeFromFile(
+                            OverrideManager.GetOverridePath(evtCtx, sp.PatternId)); }
+                        catch { /* fall through */ }
+                    }
+                    pattern ??= sp.ResolvedPattern ?? _library?.Resolve(sp.PatternId);
                     if (pattern == null) continue;
                     tempSegment.Events.Add(new SpawnPatternEvent
                     {
@@ -3529,8 +3559,16 @@ namespace STGEngine.Editor.UI.Timeline
             });
             container.Add(oz);
 
-            // Inline pattern editor if resolved
-            var resolvedPattern = _library?.Resolve(scp.PatternId);
+            // Inline pattern editor — use override or clone, never shared cache
+            var patCtx = GetPatternOverrideContext();
+            BulletPattern resolvedPattern = null;
+            if (!string.IsNullOrEmpty(patCtx) && OverrideManager.HasOverride(patCtx, scp.PatternId))
+            {
+                try { resolvedPattern = YamlSerializer.DeserializeFromFile(
+                    OverrideManager.GetOverridePath(patCtx, scp.PatternId)); }
+                catch { /* fall through */ }
+            }
+            resolvedPattern ??= _library?.ResolveClone(scp.PatternId);
             if (resolvedPattern != null && _singlePreviewer != null)
             {
                 var separator = new VisualElement();
@@ -4243,16 +4281,21 @@ namespace STGEngine.Editor.UI.Timeline
             eventProps.Add(posY);
             eventProps.Add(posZ);
 
-            // Inline pattern editor if resolved (clone to avoid mutating shared cache)
+            // Inline pattern editor if resolved (use override or clone, never shared cache)
             if (evt.ResolvedPattern != null && _singlePreviewer != null)
             {
-                // Replace with a clone so edits don't pollute the shared PatternLibrary cache
-                if (_library != null)
+                var patCtx = GetPatternOverrideContext();
+                BulletPattern editCopy = null;
+                if (!string.IsNullOrEmpty(patCtx)
+                    && OverrideManager.HasOverride(patCtx, evt.PatternId))
                 {
-                    var clone = _library.ResolveClone(evt.PatternId);
-                    if (clone != null)
-                        evt.ResolvedPattern = clone;
+                    try { editCopy = YamlSerializer.DeserializeFromFile(
+                        OverrideManager.GetOverridePath(patCtx, evt.PatternId)); }
+                    catch { /* fall through */ }
                 }
+                editCopy ??= _library?.ResolveClone(evt.PatternId);
+                if (editCopy != null)
+                    evt.ResolvedPattern = editCopy;
                 var separator = new VisualElement();
                 separator.style.height = 1;
                 separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
@@ -4674,8 +4717,15 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Refresh preview — structural changes (add/remove pattern, enemy, etc.)
             // need the playback segment rebuilt so 3D bullets and placeholders update.
+            // Preserve playhead position across the rebuild.
             if (_currentLayer != null)
+            {
+                float savedTime = _playback.CurrentTime;
+                bool wasPlaying = _playback.IsPlaying;
                 LoadPreviewForLayer(_currentLayer);
+                _playback.Seek(Mathf.Min(savedTime, _playback.Duration));
+                if (wasPlaying) _playback.Play();
+            }
 
             // Refresh the properties panel to sync any value changes from drag/undo/redo.
             var selected = _trackArea.SelectedBlock;
@@ -5024,8 +5074,12 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else if (_currentLayer is PatternLayer patLayer)
             {
-                // In PatternLayer: reload the temporary segment to pick up pattern changes
+                // Reload segment but preserve playhead position
+                float savedTime = _playback.CurrentTime;
+                bool wasPlaying = _playback.IsPlaying;
                 patLayer.LoadPreview(_playback);
+                _playback.Seek(Mathf.Min(savedTime, _playback.Duration));
+                if (wasPlaying) _playback.Play();
 
                 // Save the edited pattern to disk
                 SaveEditedPattern(patLayer.Pattern, patLayer.PatternId, ctx);
@@ -5040,6 +5094,16 @@ namespace STGEngine.Editor.UI.Timeline
                     if (selectedBlk?.DataSource is SpellCardPattern scp && editedPattern != null)
                     {
                         SaveEditedPattern(editedPattern, scp.PatternId, ctx);
+
+                        // Refresh playback previewers that use this pattern
+                        foreach (var ae in _playback.ActiveEvents)
+                        {
+                            if (ae.Event.PatternId == scp.PatternId)
+                            {
+                                ae.Previewer.Pattern = editedPattern;
+                                ae.Previewer.ForceRefresh();
+                            }
+                        }
                     }
                 }
             }
@@ -5068,8 +5132,12 @@ namespace STGEngine.Editor.UI.Timeline
                     if (path != null)
                         YamlSerializer.SerializeToFile(pattern, path);
                 }
-                // Update the shared cache so thumbnails and other references see the change
-                _library?.Register(pattern);
+                // Only update shared cache when saving to original file.
+                // Override saves must NOT pollute the shared cache — other references
+                // to the same PatternId would pick up the modified clone and could
+                // write it back to the original file on subsequent saves.
+                if (string.IsNullOrEmpty(contextId))
+                    _library?.Register(pattern);
             }
             catch (Exception e)
             {

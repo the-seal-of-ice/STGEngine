@@ -19,6 +19,9 @@ stages:
   - id: 2bdae09cd543
     name: "DEMO_STAGE_2"
     file: Stages/demo_stage_2.yaml
+  - id: bc69908bbfcf
+    name: "d1"
+    file: Stages/d1.yaml
 enemy_types:
   - id: f92ba9ea5258
     name: "小兵A"

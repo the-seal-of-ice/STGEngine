@@ -1,28 +1,34 @@
-id: 146c9235d099
-name: Demo Stage
+id: bc69908bbfcf
+name: d1
 seed: 0
 segments:
 - id: midstage_1
   name: Opening Wave
   type: mid_stage
-  duration: 14.8194
+  duration: 15
   events:
   - type: spawn_pattern
-    id: evt_b9544e
-    start_time: 1.595318
-    duration: 5
-    pattern_id: 3f93f01c3aff
+    id: evt_54a325
+    start_time: 2.478089
+    duration: 11.56065
+    pattern_id: f3881aa5af76
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
-    id: evt_25c900
-    start_time: 0.7990972
-    duration: 5
-    pattern_id: demo_sphere_homing
-    spawn_position: {x: 0, y: 5, z: 0}
+    id: evt_8e6ba9
+    start_time: 5.774806
+    duration: 5.807982
+    pattern_id: 4cf7ab95555b
+    spawn_position: {x: 0, y: 0, z: 0}
+  - type: spawn_wave
+    id: wevt_5b20e1
+    start_time: 0
+    duration: 10
+    wave_id: cb5dcaf6453f
+    spawn_offset: {x: 0, y: 0, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
-  duration: 8.463867
+  duration: 20
   entry_trigger:
     type: immediate
   events:

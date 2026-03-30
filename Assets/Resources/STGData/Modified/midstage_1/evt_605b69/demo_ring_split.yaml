@@ -1,4 +1,4 @@
-id: 4cf7ab95555b
+id: demo_ring_split
 name: Ring Split Demo
 emitter:
   type: ring
@@ -11,7 +11,7 @@ modifiers:
   split_count: 3
   spread_angle: 45
   destroy_parent: False
-bullet_scale: 2
+bullet_scale: 0.3
 bullet_color: {r: 0.8, g: 0.3, b: 1, a: 1}
 duration: 5
 seed: 0

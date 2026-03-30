@@ -99,7 +99,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 {
                     var scContext = OverrideManager.SpellCardContext(
                         _segment.Id, scBlock.ListIndex, scBlock.SpellCardId);
-                    return new SpellCardDetailLayer(sc, scBlock.SpellCardId, _library, scContext);
+                    return new SpellCardDetailLayer(sc, scBlock.SpellCardId, _library, scContext, _catalog);
                 }
             }
             return null;

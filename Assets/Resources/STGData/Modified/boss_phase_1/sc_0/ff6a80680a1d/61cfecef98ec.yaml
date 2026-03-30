@@ -1,0 +1,13 @@
+id: fbd54cab4147
+name: Ring Wave Demo
+emitter:
+  type: ring
+  count: 24
+  radius: 0.5
+  speed: 5
+modifiers: []
+bullet_scale: 5
+bullet_color: {r: 1, g: 0.3, b: 0.3, a: 1}
+duration: 5
+seed: 0
+mesh_type: Sphere

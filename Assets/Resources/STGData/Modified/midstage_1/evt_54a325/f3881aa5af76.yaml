@@ -10,12 +10,7 @@ modifiers:
 - type: bounce
   boundary_half_extents: {x: 10, y: 10, z: 10}
   max_bounces: 2
-- type: player_homing
-  target_position: {x: 0, y: 0, z: 0}
-  turn_speed: 90
-  delay: 0.5
-  anti_parallel: Random
-bullet_scale: 0.1
+bullet_scale: 0.7
 bullet_color: {r: 1, g: 0.6, b: 0.2, a: 1}
 duration: 6
 seed: 0

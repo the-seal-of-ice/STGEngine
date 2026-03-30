@@ -7,7 +7,7 @@ patterns:
   offset: {x: 3, y: 0, z: 0}
 - pattern_id: fbd54cab4147
   delay: 6
-  duration: 13.09882
+  duration: 14
   offset: {x: 0, y: -1, z: 0}
 - pattern_id: 3f93f01c3aff
   delay: 0
@@ -26,7 +26,7 @@ boss_path:
   position: {x: 2, y: 6, z: 0}
 - time: 20
   position: {x: 0, y: 7, z: 0}
-time_limit: 25
+time_limit: 20
 health: 1500
 design_estimate: -1
 transition_duration: 1.5

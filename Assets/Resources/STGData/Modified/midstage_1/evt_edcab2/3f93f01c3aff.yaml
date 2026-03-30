@@ -1,0 +1,13 @@
+id: 3f93f01c3aff
+name: Sphere Homing Demo
+emitter:
+  type: sphere
+  count: 16
+  radius: 0.3
+  speed: 3
+modifiers: []
+bullet_scale: 0.3
+bullet_color: {r: 0.3, g: 0.8, b: 1, a: 1}
+duration: 5
+seed: 0
+mesh_type: Diamond

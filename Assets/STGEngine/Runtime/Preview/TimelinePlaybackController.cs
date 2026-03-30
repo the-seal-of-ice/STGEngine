@@ -306,17 +306,33 @@ namespace STGEngine.Runtime.Preview
         /// </summary>
         public void RefreshEvent(SpawnPatternEvent evt)
         {
+            // Update the segment's event so future activations use the new pattern
+            if (_segment != null)
+            {
+                foreach (var segEvt in _segment.Events)
+                {
+                    if (segEvt is SpawnPatternEvent sp && sp.Id == evt.Id)
+                    {
+                        sp.ResolvedPattern = evt.ResolvedPattern;
+                        break;
+                    }
+                }
+            }
+
+            // Update currently active previewer
             foreach (var active in _activeEvents)
             {
-                if (active.Event == evt)
+                // Match by event Id (not reference) because LoadPreview creates new event objects
+                if (active.Event.Id == evt.Id)
                 {
+                    // Also update the active event's reference
+                    active.Event.ResolvedPattern = evt.ResolvedPattern;
+
                     var previewer = active.Previewer;
-                    // Re-assign pattern to rebuild evaluator with new parameters
                     previewer.Pattern = evt.ResolvedPattern;
                     previewer.transform.position = evt.SpawnPosition;
                     previewer.Playback.Duration = evt.Duration;
 
-                    // Seek to current local time
                     float localTime = CurrentTime - evt.StartTime;
                     previewer.Playback.Seek(Mathf.Max(localTime, 0f));
                     previewer.ForceRefresh();

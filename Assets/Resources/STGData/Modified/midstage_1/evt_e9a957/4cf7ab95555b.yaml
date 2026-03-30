@@ -11,7 +11,7 @@ modifiers:
   split_count: 3
   spread_angle: 45
   destroy_parent: False
-bullet_scale: 2
+bullet_scale: 1
 bullet_color: {r: 0.8, g: 0.3, b: 1, a: 1}
 duration: 5
 seed: 0

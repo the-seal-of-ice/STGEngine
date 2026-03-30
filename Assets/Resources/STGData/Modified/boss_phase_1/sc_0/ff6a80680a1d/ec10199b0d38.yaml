@@ -4,14 +4,14 @@ emitter:
   type: ring
   count: 8
   radius: 0.3
-  speed: 3
+  speed: 30
 modifiers:
 - type: split
   split_time: 1
   split_count: 3
   spread_angle: 45
   destroy_parent: False
-bullet_scale: 2
+bullet_scale: 6
 bullet_color: {r: 0.8, g: 0.3, b: 1, a: 1}
 duration: 5
 seed: 0

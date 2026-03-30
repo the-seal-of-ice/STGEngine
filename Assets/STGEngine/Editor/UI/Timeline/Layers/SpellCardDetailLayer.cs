@@ -321,7 +321,16 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
             foreach (var scp in _spellCard.Patterns)
             {
-                var pattern = _library?.Resolve(scp.PatternId);
+                // Load per-instance override if available, else shared library
+                BulletPattern pattern = null;
+                if (!string.IsNullOrEmpty(_contextId) && _catalog != null
+                    && OverrideManager.HasOverride(_contextId, scp.PatternId))
+                {
+                    try { pattern = YamlSerializer.DeserializeFromFile(
+                        OverrideManager.GetOverridePath(_contextId, scp.PatternId)); }
+                    catch { /* fall through */ }
+                }
+                pattern ??= _library?.Resolve(scp.PatternId);
                 if (pattern == null) continue;
 
                 var bossPos = TimelineEditorView.EvaluateBossPath(_spellCard.BossPath, scp.Delay);
