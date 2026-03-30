@@ -47,6 +47,20 @@ namespace STGEngine.Core.DataModel
         /// Displayed as a special narrow block between spell cards.
         /// </summary>
         public float TransitionDuration { get; set; } = 1.5f;
+
+        // ── Phase 5: gameplay modifiers ──
+
+        /// <summary>Invincibility frames granted to the player when this spell card starts (seconds).</summary>
+        public float InvincibilityDuration { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Restrict the player's movement area during this spell card.
+        /// Null = no restriction (full playfield).
+        /// </summary>
+        public Bounds? PlayerBounds { get; set; } = null;
+
+        /// <summary>Time scale multiplier for slow-motion effects. 1 = normal speed.</summary>
+        public float TimeScale { get; set; } = 1.0f;
     }
 
     /// <summary>

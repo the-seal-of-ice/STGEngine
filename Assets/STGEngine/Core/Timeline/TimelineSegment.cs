@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using STGEngine.Core.DataModel;
 
 namespace STGEngine.Core.Timeline
 {
@@ -46,5 +47,19 @@ namespace STGEngine.Core.Timeline
         /// Ignored for MidStage segments.
         /// </summary>
         public List<string> SpellCardIds { get; set; } = new();
+
+        // ── Phase 5: segment-level modifiers ──
+
+        /// <summary>Difficulty filter. Segment is skipped if current difficulty is not in this mask.</summary>
+        public DifficultyFilter Difficulty { get; set; } = DifficultyFilter.All;
+
+        /// <summary>Number of times this segment repeats. 1 = play once (no repeat).</summary>
+        public int RepeatCount { get; set; } = 1;
+
+        /// <summary>Force player power to this value at segment start. -1 = no change.</summary>
+        public int PowerOverride { get; set; } = -1;
+
+        /// <summary>Boss entrance path for BossFight segments. Null = no entrance animation.</summary>
+        public List<PathKeyframe> BossEntrancePath { get; set; } = null;
     }
 }
