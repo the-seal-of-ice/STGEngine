@@ -356,6 +356,12 @@ namespace STGEngine.Editor.UI.Timeline
             _trackArea.OnBlockDoubleClicked += OnBlockDoubleClicked;
             _trackArea.OnBlockSelected += OnBlockSelectedGeneric;
             _trackArea.OnBlockReorderRequested += OnBlockReorderRequested;
+            _trackArea.BlockingProgressProvider = () =>
+            {
+                if (_playback.IsBlocked && _playback.BlockingEvent != null)
+                    return (true, _playback.BlockingEvent.Id, _playback.BlockingProgress);
+                return (false, null, 0f);
+            };
             _mainSplit.Add(_trackArea.Root);
 
             Root.Add(_mainSplit);

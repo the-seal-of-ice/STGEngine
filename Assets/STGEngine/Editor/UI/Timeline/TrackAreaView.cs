@@ -91,6 +91,12 @@ namespace STGEngine.Editor.UI.Timeline
         public float SnapPlayheadThreshold { get; set; }
         public float SnapGridSize { get; set; }
 
+        /// <summary>
+        /// Provider for blocking progress. Returns (isBlocked, blockingEventId, progress 0→1).
+        /// Injected by TimelineEditorView to drive the green progress line inside blocking ActionBlocks.
+        /// </summary>
+        public Func<(bool isBlocked, string eventId, float progress)> BlockingProgressProvider { get; set; }
+
         private struct BlockInfo
         {
             public ITimelineBlock Block;
@@ -273,6 +279,23 @@ namespace STGEngine.Editor.UI.Timeline
         {
             _currentPlayTime = time;
             UpdatePlayhead();
+
+            // Repaint blocking ActionBlock to update progress line
+            if (BlockingProgressProvider != null)
+            {
+                var (isBlocked, eventId, _) = BlockingProgressProvider();
+                if (isBlocked && !string.IsNullOrEmpty(eventId))
+                {
+                    foreach (var info in _blocks)
+                    {
+                        if (info.Block is ActionBlock ab && ab.Id == eventId)
+                        {
+                            info.Element.MarkDirtyRepaint();
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         public float PixelsPerSecond => _pixelsPerSecond;
@@ -618,6 +641,12 @@ namespace STGEngine.Editor.UI.Timeline
                 element.generateVisualContent += ctx => DrawDesignEstimateLine(ctx, blk);
             }
 
+            // Blocking progress line for ActionBlocks (drawn via generateVisualContent)
+            if (blk is ActionBlock actBlk && actBlk.IsBlocking && actBlk.Duration > 0f)
+            {
+                element.generateVisualContent += ctx => DrawBlockingProgressLine(ctx, actBlk);
+            }
+
             // Resize handle — hide for blocks with read-only Duration (e.g. path-derived)
             var resizeHandle = new VisualElement();
             resizeHandle.style.position = Position.Absolute;
@@ -709,6 +738,39 @@ namespace STGEngine.Editor.UI.Timeline
             painter.Fill();
 
             // Green vertical line
+            painter.strokeColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
+            painter.lineWidth = 2f;
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(lineX, 0));
+            painter.LineTo(new Vector2(lineX, height));
+            painter.Stroke();
+        }
+
+        private void DrawBlockingProgressLine(MeshGenerationContext ctx, ActionBlock actBlk)
+        {
+            if (BlockingProgressProvider == null) return;
+            var (isBlocked, eventId, progress) = BlockingProgressProvider();
+            if (!isBlocked || eventId != actBlk.Id || progress <= 0f) return;
+
+            float blockWidth = actBlk.Duration * _pixelsPerSecond;
+            if (blockWidth <= 0f) return;
+
+            float lineX = progress * blockWidth;
+            float height = TrackRowHeight - 6;
+
+            var painter = ctx.painter2D;
+
+            // Swept green fill (left of progress line)
+            painter.fillColor = new Color(0.2f, 0.9f, 0.3f, 0.15f);
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(0, 0));
+            painter.LineTo(new Vector2(lineX, 0));
+            painter.LineTo(new Vector2(lineX, height));
+            painter.LineTo(new Vector2(0, height));
+            painter.ClosePath();
+            painter.Fill();
+
+            // Green vertical progress line
             painter.strokeColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
             painter.lineWidth = 2f;
             painter.BeginPath();

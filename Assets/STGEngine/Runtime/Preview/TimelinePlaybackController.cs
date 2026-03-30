@@ -238,20 +238,9 @@ namespace STGEngine.Runtime.Preview
                 }
                 else
                 {
-                    // Still blocked — fire a virtual display time so the playhead
-                    // animates inside the blocking block, then snaps back on release.
-                    // CurrentTime is NOT advanced; this is purely visual.
-                    if (_blockingEvent.Duration > 0f)
-                    {
-                        float progress = Mathf.Clamp01(_blockingElapsed / _blockingEvent.Duration);
-                        float displayTime = _blockingEvent.StartTime + _blockingEvent.Duration * progress;
-                        OnTimeChanged?.Invoke(displayTime);
-                    }
-                    else
-                    {
-                        // Infinite wait — playhead stays at StartTime
-                        OnTimeChanged?.Invoke(CurrentTime);
-                    }
+                    // Still blocked — CurrentTime stays at StartTime.
+                    // BlockingProgress is updated for UI consumers to draw progress line.
+                    OnTimeChanged?.Invoke(CurrentTime);
                     return;
                 }
             }
