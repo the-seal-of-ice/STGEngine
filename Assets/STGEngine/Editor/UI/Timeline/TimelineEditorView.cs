@@ -127,6 +127,7 @@ namespace STGEngine.Editor.UI.Timeline
 
         // ── Recursive navigation stack ──
         private readonly Stack<BreadcrumbEntry> _navigationStack = new();
+        private float _parentDurationForCurrentLayer = -1f; // <0 = root, no line
         private ITimelineLayer _currentLayerBacking;
         private ITimelineLayer _currentLayer
         {
@@ -142,6 +143,12 @@ namespace STGEngine.Editor.UI.Timeline
         {
             public ITimelineLayer Layer;
             public string DisplayName;
+            /// <summary>
+            /// Duration of the block that was double-clicked to enter this layer.
+            /// Used to draw the parent duration limit line when navigating deeper.
+            /// -1 means no parent limit (root level).
+            /// </summary>
+            public float ParentDuration;
         }
 
         // Stage overview: boss placeholder time ranges for dynamic show/hide
@@ -629,7 +636,9 @@ namespace STGEngine.Editor.UI.Timeline
                 _stageLayer.DeleteSegment(blk);
             };
             _currentLayer = _stageLayer;
+            _parentDurationForCurrentLayer = -1f; // root level — no parent limit
             _trackArea.SetLayer(_stageLayer);
+            _trackArea.SetParentDuration(-1f);
             // Build a combined segment covering all segments so playback shows bullets at Stage level
             LoadStageOverviewPreview();
             NotifyWavePlaceholders();
@@ -1695,7 +1704,8 @@ namespace STGEngine.Editor.UI.Timeline
                 _navigationStack.Push(new BreadcrumbEntry
                 {
                     Layer = _currentLayer,
-                    DisplayName = _currentLayer.DisplayName
+                    DisplayName = _currentLayer.DisplayName,
+                    ParentDuration = _parentDurationForCurrentLayer
                 });
             }
 
@@ -1707,12 +1717,14 @@ namespace STGEngine.Editor.UI.Timeline
                 : $"{segment.Id}/{spellCardId}";
             _currentLayer = new SpellCardDetailLayer(sc, spellCardId, _library,
                 scDetailContext, _catalog);
+            _parentDurationForCurrentLayer = sc.TimeLimit;
 
             // 3. WireLayerToTrackArea (binds Add/Delete callbacks)
             WireLayerToTrackArea(_currentLayer);
 
             // 4. _trackArea.SetLayer (sets correct layer for context menu & interaction)
             _trackArea.SetLayer(_currentLayer);
+            _trackArea.SetParentDuration(_parentDurationForCurrentLayer);
 
             // 5. LoadPreview (build temporary segment for playback)
             LoadSpellCardPreview(sc);
@@ -1898,6 +1910,7 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 var entry = _navigationStack.Pop();
                 _currentLayer = entry.Layer;
+                _parentDurationForCurrentLayer = entry.ParentDuration;
             }
 
             // Return to BossFight layer and reload preview
@@ -1908,6 +1921,7 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     bf.InvalidateBlocks();
                     _trackArea.SetLayer(bf);
+                    _trackArea.SetParentDuration(_parentDurationForCurrentLayer);
                 }
                 ShowLayerSummary(_currentLayer);
                 LoadBossFightPreview(_editingBossFightSegment);
@@ -1930,7 +1944,7 @@ namespace STGEngine.Editor.UI.Timeline
         /// Navigate into a child layer. Pushes current layer onto the stack,
         /// sets the new layer as current, and rebuilds the breadcrumb + track area.
         /// </summary>
-        public void NavigateTo(ITimelineLayer layer)
+        public void NavigateTo(ITimelineLayer layer, float parentDuration = -1f)
         {
             if (layer == null) return;
 
@@ -1943,13 +1957,16 @@ namespace STGEngine.Editor.UI.Timeline
                 _navigationStack.Push(new BreadcrumbEntry
                 {
                     Layer = _currentLayer,
-                    DisplayName = _currentLayer.DisplayName
+                    DisplayName = _currentLayer.DisplayName,
+                    ParentDuration = _parentDurationForCurrentLayer
                 });
             }
 
+            _parentDurationForCurrentLayer = parentDuration;
             _currentLayer = layer;
             WireLayerToTrackArea(layer);
             _trackArea.SetLayer(layer);
+            _trackArea.SetParentDuration(parentDuration);
             LoadPreviewForLayer(layer);
             RebuildBreadcrumb();
             ShowLayerSummary(layer);
@@ -1976,6 +1993,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             var entry = _navigationStack.Pop();
             _currentLayer = entry.Layer;
+            _parentDurationForCurrentLayer = entry.ParentDuration;
 
             // Returning from a child layer — parent's block data may be stale.
             // Invalidate blocks so they pick up any changes saved to disk.
@@ -1999,6 +2017,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             WireLayerToTrackArea(_currentLayer);
             _trackArea.SetLayer(_currentLayer);
+            _trackArea.SetParentDuration(entry.ParentDuration);
             LoadPreviewForLayer(_currentLayer);
             RebuildBreadcrumb();
             ShowLayerSummary(_currentLayer);
@@ -2025,6 +2044,7 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 var entry = _navigationStack.Pop();
                 _currentLayer = entry.Layer;
+                _parentDurationForCurrentLayer = entry.ParentDuration;
             }
 
             if (_currentLayer != null)
@@ -2051,6 +2071,7 @@ namespace STGEngine.Editor.UI.Timeline
 
                 WireLayerToTrackArea(_currentLayer);
                 _trackArea.SetLayer(_currentLayer);
+                _trackArea.SetParentDuration(_parentDurationForCurrentLayer);
                 LoadPreviewForLayer(_currentLayer);
             }
             RebuildBreadcrumb();
@@ -2630,7 +2651,9 @@ namespace STGEngine.Editor.UI.Timeline
                             }
                             NavigateToDepth(0);
                             _currentLayer = _stageLayer;
+                            _parentDurationForCurrentLayer = -1f;
                             _trackArea.SetLayer(_stageLayer);
+                            _trackArea.SetParentDuration(-1f);
                             LoadStageOverviewPreview();
                             RebuildBreadcrumb();
                             NotifyWavePlaceholders();
@@ -4428,8 +4451,11 @@ namespace STGEngine.Editor.UI.Timeline
                 _navigationStack.Push(new BreadcrumbEntry
                 {
                     Layer = _currentLayer,
-                    DisplayName = _currentLayer.DisplayName
+                    DisplayName = _currentLayer.DisplayName,
+                    ParentDuration = _parentDurationForCurrentLayer
                 });
+
+                _parentDurationForCurrentLayer = block.Duration;
 
                 // Reuse existing OnSegmentSelected logic for MidStage/BossFight handling
                 _currentLayer = childLayer;
@@ -4437,8 +4463,11 @@ namespace STGEngine.Editor.UI.Timeline
                 if (segment.Type == SegmentType.BossFight)
                 {
                     var bfLayer = new BossFightLayer(segment, _catalog, _library);
+                    _parentDurationForCurrentLayer = block.Duration;
                     _currentLayer = bfLayer;
                     WireLayerToTrackArea(bfLayer);
+                    _trackArea.SetLayer(bfLayer);
+                    _trackArea.SetParentDuration(block.Duration);
                     ShowLayerSummary(bfLayer);
                     LoadBossFightPreview(segment);
                 }
@@ -4448,6 +4477,7 @@ namespace STGEngine.Editor.UI.Timeline
                     if (midLayer != null)
                         WireLayerToTrackArea(midLayer);
                     _trackArea.SetLayer(childLayer);
+                    _trackArea.SetParentDuration(block.Duration);
                     LoadMidStagePreview(segment);
                     OnSpellCardEditingChanged?.Invoke(null);
                 }
@@ -4461,7 +4491,11 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             // Generic double-click: navigate into child layer
-            NavigateTo(childLayer);
+            // For SpellCard inside BossFight, keep the boss phase duration as parent limit
+            float navParentDuration = (_currentLayer is BossFightLayer)
+                ? _parentDurationForCurrentLayer
+                : block.Duration;
+            NavigateTo(childLayer, navParentDuration);
 
             // SpellCardDetailLayer: track editing context for save/override logic
             if (childLayer is SpellCardDetailLayer scLayer)

@@ -27,7 +27,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         private readonly List<SegmentBlock> _blocks = new();
 
         // Cache SpellCard TimeLimit to avoid repeated disk IO in BuildThumbnailBars
-        private readonly Dictionary<string, float> _spellCardTimeLimitCache = new();
+        private readonly Dictionary<string, (float timeLimit, float transition)> _spellCardCache = new();
 
         public StageLayer(Stage stage, STGCatalog catalog, PatternLibrary library, CommandStack commandStack)
         {
@@ -56,7 +56,7 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         /// <summary>Force rebuild of block list from stage segments.</summary>
         public void InvalidateBlocks()
         {
-            _spellCardTimeLimitCache.Clear();
+            _spellCardCache.Clear();
             RebuildBlockList();
         }
 
@@ -364,13 +364,26 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             }
             else if (seg.Type == SegmentType.BossFight && _catalog != null)
             {
-                // Spell cards laid out sequentially (cached to avoid repeated disk IO)
-                float scOffset = 0f;
+                // Load SpellCard data (TimeLimit + TransitionDuration) for thumbnail layout
+                var scData = new List<(float timeLimit, float transition)>();
+                float actualDuration = 0f;
+                for (int i = 0; i < seg.SpellCardIds.Count; i++)
+                {
+                    var data = GetCachedSpellCardData(seg.SpellCardIds[i], seg.Id, i);
+                    scData.Add(data);
+                    actualDuration += data.timeLimit;
+                    if (i < seg.SpellCardIds.Count - 1)
+                        actualDuration += data.transition;
+                }
 
+                // Use actual content length for thumbnail layout (don't modify seg.Duration)
+                float thumbDur = actualDuration > 0f ? actualDuration : segDur;
+
+                float scOffset = 0f;
                 for (int i = 0; i < seg.SpellCardIds.Count; i++)
                 {
                     var scId = seg.SpellCardIds[i];
-                    float timeLimit = GetCachedSpellCardTimeLimit(scId, seg.Id, i);
+                    float timeLimit = scData[i].timeLimit;
                     if (timeLimit <= 0f) continue;
 
                     int hash = scId?.GetHashCode() ?? 0;
@@ -379,8 +392,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
                     bars.Add(new ThumbnailBar
                     {
-                        NormalizedStart = Mathf.Clamp01(scOffset / segDur),
-                        NormalizedWidth = Mathf.Clamp01(timeLimit / segDur),
+                        NormalizedStart = Mathf.Clamp01(scOffset / thumbDur),
+                        NormalizedWidth = Mathf.Clamp01(timeLimit / thumbDur),
                         AbsoluteStart = scOffset,
                         AbsoluteWidth = timeLimit,
                         Color = color,
@@ -388,38 +401,39 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                     });
 
                     scOffset += timeLimit;
+                    if (i < seg.SpellCardIds.Count - 1)
+                        scOffset += scData[i].transition;
                 }
             }
 
             return bars;
         }
 
-        private float GetCachedSpellCardTimeLimit(string scId, string segmentId, int index)
+        private (float timeLimit, float transition) GetCachedSpellCardData(string scId, string segmentId, int index)
         {
-            // Cache key includes instance context for override-aware lookups
             var cacheKey = $"{segmentId}/sc_{index}/{scId}";
-            if (_spellCardTimeLimitCache.TryGetValue(cacheKey, out float cached))
+            if (_spellCardCache.TryGetValue(cacheKey, out var cached))
                 return cached;
 
             var contextId = OverrideManager.SpellCardInstanceContext(segmentId, index);
             var path = OverrideManager.ResolveSpellCardPath(_catalog, contextId, scId);
             if (!System.IO.File.Exists(path))
             {
-                _spellCardTimeLimitCache[cacheKey] = 0f;
-                return 0f;
+                _spellCardCache[cacheKey] = (0f, 0f);
+                return (0f, 0f);
             }
 
             try
             {
                 var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
-                float tl = sc.TimeLimit;
-                _spellCardTimeLimitCache[cacheKey] = tl;
-                return tl;
+                var data = (sc.TimeLimit, sc.TransitionDuration);
+                _spellCardCache[cacheKey] = data;
+                return data;
             }
             catch
             {
-                _spellCardTimeLimitCache[cacheKey] = 0f;
-                return 0f;
+                _spellCardCache[cacheKey] = (0f, 0f);
+                return (0f, 0f);
             }
         }
     }

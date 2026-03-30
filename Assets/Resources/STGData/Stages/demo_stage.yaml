@@ -22,7 +22,7 @@ segments:
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
-  duration: 10.2504
+  duration: 62.8059
   entry_trigger:
     type: immediate
   events:

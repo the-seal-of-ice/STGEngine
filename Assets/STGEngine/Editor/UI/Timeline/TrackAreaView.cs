@@ -36,6 +36,20 @@ namespace STGEngine.Editor.UI.Timeline
         private readonly VisualElement _playheadLine;
         private readonly VisualElement _playheadRulerMarker;
 
+        // ── Parent duration limit line ──
+        // When navigating into a child layer (e.g. Stage → MidStage → SpellCard → Pattern),
+        // this white vertical line marks the time boundary inherited from the parent block.
+        // It tells the designer "content beyond this line exceeds the parent's allocated time".
+        //
+        // CONVENTION FOR NEW LAYERS:
+        //   When implementing NavigateTo / OnBlockDoubleClicked for a new layer type,
+        //   call _trackArea.SetParentDuration(block.Duration) after entering the child.
+        //   When returning (NavigateBack / NavigateToDepth), the parent duration is
+        //   automatically restored from the navigation stack or cleared at root level.
+        //   If the child layer uses TimeOrigin, the line accounts for it automatically.
+        private readonly VisualElement _parentDurationLine;
+        private float _parentDuration = -1f; // <0 means hidden
+
         // ── Time hints ──
         private readonly Label _playheadTimeLabel;           // red bubble on playhead
         private readonly Label _hoverTimeLabel;              // grey tooltip following mouse
@@ -165,6 +179,17 @@ namespace STGEngine.Editor.UI.Timeline
             _playheadLine.style.backgroundColor = new Color(1f, 0.2f, 0.2f);
             _trackContent.Add(_playheadLine);
 
+            // Parent duration limit line (white, initially hidden)
+            _parentDurationLine = new VisualElement();
+            _parentDurationLine.style.position = Position.Absolute;
+            _parentDurationLine.style.width = 1;
+            _parentDurationLine.style.top = 0;
+            _parentDurationLine.style.bottom = 0;
+            _parentDurationLine.style.backgroundColor = new Color(1f, 1f, 1f, 0.5f);
+            _parentDurationLine.pickingMode = PickingMode.Ignore;
+            _parentDurationLine.style.display = DisplayStyle.None;
+            _trackContent.Add(_parentDurationLine);
+
             // Hover time tooltip — follows mouse in track area
             _hoverTimeLabel = new Label();
             _hoverTimeLabel.style.position = Position.Absolute;
@@ -199,6 +224,19 @@ namespace STGEngine.Editor.UI.Timeline
             _layer = layer;
             _selectedBlock = null;
             RebuildBlocks();
+        }
+
+        /// <summary>
+        /// Set the parent layer's time limit. A white vertical line is drawn at this time
+        /// to indicate the boundary inherited from the parent block.
+        /// Pass a negative value to hide the line (e.g. at root level).
+        /// </summary>
+        public void SetParentDuration(float duration)
+        {
+            _parentDuration = duration;
+            bool visible = duration >= 0f;
+            _parentDurationLine.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+            if (visible) UpdateParentDurationLine();
         }
 
         /// <summary>
@@ -261,7 +299,7 @@ namespace STGEngine.Editor.UI.Timeline
             var toRemove = new List<VisualElement>();
             foreach (var child in _trackContent.Children())
             {
-                if (child != _playheadLine)
+                if (child != _playheadLine && child != _parentDurationLine)
                     toRemove.Add(child);
             }
             foreach (var c in toRemove)
@@ -643,6 +681,7 @@ namespace STGEngine.Editor.UI.Timeline
             });
 
             _trackContent.Add(element);
+            _parentDurationLine.BringToFront();
             _playheadLine.BringToFront();
         }
 
@@ -1207,6 +1246,15 @@ namespace STGEngine.Editor.UI.Timeline
                 info.Element.style.top = TrackPadding + info.Row * TrackRowHeight;
                 info.Element.style.width = Mathf.Max(width, 4f);
             }
+            UpdateParentDurationLine();
+        }
+
+        private void UpdateParentDurationLine()
+        {
+            if (_parentDuration < 0f) return;
+            float origin = _layer?.TimeOrigin ?? 0f;
+            float x = (_parentDuration + origin) * _pixelsPerSecond - _scrollOffset;
+            _parentDurationLine.style.left = x;
         }
 
         private void UpdatePlayhead()
