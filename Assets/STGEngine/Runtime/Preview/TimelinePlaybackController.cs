@@ -94,6 +94,22 @@ namespace STGEngine.Runtime.Preview
         public ActionEvent BlockingEvent => _blockingEvent;
 
         /// <summary>
+        /// Normalized progress within the current blocking event (0→1).
+        /// Used by the UI to animate the playhead inside the blocking block.
+        /// 0 = just entered, 1 = timeout reached. Always 0 when not blocked.
+        /// For infinite-wait blocks (Duration=0), this stays at 0.
+        /// </summary>
+        public float BlockingProgress
+        {
+            get
+            {
+                if (_blockingEvent == null) return 0f;
+                if (_blockingEvent.Duration <= 0f) return 0f; // infinite wait
+                return Mathf.Clamp01(_blockingElapsed / _blockingEvent.Duration);
+            }
+        }
+
+        /// <summary>
         /// External callback to resolve blocking conditions (e.g. AllEnemiesDefeated, PlayerConfirm).
         /// Return true to release the block. Called every tick while blocked.
         /// </summary>
@@ -205,23 +221,37 @@ namespace STGEngine.Runtime.Preview
                 // Check external condition resolver
                 if (BlockingConditionResolver != null)
                     resolved = BlockingConditionResolver(_blockingEvent);
-                // Check timeout (0 = infinite)
+                // Check timeout (Duration > 0 = finite wait)
                 if (!resolved && _blockingEvent.Duration > 0f && _blockingElapsed >= _blockingEvent.Duration)
                     resolved = true;
 
                 if (resolved)
                 {
+                    // Block released — playhead stays at StartTime (no time consumed)
                     _blockingEvent = null;
                     _blockingElapsed = 0f;
                     // Resume all active previewers that were paused
                     foreach (var active in _activeEvents)
                         active.Previewer.Playback.Play();
+                    // Fire with real CurrentTime (= blocking event's StartTime)
+                    OnTimeChanged?.Invoke(CurrentTime);
                 }
                 else
                 {
-                    // Still blocked — don't advance CurrentTime, but still fire time changed
-                    // so the UI playhead stays updated
-                    OnTimeChanged?.Invoke(CurrentTime);
+                    // Still blocked — fire a virtual display time so the playhead
+                    // animates inside the blocking block, then snaps back on release.
+                    // CurrentTime is NOT advanced; this is purely visual.
+                    if (_blockingEvent.Duration > 0f)
+                    {
+                        float progress = Mathf.Clamp01(_blockingElapsed / _blockingEvent.Duration);
+                        float displayTime = _blockingEvent.StartTime + _blockingEvent.Duration * progress;
+                        OnTimeChanged?.Invoke(displayTime);
+                    }
+                    else
+                    {
+                        // Infinite wait — playhead stays at StartTime
+                        OnTimeChanged?.Invoke(CurrentTime);
+                    }
                     return;
                 }
             }
