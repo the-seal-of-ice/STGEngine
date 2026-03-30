@@ -478,6 +478,28 @@ namespace STGEngine.Core.Serialization
                                 EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(sw2.SpawnOffset.z));
                                 emitter.Emit(new MappingEnd());
                             }
+                            else if (evt is ActionEvent ae)
+                            {
+                                EmitScalar(emitter, "action_type");
+                                EmitScalar(emitter, PascalToSnake(ae.ActionType.ToString()));
+                                if (ae.Blocking)
+                                {
+                                    EmitScalar(emitter, "blocking");
+                                    EmitScalar(emitter, "true");
+                                }
+                                if (ae.Timeout > 0f)
+                                {
+                                    EmitScalar(emitter, "timeout");
+                                    EmitScalar(emitter, Fmt(ae.Timeout));
+                                }
+                                if (ae.Params != null)
+                                {
+                                    EmitScalar(emitter, "params");
+                                    emitter.Emit(new MappingStart());
+                                    EmitObjectProperties(emitter, ae.Params, ae.Params.GetType());
+                                    emitter.Emit(new MappingEnd());
+                                }
+                            }
 
                             emitter.Emit(new MappingEnd());
                         }
@@ -629,6 +651,30 @@ namespace STGEngine.Core.Serialization
                     }
                     return sw2;
 
+                case "action":
+                    var ae = new ActionEvent();
+                    if (dict.TryGetValue("id", out var aid)) ae.Id = aid.ToString();
+                    if (dict.TryGetValue("start_time", out var ast)) ae.StartTime = ParseFloat(ast);
+                    if (dict.TryGetValue("duration", out var adur)) ae.Duration = ParseFloat(adur);
+                    if (dict.TryGetValue("action_type", out var atVal))
+                        ae.ActionType = (ActionType)System.Enum.Parse(typeof(ActionType), SnakeToPascal(atVal.ToString()), true);
+                    if (dict.TryGetValue("blocking", out var blk))
+                        ae.Blocking = blk.ToString().Equals("true", System.StringComparison.OrdinalIgnoreCase);
+                    if (dict.TryGetValue("timeout", out var tmo))
+                        ae.Timeout = ParseFloat(tmo);
+                    if (dict.TryGetValue("params", out var paramsObj2))
+                    {
+                        var paramsType = ActionParamsRegistry.Resolve(ae.ActionType);
+                        if (paramsType != null)
+                        {
+                            var paramsInstance = (IActionParams)System.Activator.CreateInstance(paramsType);
+                            var paramsDict = ToStringDict(paramsObj2);
+                            ApplyProperties(paramsInstance, paramsType, paramsDict);
+                            ae.Params = paramsInstance;
+                        }
+                    }
+                    return ae;
+
                 default:
                     throw new YamlException($"Unknown TimelineEvent type: '{tag}'");
             }
@@ -743,7 +789,12 @@ namespace STGEngine.Core.Serialization
                 if (targetType == typeof(float)) return float.Parse(s, Inv);
                 if (targetType == typeof(string)) return s;
                 if (targetType == typeof(bool)) return bool.Parse(s);
-                if (targetType.IsEnum) return Enum.Parse(targetType, s, true);
+                if (targetType.IsEnum)
+                {
+                    // YAML uses snake_case, enums use PascalCase
+                    var pascalVal = SnakeToPascal(s);
+                    return Enum.Parse(targetType, pascalVal, true);
+                }
                 return s;
             }
 
@@ -898,6 +949,8 @@ namespace STGEngine.Core.Serialization
         {
             if (val is float f) return Fmt(f);
             if (val is int i) return i.ToString();
+            if (val is bool b) return b ? "true" : "false";
+            if (val is Enum) return PascalToSnake(val.ToString());
             return val.ToString();
         }
 
