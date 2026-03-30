@@ -3378,6 +3378,37 @@ namespace STGEngine.Editor.UI.Timeline
             typeLabel.style.marginTop = 4;
             container.Add(typeLabel);
 
+            // ── Phase 5: segment-level modifiers ──
+
+            // Difficulty filter
+            var diffField = new EnumField("Difficulty", segment.Difficulty);
+            diffField.RegisterValueChangedCallback(e =>
+            {
+                segment.Difficulty = (DifficultyFilter)e.newValue;
+                OnStageDataChanged();
+            });
+            container.Add(diffField);
+
+            // RepeatCount
+            var repeatField = new IntegerField("Repeat Count") { value = segment.RepeatCount };
+            repeatField.isDelayed = true;
+            repeatField.RegisterValueChangedCallback(e =>
+            {
+                segment.RepeatCount = Mathf.Max(1, e.newValue);
+                OnStageDataChanged();
+            });
+            container.Add(repeatField);
+
+            // PowerOverride
+            var powerField = new IntegerField("Power Override (-1=none)") { value = segment.PowerOverride };
+            powerField.isDelayed = true;
+            powerField.RegisterValueChangedCallback(e =>
+            {
+                segment.PowerOverride = e.newValue;
+                OnStageDataChanged();
+            });
+            container.Add(powerField);
+
             // Content summary
             string content = segment.Type == SegmentType.BossFight
                 ? $"Spell Cards: {segment.SpellCardIds.Count}"
@@ -3452,6 +3483,32 @@ namespace STGEngine.Editor.UI.Timeline
                     Mathf.Max(0.1f, e.newValue)));
             });
             container.Add(transField);
+
+            // ── Phase 5: gameplay modifiers ──
+
+            // InvincibilityDuration
+            var invField = new FloatField("Invincibility (s)") { value = sc.InvincibilityDuration };
+            invField.isDelayed = true;
+            invField.RegisterValueChangedCallback(e =>
+            {
+                ExecAndSave(new PropertyChangeCommand<float>(
+                    "Change Invincibility Duration",
+                    () => sc.InvincibilityDuration, v => sc.InvincibilityDuration = v,
+                    Mathf.Max(0f, e.newValue)));
+            });
+            container.Add(invField);
+
+            // TimeScale
+            var tsField = new FloatField("Time Scale") { value = sc.TimeScale };
+            tsField.isDelayed = true;
+            tsField.RegisterValueChangedCallback(e =>
+            {
+                ExecAndSave(new PropertyChangeCommand<float>(
+                    "Change Time Scale",
+                    () => sc.TimeScale, v => sc.TimeScale = v,
+                    Mathf.Max(0.01f, e.newValue)));
+            });
+            container.Add(tsField);
 
             // DesignEstimate
             var deField = new FloatField("Design Estimate") { value = sc.DesignEstimate };
