@@ -97,6 +97,26 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         public Func<(bool isBlocked, string eventId, float progress)> BlockingProgressProvider { get; set; }
 
+        // Cached symbol font for ActionBlock labels (loaded once)
+        private static Font _symbolFont;
+        private static bool _symbolFontLoaded;
+
+        private static Font GetSymbolFont()
+        {
+            if (!_symbolFontLoaded)
+            {
+                _symbolFontLoaded = true;
+                // Load from project Assets
+                var guids = UnityEditor.AssetDatabase.FindAssets("SegoeUISymbol t:Font");
+                if (guids.Length > 0)
+                {
+                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[0]);
+                    _symbolFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>(path);
+                }
+            }
+            return _symbolFont;
+        }
+
         private struct BlockInfo
         {
             public ITimelineBlock Block;
@@ -492,6 +512,13 @@ namespace STGEngine.Editor.UI.Timeline
             label.style.textOverflow = TextOverflow.Ellipsis;
             label.style.whiteSpace = WhiteSpace.NoWrap;
             label.style.flexShrink = 1;
+            // Use symbol font for ActionBlock labels (supports Unicode icons)
+            if (blk is ActionBlock)
+            {
+                var symFont = GetSymbolFont();
+                if (symFont != null)
+                    label.style.unityFontDefinition = FontDefinition.FromFont(symFont);
+            }
             contentRow.Add(label);
 
             // Inline thumbnail: small icon after label with hover popup
