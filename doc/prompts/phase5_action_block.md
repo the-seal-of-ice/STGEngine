@@ -746,44 +746,24 @@ ActionEvent 在编辑器预览中的表现：
 
 ## 八、实施计划
 
-### Step 1：数据模型（Core 层）
-- [ ] 创建 `ActionType.cs` 枚举
-- [ ] 创建 `IActionParams.cs` 接口
-- [ ] 创建 `ActionParamsRegistry.cs`
-- [ ] 创建 11 个参数类（每个一个文件，放 `Core/Timeline/ActionParams/` 目录）
-- [ ] 创建 `ActionEvent.cs`
-- [ ] 扩展 `SpellCard.cs`：添加 InvincibilityDuration, PlayerBounds, TimeScale
-- [ ] 扩展 `TimelineSegment.cs`：添加 Difficulty, RepeatCount, PowerOverride, BossEntrancePath
-- [ ] 创建 `DifficultyFilter.cs` 枚举
-- [ ] 编译验证
+### Step 1：数据模型（Core 层） ✅
+### Step 2：YAML 序列化 ✅
+### Step 3：编辑器 Block 层 ✅
+### Step 4：属性面板 ✅
 
-### Step 2：YAML 序列化
-- [ ] `YamlSerializer.SerializeStage`：添加 ActionEvent 序列化逻辑
-- [ ] `YamlSerializer.MapTimelineEvent`：添加 `case "action":` 反序列化
-- [ ] 序列化 SpellCard/Segment 新增字段
-- [ ] 编写往返测试（序列化 → 反序列化 → 比较）
+### Step 5：预览集成 ✅
+- [x] ShowTitle overlay（白色文字 + 阴影 + 淡入淡出）
+- [x] ScreenEffect 相机震动预览
+- [x] BulletClear 范围 Gizmos 线框（Circle/Rectangle）
+- [x] 阻塞机制（时间轴冻结 + 绿色进度线）
+- [x] BossFight 右键添加 ActionEvent
 
-### Step 3：编辑器 Block 层
-- [ ] 创建 `ActionBlock.cs`
-- [ ] 扩展 `MidStageLayer`：识别 ActionEvent，创建 ActionBlock
-- [ ] 扩展 `BossFightLayer`：从 Events 中提取 ActionEvent
-- [ ] 右键菜单：Add Action 子菜单
+### Step 6：SpellCard/Segment 属性 UI ✅
 
-### Step 4：属性面板
-- [ ] `TimelineEditorView` 中 ActionBlock 的属性面板渲染
-- [ ] 按 ActionType 动态切换参数 UI
-- [ ] DataBinder 绑定
-
-### Step 5：预览集成
-- [ ] ShowTitle overlay
-- [ ] ScreenEffect 后处理预览
-- [ ] BulletClear 范围线框
-- [ ] 其他类型的占位预览
-
-### Step 6：SpellCard/Segment 属性 UI
-- [ ] SpellCard 属性面板添加新字段
-- [ ] Segment 属性面板添加新字段
-- [ ] 序列化验证
+### 额外完成项
+- [x] Timeout 字段合并到 Duration（简化数据模型）
+- [x] 阻塞 playhead 视觉：块内绿色扫描线 + playhead 停在左边缘
+- [x] ActionEventPreviewController 统一管理预览效果
 
 ---
 
