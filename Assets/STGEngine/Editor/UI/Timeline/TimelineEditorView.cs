@@ -6238,7 +6238,10 @@ namespace STGEngine.Editor.UI.Timeline
             }
             else if (_currentLayer is BossFightLayer bfLayer)
             {
-                bfLayer.OnDeleteSpellCardRequested?.Invoke(selected);
+                if (selected is ActionBlock)
+                    bfLayer.OnDeleteActionRequested?.Invoke(selected);
+                else
+                    bfLayer.OnDeleteSpellCardRequested?.Invoke(selected);
             }
             else if (_currentLayer is WaveLayer waveLayer)
             {
@@ -6294,6 +6297,17 @@ namespace STGEngine.Editor.UI.Timeline
                 var clone = CloneTimelineEvent(srcEvt, pasteTime);
                 midLayer.Segment.Events.Add(clone);
                 midLayer.InvalidateBlocks();
+                OnStageDataChanged();
+            }
+            else if (typeof(ActionEvent).IsAssignableFrom(blockType) && _currentLayer is BossFightLayer bfPaste)
+            {
+                var tempStage = YamlSerializer.DeserializeStage((string)yamlData);
+                var srcEvt = tempStage?.Segments?[0]?.Events?[0];
+                if (srcEvt is not ActionEvent) return;
+                var clone = CloneTimelineEvent(srcEvt, pasteTime);
+                bfPaste.Segment.Events.Add(clone);
+                bfPaste.InvalidateBlocks();
+                _trackArea.RebuildBlocks();
                 OnStageDataChanged();
             }
             else if (blockType == typeof(EnemyInstance) && _currentLayer is WaveLayer waveLayer)
@@ -6384,6 +6398,35 @@ namespace STGEngine.Editor.UI.Timeline
                     WaveId = swe.WaveId,
                     Duration = swe.Duration
                 };
+            }
+            else if (src is ActionEvent ae)
+            {
+                clone = new ActionEvent
+                {
+                    Duration = ae.Duration,
+                    ActionType = ae.ActionType,
+                    Blocking = ae.Blocking,
+                    Params = ActionParamsRegistry.CreateDefault(ae.ActionType)
+                };
+                // Copy param values via serialize round-trip
+                if (ae.Params != null)
+                {
+                    try
+                    {
+                        var yaml = YamlSerializer.SerializeStage(new Stage
+                        {
+                            Segments = new List<TimelineSegment>
+                            {
+                                new() { Events = new List<TimelineEvent> { ae } }
+                            }
+                        });
+                        var temp = YamlSerializer.DeserializeStage(yaml);
+                        var clonedAe = temp?.Segments?[0]?.Events?[0] as ActionEvent;
+                        if (clonedAe?.Params != null)
+                            ((ActionEvent)clone).Params = clonedAe.Params;
+                    }
+                    catch { /* keep default params */ }
+                }
             }
             else
             {
