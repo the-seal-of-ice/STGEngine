@@ -313,6 +313,7 @@ namespace STGEngine.Editor.UI.Timeline
             Root.panel.visualTree.Add(dismiss);
             Root.panel.visualTree.Add(menu);
             TimelineEditorView.RegisterThemeOverride(menu);
+            TimelineEditorView.ClampPopupToScreen(menu);
         }
 
         private void DeleteSegment(TimelineSegment segment, int index)

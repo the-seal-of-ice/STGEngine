@@ -1712,6 +1712,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
         }
 
         // ─── Spell Card Editing (Breadcrumb Layer 3) ───
@@ -3075,6 +3076,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
         }
 
         /// <summary>
@@ -3138,6 +3140,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -4731,6 +4734,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
         }
 
         private void CreateEventWithPattern(string patternId, float atTime)
@@ -4816,6 +4820,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
         }
 
         private void CreateEventWithWave(string waveId, float atTime)
@@ -4937,6 +4942,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
         }
 
         private void CreateActionEvent(ActionType actionType, float atTime)
@@ -5892,6 +5898,23 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
+        /// Clamp a popup/menu so it doesn't overflow the screen bottom.
+        /// Call after adding the element to panel.visualTree.
+        /// </summary>
+        internal static void ClampPopupToScreen(VisualElement popup)
+        {
+            popup.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float popupBottom = popup.resolvedStyle.top + popup.resolvedStyle.height;
+                float screenHeight = popup.panel?.visualTree?.resolvedStyle.height ?? 0f;
+                if (screenHeight > 0f && popupBottom > screenHeight)
+                {
+                    popup.style.top = Mathf.Max(0f, screenHeight - popup.resolvedStyle.height);
+                }
+            });
+        }
+
+        /// <summary>
         /// Show a dialog when an added asset's duration would exceed the layer's time limit.
         /// User can choose to auto-trim or cancel.
         /// </summary>
@@ -6022,6 +6045,7 @@ namespace STGEngine.Editor.UI.Timeline
             picker.Add(cancelBtn);
 
             Root.panel.visualTree.Add(picker);
+            ClampPopupToScreen(picker);
             ApplyLightTextTheme(picker);
         }
 
