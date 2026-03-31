@@ -10,6 +10,7 @@ using STGEngine.Editor.UI.FileManager;
 using STGEngine.Editor.UI.Settings;
 using STGEngine.Editor.UI.Timeline;
 using STGEngine.Runtime;
+using STGEngine.Runtime.Audio;
 using STGEngine.Runtime.Player;
 using STGEngine.Runtime.Preview;
 using STGEngine.Runtime.Rendering;
@@ -65,6 +66,7 @@ namespace STGEngine.Editor.Scene
         private PreviewerPool _previewerPool;
         private PatternLibrary _patternLibrary;
         private ActionEventPreviewController _actionPreview;
+        private AudioService _audioService;
 
         // Timeline layout
         private float _timelineTopPercent;
@@ -158,6 +160,17 @@ namespace STGEngine.Editor.Scene
                 _actionPreview = new ActionEventPreviewController(
                     _uiDocument.rootVisualElement, Camera.main);
 
+                // Audio service (Unity backend)
+                var audioBackend = new UnityAudioBackend(transform, clipId =>
+                {
+                    var clip = Resources.Load<AudioClip>($"STGData/Audio/BGM/{clipId}");
+                    if (clip == null) clip = Resources.Load<AudioClip>($"STGData/Audio/SE/{clipId}");
+                    if (clip == null) clip = Resources.Load<AudioClip>(clipId);
+                    return clip;
+                });
+                _audioService = new AudioService(audioBackend);
+                _actionPreview.SetAudioService(_audioService);
+
                 // Boss placeholder (hidden until spell card editing)
                 var bossGo = new GameObject("BossPlaceholder");
                 _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();
@@ -193,6 +206,7 @@ namespace STGEngine.Editor.Scene
             if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
             {
                 _timelinePlayback.Tick(Time.deltaTime);
+                _audioService?.Tick(Time.deltaTime);
                 if (_actionPreview != null)
                 {
                     _actionPreview.SetSegment(_timelinePlayback.CurrentSegment);

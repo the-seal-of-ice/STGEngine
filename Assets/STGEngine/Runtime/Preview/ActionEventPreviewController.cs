@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.Timeline;
+using STGEngine.Runtime.Audio;
 
 namespace STGEngine.Runtime.Preview
 {
@@ -31,6 +32,10 @@ namespace STGEngine.Runtime.Preview
         // ── BulletClear visualization ──
         private ActionEvent _activeClearEvent;
 
+        // ── Audio ──
+        private AudioService _audio;
+        private readonly HashSet<string> _triggeredAudioIds = new();
+
         // Cached segment for event lookup
         private TimelineSegment _segment;
 
@@ -41,6 +46,9 @@ namespace STGEngine.Runtime.Preview
                 _freeCam = camera.GetComponent<FreeCameraController>();
             BuildTitleOverlay();
         }
+
+        /// <summary>Set the audio service for BGM/SE playback.</summary>
+        public void SetAudioService(AudioService audio) => _audio = audio;
 
         /// <summary>Set the current segment for event lookup. Only resets state when segment actually changes.</summary>
         public void SetSegment(TimelineSegment segment)
@@ -90,6 +98,38 @@ namespace STGEngine.Runtime.Preview
 
                     case ActionType.BulletClear:
                         _activeClearEvent = ae;
+                        break;
+
+                    case ActionType.BgmControl:
+                        if (_audio != null && !_triggeredAudioIds.Contains(ae.Id))
+                        {
+                            _triggeredAudioIds.Add(ae.Id);
+                            if (ae.Params is BgmControlParams bgm)
+                            {
+                                switch (bgm.Action)
+                                {
+                                    case BgmAction.Play:
+                                    case BgmAction.CrossFade:
+                                        _audio.PlayBgm(bgm.BgmId, bgm.FadeInDuration, bgm.FadeOutDuration, bgm.LoopStartTime);
+                                        break;
+                                    case BgmAction.Stop:
+                                        _audio.StopBgm(bgm.FadeOutDuration);
+                                        break;
+                                    case BgmAction.FadeOut:
+                                        _audio.StopBgm(bgm.FadeOutDuration);
+                                        break;
+                                }
+                            }
+                        }
+                        break;
+
+                    case ActionType.SePlay:
+                        if (_audio != null && !_triggeredAudioIds.Contains(ae.Id))
+                        {
+                            _triggeredAudioIds.Add(ae.Id);
+                            if (ae.Params is SePlayParams se)
+                                _audio.PlaySe(se.SeId, se.Volume, se.Pitch);
+                        }
                         break;
                 }
             }
@@ -151,6 +191,9 @@ namespace STGEngine.Runtime.Preview
                 _freeCam.ShakeOffset = Vector3.zero;
 
             _activeClearEvent = null;
+            _triggeredAudioIds.Clear();
+            _audio?.StopBgm(0.1f);
+            _audio?.StopAllSe();
         }
 
         // ── ShowTitle ──
