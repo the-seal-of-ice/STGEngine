@@ -64,6 +64,7 @@ namespace STGEngine.Editor.Scene
         private TimelinePlaybackController _timelinePlayback;
         private PreviewerPool _previewerPool;
         private PatternLibrary _patternLibrary;
+        private ActionEventPreviewController _actionPreview;
 
         // Timeline layout
         private float _timelineTopPercent;
@@ -153,6 +154,10 @@ namespace STGEngine.Editor.Scene
                 _timelinePlayback = new TimelinePlaybackController();
                 _timelinePlayback.Initialize(_previewerPool, _patternLibrary);
 
+                // ActionEvent preview controller (title overlay, screen shake, clear gizmos)
+                _actionPreview = new ActionEventPreviewController(
+                    _uiDocument.rootVisualElement, Camera.main);
+
                 // Boss placeholder (hidden until spell card editing)
                 var bossGo = new GameObject("BossPlaceholder");
                 _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();
@@ -188,6 +193,11 @@ namespace STGEngine.Editor.Scene
             if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
             {
                 _timelinePlayback.Tick(Time.deltaTime);
+                if (_actionPreview != null)
+                {
+                    _actionPreview.SetSegment(_timelinePlayback.CurrentSegment);
+                    _actionPreview.Tick(_timelinePlayback.CurrentTime, Time.deltaTime);
+                }
             }
 
             // Drive Boss placeholder along path — synced to playback time
@@ -303,10 +313,16 @@ namespace STGEngine.Editor.Scene
                 ExitPlayerMode();
 
             EngineSettingsManager.OnSettingsChanged -= OnSettingsChanged;
+            _actionPreview?.Reset();
             _editorView?.Dispose();
             _timelineView?.Dispose();
             _previewerPool?.Dispose();
             ClearEnemyPlaceholders();
+        }
+
+        private void OnDrawGizmos()
+        {
+            _actionPreview?.DrawClearGizmos();
         }
 
         // ─── Settings Live Apply ───

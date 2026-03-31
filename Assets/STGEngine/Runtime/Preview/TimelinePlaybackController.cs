@@ -82,6 +82,9 @@ namespace STGEngine.Runtime.Preview
         private PatternLibrary _library;
         private TimelineSegment _segment;
 
+        /// <summary>The currently loaded segment (for external consumers like ActionEventPreviewController).</summary>
+        public TimelineSegment CurrentSegment => _segment;
+
         // ── Blocking state ──
         private ActionEvent _blockingEvent;
         private float _blockingElapsed;
