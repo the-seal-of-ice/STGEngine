@@ -203,77 +203,68 @@ namespace STGEngine.Runtime.Preview
             if (ae.Params is not ShowTitleParams p) return;
 
             _titleContainer.style.display = DisplayStyle.Flex;
+            _activeTitleEventId = ae.Id;
 
-            // Rebuild when event changes
-            if (_activeTitleEventId != ae.Id)
+            // Position anchor
+            _titleContainer.style.top = p.Position switch
             {
-                _activeTitleEventId = ae.Id;
+                ScreenPosition.TopCenter    => Length.Percent(5),
+                ScreenPosition.TopLeft      => Length.Percent(5),
+                ScreenPosition.TopRight     => Length.Percent(5),
+                ScreenPosition.Center       => Length.Percent(40),
+                ScreenPosition.BottomCenter => Length.Percent(75),
+                _ => Length.Percent(8)
+            };
+            _titleContainer.style.alignItems = p.Position switch
+            {
+                ScreenPosition.TopLeft  => Align.FlexStart,
+                ScreenPosition.TopRight => Align.FlexEnd,
+                _ => Align.Center
+            };
 
-                // Position anchor
-                _titleContainer.style.top = p.Position switch
+            // Offset
+            _titleContainer.style.marginLeft = p.Offset.x;
+            _titleContainer.style.marginTop = p.Offset.y;
+
+            // Title label
+            _titleLabel.text = p.Text ?? "";
+            _titleLabel.style.fontSize = p.FontSize;
+            _titleLabel.style.color = p.TitleColor;
+            _titleLabel.style.unityFontStyleAndWeight = p.FontStyle switch
+            {
+                TitleFontStyle.Bold       => UnityEngine.FontStyle.Bold,
+                TitleFontStyle.Italic     => UnityEngine.FontStyle.Italic,
+                TitleFontStyle.BoldItalic => UnityEngine.FontStyle.BoldAndItalic,
+                _ => UnityEngine.FontStyle.Normal
+            };
+
+            // Subtitle label
+            _subTitleLabel.text = p.SubText ?? "";
+            _subTitleLabel.style.fontSize = p.SubFontSize;
+            _subTitleLabel.style.color = p.SubTitleColor;
+            _subTitleLabel.style.display = string.IsNullOrEmpty(p.SubText)
+                ? DisplayStyle.None : DisplayStyle.Flex;
+
+            // Image
+            if (!string.IsNullOrEmpty(p.ImagePath))
+            {
+                var tex = Resources.Load<Texture2D>(p.ImagePath);
+                if (tex != null)
                 {
-                    ScreenPosition.TopCenter    => Length.Percent(5),
-                    ScreenPosition.TopLeft      => Length.Percent(5),
-                    ScreenPosition.TopRight     => Length.Percent(5),
-                    ScreenPosition.Center       => Length.Percent(40),
-                    ScreenPosition.BottomCenter => Length.Percent(75),
-                    _ => Length.Percent(8)
-                };
-                _titleContainer.style.alignItems = p.Position switch
-                {
-                    ScreenPosition.TopLeft  => Align.FlexStart,
-                    ScreenPosition.TopRight => Align.FlexEnd,
-                    _ => Align.Center
-                };
-
-                // Offset
-                _titleContainer.style.marginLeft = p.Offset.x;
-                _titleContainer.style.marginTop = new StyleLength(
-                    _titleContainer.style.top.value.value + p.Offset.y);
-
-                // Title label
-                _titleLabel.text = p.Text ?? "";
-                _titleLabel.style.fontSize = p.FontSize;
-                _titleLabel.style.color = p.TitleColor;
-                _titleLabel.style.unityFontStyleAndWeight = p.FontStyle switch
-                {
-                    TitleFontStyle.Bold       => UnityEngine.FontStyle.Bold,
-                    TitleFontStyle.Italic     => UnityEngine.FontStyle.Italic,
-                    TitleFontStyle.BoldItalic => UnityEngine.FontStyle.BoldAndItalic,
-                    _ => UnityEngine.FontStyle.Normal
-                };
-
-                // Subtitle label
-                _subTitleLabel.text = p.SubText ?? "";
-                _subTitleLabel.style.fontSize = p.SubFontSize;
-                _subTitleLabel.style.color = p.SubTitleColor;
-                _subTitleLabel.style.display = string.IsNullOrEmpty(p.SubText)
-                    ? DisplayStyle.None : DisplayStyle.Flex;
-
-                // Image
-                if (!string.IsNullOrEmpty(p.ImagePath))
-                {
-                    _loadedTitleTexture = Resources.Load<Texture2D>(p.ImagePath);
-                    if (_loadedTitleTexture != null)
-                    {
-                        _titleImage.style.backgroundImage = new StyleBackground(_loadedTitleTexture);
-                        int w = p.ImageWidth > 0 ? p.ImageWidth : _loadedTitleTexture.width;
-                        int h = p.ImageHeight > 0 ? p.ImageHeight : _loadedTitleTexture.height;
-                        _titleImage.style.width = w;
-                        _titleImage.style.height = h;
-                        _titleImage.style.marginBottom = 8;
-                        _titleImage.style.display = DisplayStyle.Flex;
-                    }
-                    else
-                    {
-                        _titleImage.style.display = DisplayStyle.None;
-                    }
+                    _titleImage.style.backgroundImage = new StyleBackground(tex);
+                    _titleImage.style.width = p.ImageWidth > 0 ? p.ImageWidth : tex.width;
+                    _titleImage.style.height = p.ImageHeight > 0 ? p.ImageHeight : tex.height;
+                    _titleImage.style.marginBottom = 8;
+                    _titleImage.style.display = DisplayStyle.Flex;
                 }
                 else
                 {
                     _titleImage.style.display = DisplayStyle.None;
-                    _loadedTitleTexture = null;
                 }
+            }
+            else
+            {
+                _titleImage.style.display = DisplayStyle.None;
             }
 
             // Fade
