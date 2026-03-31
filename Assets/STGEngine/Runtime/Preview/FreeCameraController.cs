@@ -24,6 +24,12 @@ namespace STGEngine.Runtime.Preview
         private UIDocument _uiDocument;
 
         /// <summary>
+        /// External offset applied after orbit calculation (e.g. screen shake).
+        /// Set each frame by ActionEventPreviewController; auto-clears to zero.
+        /// </summary>
+        public Vector3 ShakeOffset { get; set; }
+
+        /// <summary>
         /// Tracks whether the mouse-down that started a drag was over UI.
         /// Prevents camera from responding when user drags from UI into 3D area.
         /// </summary>
@@ -109,8 +115,8 @@ namespace STGEngine.Runtime.Preview
         private void ApplyOrbit()
         {
             var rotation = Quaternion.Euler(_pitch, _yaw, 0f);
-            transform.position = _pivot + rotation * (Vector3.back * _distance);
-            transform.LookAt(_pivot);
+            transform.position = _pivot + rotation * (Vector3.back * _distance) + ShakeOffset;
+            transform.LookAt(_pivot + ShakeOffset);
         }
     }
 }

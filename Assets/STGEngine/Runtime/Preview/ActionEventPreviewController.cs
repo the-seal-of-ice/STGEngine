@@ -14,7 +14,6 @@ namespace STGEngine.Runtime.Preview
     public class ActionEventPreviewController
     {
         private readonly VisualElement _overlayRoot;
-        private Camera _camera;
 
         // ── ShowTitle state ──
         private Label _titleLabel;
@@ -25,10 +24,9 @@ namespace STGEngine.Runtime.Preview
         private float _titleFadeOutEnd;
 
         // ── ScreenEffect (shake) state ──
-        private Vector3 _cameraOriginalPos;
-        private bool _shaking;
         private float _shakeIntensity;
         private float _shakeEndTime;
+        private FreeCameraController _freeCam;
 
         // ── BulletClear visualization ──
         private ActionEvent _activeClearEvent;
@@ -39,7 +37,8 @@ namespace STGEngine.Runtime.Preview
         public ActionEventPreviewController(VisualElement overlayRoot, Camera camera)
         {
             _overlayRoot = overlayRoot;
-            _camera = camera;
+            if (camera != null)
+                _freeCam = camera.GetComponent<FreeCameraController>();
             BuildTitleOverlay();
         }
 
@@ -56,8 +55,12 @@ namespace STGEngine.Runtime.Preview
         {
             if (_segment?.Events == null) return;
 
-            // Refresh camera reference each frame (may change during play)
-            _camera = Camera.main;
+            // Refresh FreeCameraController reference if needed
+            if (_freeCam == null)
+            {
+                var cam = Camera.main;
+                if (cam != null) _freeCam = cam.GetComponent<FreeCameraController>();
+            }
 
             bool foundTitle = false;
             bool foundShake = false;
@@ -98,26 +101,22 @@ namespace STGEngine.Runtime.Preview
                 _activeTitleEventId = null;
             }
 
-            // Camera shake
-            if (foundShake && _camera != null)
+            // Camera shake via FreeCameraController.ShakeOffset
+            if (_freeCam != null)
             {
-                if (!_shaking)
+                if (foundShake)
                 {
-                    _cameraOriginalPos = _camera.transform.localPosition;
-                    _shaking = true;
-                }
-                float strength = _shakeIntensity;
-                _camera.transform.localPosition = _cameraOriginalPos
-                    + new Vector3(
+                    float strength = _shakeIntensity;
+                    _freeCam.ShakeOffset = new Vector3(
                         (Mathf.PerlinNoise(Time.time * 25f, 0f) - 0.5f) * 2f,
                         (Mathf.PerlinNoise(0f, Time.time * 25f) - 0.5f) * 2f,
                         (Mathf.PerlinNoise(Time.time * 25f, Time.time * 25f) - 0.5f) * 2f
                     ) * strength;
-            }
-            else if (_shaking && _camera != null)
-            {
-                _camera.transform.localPosition = _cameraOriginalPos;
-                _shaking = false;
+                }
+                else
+                {
+                    _freeCam.ShakeOffset = Vector3.zero;
+                }
             }
         }
 
@@ -148,11 +147,8 @@ namespace STGEngine.Runtime.Preview
                 _titleContainer.style.display = DisplayStyle.None;
             _activeTitleEventId = null;
 
-            if (_shaking && _camera != null)
-            {
-                _camera.transform.localPosition = _cameraOriginalPos;
-                _shaking = false;
-            }
+            if (_freeCam != null)
+                _freeCam.ShakeOffset = Vector3.zero;
 
             _activeClearEvent = null;
         }
