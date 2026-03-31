@@ -791,39 +791,40 @@ namespace STGEngine.Core.Serialization
                 return s;
             }
 
-            // Nested mapping → Vector3 or SerializableCurve
-            if (value is Dictionary<string, object> dict)
+            // Nested mapping → Vector2, Vector3, Color, or SerializableCurve
+            if (value is Dictionary<string, object> dict || value is Dictionary<object, object>)
             {
+                var d = value is Dictionary<string, object> sd ? sd : ToStringDict(value);
                 if (targetType == typeof(Vector3))
                 {
                     return new Vector3(
-                        dict.TryGetValue("x", out var xv) ? ParseFloat(xv) : 0f,
-                        dict.TryGetValue("y", out var yv) ? ParseFloat(yv) : 0f,
-                        dict.TryGetValue("z", out var zv) ? ParseFloat(zv) : 0f
+                        d.TryGetValue("x", out var xv) ? ParseFloat(xv) : 0f,
+                        d.TryGetValue("y", out var yv) ? ParseFloat(yv) : 0f,
+                        d.TryGetValue("z", out var zv) ? ParseFloat(zv) : 0f
                     );
                 }
 
                 if (targetType == typeof(Vector2))
                 {
                     return new Vector2(
-                        dict.TryGetValue("x", out var x2v) ? ParseFloat(x2v) : 0f,
-                        dict.TryGetValue("y", out var y2v) ? ParseFloat(y2v) : 0f
+                        d.TryGetValue("x", out var x2v) ? ParseFloat(x2v) : 0f,
+                        d.TryGetValue("y", out var y2v) ? ParseFloat(y2v) : 0f
                     );
                 }
 
                 if (targetType == typeof(Color))
                 {
                     return new Color(
-                        dict.TryGetValue("r", out var rv) ? ParseFloat(rv) : 1f,
-                        dict.TryGetValue("g", out var gv) ? ParseFloat(gv) : 1f,
-                        dict.TryGetValue("b", out var bv) ? ParseFloat(bv) : 1f,
-                        dict.TryGetValue("a", out var av) ? ParseFloat(av) : 1f
+                        d.TryGetValue("r", out var rv) ? ParseFloat(rv) : 1f,
+                        d.TryGetValue("g", out var gv) ? ParseFloat(gv) : 1f,
+                        d.TryGetValue("b", out var bv) ? ParseFloat(bv) : 1f,
+                        d.TryGetValue("a", out var av) ? ParseFloat(av) : 1f
                     );
                 }
 
                 if (targetType == typeof(SerializableCurve))
                 {
-                    return ConvertToCurve(dict);
+                    return ConvertToCurve(d);
                 }
             }
 
