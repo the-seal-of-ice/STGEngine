@@ -14,7 +14,7 @@ namespace STGEngine.Runtime.Preview
     public class ActionEventPreviewController
     {
         private readonly VisualElement _overlayRoot;
-        private readonly Camera _camera;
+        private Camera _camera;
 
         // ── ShowTitle state ──
         private Label _titleLabel;
@@ -43,9 +43,10 @@ namespace STGEngine.Runtime.Preview
             BuildTitleOverlay();
         }
 
-        /// <summary>Set the current segment for event lookup.</summary>
+        /// <summary>Set the current segment for event lookup. Only resets state when segment actually changes.</summary>
         public void SetSegment(TimelineSegment segment)
         {
+            if (ReferenceEquals(_segment, segment)) return;
             _segment = segment;
             Reset();
         }
@@ -54,6 +55,9 @@ namespace STGEngine.Runtime.Preview
         public void Tick(float currentTime, float deltaTime)
         {
             if (_segment?.Events == null) return;
+
+            // Refresh camera reference each frame (may change during play)
+            _camera = Camera.main;
 
             bool foundTitle = false;
             bool foundShake = false;
@@ -102,9 +106,13 @@ namespace STGEngine.Runtime.Preview
                     _cameraOriginalPos = _camera.transform.localPosition;
                     _shaking = true;
                 }
-                float t = 1f - Mathf.Clamp01((currentTime - (_shakeEndTime - 0.5f)) / 0.5f);
-                float strength = _shakeIntensity * 0.3f * t;
-                _camera.transform.localPosition = _cameraOriginalPos + Random.insideUnitSphere * strength;
+                float strength = _shakeIntensity;
+                _camera.transform.localPosition = _cameraOriginalPos
+                    + new Vector3(
+                        (Mathf.PerlinNoise(Time.time * 25f, 0f) - 0.5f) * 2f,
+                        (Mathf.PerlinNoise(0f, Time.time * 25f) - 0.5f) * 2f,
+                        (Mathf.PerlinNoise(Time.time * 25f, Time.time * 25f) - 0.5f) * 2f
+                    ) * strength;
             }
             else if (_shaking && _camera != null)
             {
