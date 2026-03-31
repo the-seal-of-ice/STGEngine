@@ -267,17 +267,69 @@ namespace STGEngine.Runtime.Preview
                 _titleImage.style.display = DisplayStyle.None;
             }
 
-            // Fade
+            // Animation
             float localTime = currentTime - ae.StartTime;
             float fadeIn = Mathf.Max(0.01f, p.FadeInDuration);
             float fadeOut = Mathf.Max(0.01f, p.FadeOutDuration);
-            float alpha = 1f;
-            if (localTime < fadeIn)
-                alpha = localTime / fadeIn;
-            else if (ae.Duration > fadeOut && localTime > ae.Duration - fadeOut)
-                alpha = (ae.Duration - localTime) / fadeOut;
 
-            _titleContainer.style.opacity = Mathf.Clamp01(alpha);
+            // Progress: 0→1 during fade-in, 1 during hold, 1→0 during fade-out
+            float inT = Mathf.Clamp01(localTime / fadeIn);
+            float outT = 1f;
+            if (ae.Duration > fadeOut && localTime > ae.Duration - fadeOut)
+                outT = Mathf.Clamp01((ae.Duration - localTime) / fadeOut);
+
+            // Reset transforms each frame (some animations modify these)
+            _titleContainer.style.opacity = 1f;
+            _titleContainer.style.translate = new Translate(0, 0);
+            _titleContainer.style.scale = new Scale(Vector3.one);
+
+            switch (p.Animation)
+            {
+                case TitleAnimationType.FadeIn:
+                    _titleContainer.style.opacity = inT * outT;
+                    break;
+
+                case TitleAnimationType.SlideLeft:
+                {
+                    // Slide in from right, slide out to left
+                    float slideIn = (1f - inT) * 300f;   // pixels from right
+                    float slideOut = (1f - outT) * -300f; // pixels to left
+                    float x = slideIn + slideOut;
+                    _titleContainer.style.translate = new Translate(x, 0);
+                    _titleContainer.style.opacity = Mathf.Min(inT, outT);
+                    break;
+                }
+
+                case TitleAnimationType.SlideRight:
+                {
+                    // Slide in from left, slide out to right
+                    float slideIn = (1f - inT) * -300f;
+                    float slideOut = (1f - outT) * 300f;
+                    float x = slideIn + slideOut;
+                    _titleContainer.style.translate = new Translate(x, 0);
+                    _titleContainer.style.opacity = Mathf.Min(inT, outT);
+                    break;
+                }
+
+                case TitleAnimationType.Expand:
+                {
+                    // Scale from 0 to 1, then 1 to 0
+                    float s = inT * outT;
+                    _titleContainer.style.scale = new Scale(new Vector3(s, s, 1f));
+                    _titleContainer.style.opacity = s;
+                    break;
+                }
+
+                case TitleAnimationType.TypeWriter:
+                {
+                    // Reveal characters one by one during fade-in period
+                    string fullText = p.Text ?? "";
+                    int charCount = Mathf.FloorToInt(inT * fullText.Length);
+                    _titleLabel.text = fullText.Substring(0, Mathf.Clamp(charCount, 0, fullText.Length));
+                    _titleContainer.style.opacity = outT;
+                    break;
+                }
+            }
         }
 
         // ── Gizmo helpers ──
