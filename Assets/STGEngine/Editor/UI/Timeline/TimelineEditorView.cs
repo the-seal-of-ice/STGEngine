@@ -5141,6 +5141,29 @@ namespace STGEngine.Editor.UI.Timeline
                     });
                     container.Add(field);
                 }
+                else if (prop.PropertyType == typeof(Vector2))
+                {
+                    var v = (Vector2)(val ?? Vector2.zero);
+                    var field = new Vector2Field(prop.Name) { value = v };
+                    field.RegisterValueChangedCallback(e =>
+                    {
+                        prop.SetValue(paramsObj, e.newValue);
+                        OnStageDataChanged();
+                    });
+                    container.Add(field);
+                }
+                else if (prop.PropertyType == typeof(Color))
+                {
+                    var c = (Color)(val ?? Color.white);
+                    var field = new STGEngine.Editor.UI.ColorField(prop.Name);
+                    field.SetColor(c);
+                    field.OnColorChanged = newColor =>
+                    {
+                        prop.SetValue(paramsObj, newColor);
+                        OnStageDataChanged();
+                    };
+                    container.Add(field);
+                }
             }
         }
 

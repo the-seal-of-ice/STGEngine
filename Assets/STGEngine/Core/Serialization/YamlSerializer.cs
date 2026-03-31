@@ -803,6 +803,14 @@ namespace STGEngine.Core.Serialization
                     );
                 }
 
+                if (targetType == typeof(Vector2))
+                {
+                    return new Vector2(
+                        dict.TryGetValue("x", out var x2v) ? ParseFloat(x2v) : 0f,
+                        dict.TryGetValue("y", out var y2v) ? ParseFloat(y2v) : 0f
+                    );
+                }
+
                 if (targetType == typeof(Color))
                 {
                     return new Color(
@@ -870,6 +878,13 @@ namespace STGEngine.Core.Serialization
                     EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(v3.x));
                     EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(v3.y));
                     EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(v3.z));
+                    emitter.Emit(new MappingEnd());
+                    break;
+
+                case Vector2 v2:
+                    emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                    EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(v2.x));
+                    EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(v2.y));
                     emitter.Emit(new MappingEnd());
                     break;
 

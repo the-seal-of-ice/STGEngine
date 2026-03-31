@@ -19,9 +19,9 @@ namespace STGEngine.Runtime.Preview
         private Label _titleLabel;
         private Label _subTitleLabel;
         private VisualElement _titleContainer;
+        private VisualElement _titleImage;
         private string _activeTitleEventId;
-        private float _titleFadeOutStart;
-        private float _titleFadeOutEnd;
+        private Texture2D _loadedTitleTexture;
 
         // ── ScreenEffect (shake) state ──
         private float _shakeIntensity;
@@ -166,10 +166,13 @@ namespace STGEngine.Runtime.Preview
             _titleContainer.style.display = DisplayStyle.None;
             _titleContainer.pickingMode = PickingMode.Ignore;
 
+            // Image element (hidden by default)
+            _titleImage = new VisualElement();
+            _titleImage.style.display = DisplayStyle.None;
+            _titleImage.pickingMode = PickingMode.Ignore;
+            _titleContainer.Add(_titleImage);
+
             _titleLabel = new Label();
-            _titleLabel.style.fontSize = 28;
-            _titleLabel.style.color = Color.white;
-            _titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             _titleLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
             _titleLabel.style.textShadow = new TextShadow
             {
@@ -181,8 +184,6 @@ namespace STGEngine.Runtime.Preview
             _titleContainer.Add(_titleLabel);
 
             _subTitleLabel = new Label();
-            _subTitleLabel.style.fontSize = 16;
-            _subTitleLabel.style.color = new Color(0.85f, 0.85f, 0.85f);
             _subTitleLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
             _subTitleLabel.style.marginTop = 4;
             _subTitleLabel.style.textShadow = new TextShadow
@@ -199,31 +200,93 @@ namespace STGEngine.Runtime.Preview
 
         private void UpdateTitleOverlay(ActionEvent ae, float currentTime)
         {
-            if (ae.Params is not ShowTitleParams titleParams) return;
+            if (ae.Params is not ShowTitleParams p) return;
 
-            // Show container
             _titleContainer.style.display = DisplayStyle.Flex;
 
-            // Update text if event changed
+            // Rebuild when event changes
             if (_activeTitleEventId != ae.Id)
             {
                 _activeTitleEventId = ae.Id;
-                _titleLabel.text = titleParams.Text ?? "";
-                _subTitleLabel.text = titleParams.SubText ?? "";
-                _subTitleLabel.style.display = string.IsNullOrEmpty(titleParams.SubText)
+
+                // Position anchor
+                _titleContainer.style.top = p.Position switch
+                {
+                    ScreenPosition.TopCenter    => Length.Percent(5),
+                    ScreenPosition.TopLeft      => Length.Percent(5),
+                    ScreenPosition.TopRight     => Length.Percent(5),
+                    ScreenPosition.Center       => Length.Percent(40),
+                    ScreenPosition.BottomCenter => Length.Percent(75),
+                    _ => Length.Percent(8)
+                };
+                _titleContainer.style.alignItems = p.Position switch
+                {
+                    ScreenPosition.TopLeft  => Align.FlexStart,
+                    ScreenPosition.TopRight => Align.FlexEnd,
+                    _ => Align.Center
+                };
+
+                // Offset
+                _titleContainer.style.marginLeft = p.Offset.x;
+                _titleContainer.style.marginTop = new StyleLength(
+                    _titleContainer.style.top.value.value + p.Offset.y);
+
+                // Title label
+                _titleLabel.text = p.Text ?? "";
+                _titleLabel.style.fontSize = p.FontSize;
+                _titleLabel.style.color = p.TitleColor;
+                _titleLabel.style.unityFontStyleAndWeight = p.FontStyle switch
+                {
+                    TitleFontStyle.Bold       => UnityEngine.FontStyle.Bold,
+                    TitleFontStyle.Italic     => UnityEngine.FontStyle.Italic,
+                    TitleFontStyle.BoldItalic => UnityEngine.FontStyle.BoldAndItalic,
+                    _ => UnityEngine.FontStyle.Normal
+                };
+
+                // Subtitle label
+                _subTitleLabel.text = p.SubText ?? "";
+                _subTitleLabel.style.fontSize = p.SubFontSize;
+                _subTitleLabel.style.color = p.SubTitleColor;
+                _subTitleLabel.style.display = string.IsNullOrEmpty(p.SubText)
                     ? DisplayStyle.None : DisplayStyle.Flex;
+
+                // Image
+                if (!string.IsNullOrEmpty(p.ImagePath))
+                {
+                    _loadedTitleTexture = Resources.Load<Texture2D>(p.ImagePath);
+                    if (_loadedTitleTexture != null)
+                    {
+                        _titleImage.style.backgroundImage = new StyleBackground(_loadedTitleTexture);
+                        int w = p.ImageWidth > 0 ? p.ImageWidth : _loadedTitleTexture.width;
+                        int h = p.ImageHeight > 0 ? p.ImageHeight : _loadedTitleTexture.height;
+                        _titleImage.style.width = w;
+                        _titleImage.style.height = h;
+                        _titleImage.style.marginBottom = 8;
+                        _titleImage.style.display = DisplayStyle.Flex;
+                    }
+                    else
+                    {
+                        _titleImage.style.display = DisplayStyle.None;
+                    }
+                }
+                else
+                {
+                    _titleImage.style.display = DisplayStyle.None;
+                    _loadedTitleTexture = null;
+                }
             }
 
-            // Fade: first 0.3s fade in, last 0.5s fade out
+            // Fade
             float localTime = currentTime - ae.StartTime;
+            float fadeIn = Mathf.Max(0.01f, p.FadeInDuration);
+            float fadeOut = Mathf.Max(0.01f, p.FadeOutDuration);
             float alpha = 1f;
-            if (localTime < 0.3f)
-                alpha = localTime / 0.3f;
-            else if (ae.Duration > 0.5f && localTime > ae.Duration - 0.5f)
-                alpha = (ae.Duration - localTime) / 0.5f;
+            if (localTime < fadeIn)
+                alpha = localTime / fadeIn;
+            else if (ae.Duration > fadeOut && localTime > ae.Duration - fadeOut)
+                alpha = (ae.Duration - localTime) / fadeOut;
 
-            alpha = Mathf.Clamp01(alpha);
-            _titleContainer.style.opacity = alpha;
+            _titleContainer.style.opacity = Mathf.Clamp01(alpha);
         }
 
         // ── Gizmo helpers ──
