@@ -51,12 +51,20 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Set the audio service for BGM/SE playback.</summary>
         public void SetAudioService(AudioService audio) => _audio = audio;
 
-        /// <summary>Set the current segment for event lookup. Only resets state when segment actually changes.</summary>
+        /// <summary>Set the current segment for event lookup. Only fully resets when segment ID changes.</summary>
         public void SetSegment(TimelineSegment segment)
         {
             if (ReferenceEquals(_segment, segment)) return;
+
+            bool sameLogicalSegment = _segment != null && segment != null
+                && _segment.Id == segment.Id;
+
             _segment = segment;
-            Reset();
+
+            if (!sameLogicalSegment)
+                Reset();
+            // Same logical segment (tempSegment rebuilt): keep _triggeredAudioIds
+            // so audio doesn't re-trigger on property edits.
         }
 
         /// <summary>Call each frame with the current playback time.</summary>
