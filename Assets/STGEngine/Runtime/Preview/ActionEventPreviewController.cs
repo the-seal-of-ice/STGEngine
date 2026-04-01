@@ -95,6 +95,36 @@ namespace STGEngine.Runtime.Preview
             foreach (var evt in _segment.Events)
             {
                 if (evt is not ActionEvent ae) continue;
+
+                // Audio events: trigger at StartTime (one-shot, not range-based)
+                if (ae.ActionType == ActionType.BgmControl || ae.ActionType == ActionType.SePlay)
+                {
+                    if (currentTime >= ae.StartTime && _audio != null && !_triggeredAudioIds.Contains(ae.Id))
+                    {
+                        _triggeredAudioIds.Add(ae.Id);
+                        if (ae.ActionType == ActionType.BgmControl && ae.Params is BgmControlParams bgm)
+                        {
+                            switch (bgm.Action)
+                            {
+                                case BgmAction.Play:
+                                case BgmAction.CrossFade:
+                                    _audio.PlayBgm(bgm.BgmId, bgm.FadeInDuration, bgm.FadeOutDuration, bgm.LoopStartTime);
+                                    break;
+                                case BgmAction.Stop:
+                                case BgmAction.FadeOut:
+                                    _audio.StopBgm(bgm.FadeOutDuration);
+                                    break;
+                            }
+                        }
+                        else if (ae.ActionType == ActionType.SePlay && ae.Params is SePlayParams se)
+                        {
+                            _audio.PlaySe(se.SeId, se.Volume, se.Pitch);
+                        }
+                    }
+                    continue; // skip range-based active check for audio events
+                }
+
+                // All other events: range-based active check
                 bool active = currentTime >= ae.StartTime && (ae.Duration <= 0f || currentTime < ae.StartTime + ae.Duration);
                 if (!active) continue;
 
@@ -116,38 +146,6 @@ namespace STGEngine.Runtime.Preview
 
                     case ActionType.BulletClear:
                         _activeClearEvent = ae;
-                        break;
-
-                    case ActionType.BgmControl:
-                        if (_audio != null && !_triggeredAudioIds.Contains(ae.Id))
-                        {
-                            _triggeredAudioIds.Add(ae.Id);
-                            if (ae.Params is BgmControlParams bgm)
-                            {
-                                switch (bgm.Action)
-                                {
-                                    case BgmAction.Play:
-                                    case BgmAction.CrossFade:
-                                        _audio.PlayBgm(bgm.BgmId, bgm.FadeInDuration, bgm.FadeOutDuration, bgm.LoopStartTime);
-                                        break;
-                                    case BgmAction.Stop:
-                                        _audio.StopBgm(bgm.FadeOutDuration);
-                                        break;
-                                    case BgmAction.FadeOut:
-                                        _audio.StopBgm(bgm.FadeOutDuration);
-                                        break;
-                                }
-                            }
-                        }
-                        break;
-
-                    case ActionType.SePlay:
-                        if (_audio != null && !_triggeredAudioIds.Contains(ae.Id))
-                        {
-                            _triggeredAudioIds.Add(ae.Id);
-                            if (ae.Params is SePlayParams se)
-                                _audio.PlaySe(se.SeId, se.Volume, se.Pitch);
-                        }
                         break;
                 }
             }

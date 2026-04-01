@@ -1521,9 +1521,13 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private static bool CanResizeDuration(ITimelineBlock blk)
         {
-            // All block types in the project have writable Duration setters.
-            // If a read-only block type is added in the future, add a check here
-            // (e.g. via an interface marker or property).
+            // SE and BGM blocks have duration locked to audio clip length
+            if (blk is ActionBlock ab)
+            {
+                var t = ab.ActionEvent.ActionType;
+                if (t == ActionType.SePlay || t == ActionType.BgmControl)
+                    return false;
+            }
             return true;
         }
     }
