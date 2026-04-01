@@ -71,8 +71,35 @@ namespace STGEngine.Editor.UI.Timeline.Layers
         /// </summary>
         public bool IsMarker => _event.Duration <= 0f;
 
+        /// <summary>
+        /// Whether Duration has a meaningful visual/gameplay effect for this action type.
+        /// When false, the block cannot be resized — right-half drag moves instead.
+        /// </summary>
+        public bool HasMeaningfulDuration => _event.ActionType switch
+        {
+            ActionType.ShowTitle    => true,
+            ActionType.ScreenEffect => true,
+            ActionType.ScoreTally   => true,
+            ActionType.WaitCondition => true,
+            ActionType.BulletClear  => true,
+            ActionType.SePlay       => true,
+            ActionType.BgmControl   => true,
+            _ => false // BackgroundSwitch, ItemDrop, AutoCollect, BranchJump
+        };
+
         /// <summary>The underlying ActionEvent data.</summary>
         public ActionEvent ActionEvent => _event;
+
+        // ── BranchJump annotation ──
+
+        /// <summary>Whether this block is a BranchJump action.</summary>
+        public bool IsBranchJump => _event.ActionType == ActionType.BranchJump;
+
+        /// <summary>Target segment ID for BranchJump (condition met).</summary>
+        public string BranchTargetId => (_event.Params as BranchJumpParams)?.TargetSegmentId ?? "";
+
+        /// <summary>Fallback segment ID for BranchJump (condition not met).</summary>
+        public string BranchFallbackId => (_event.Params as BranchJumpParams)?.FallbackSegmentId ?? "";
 
         // ── Static helpers ──
 

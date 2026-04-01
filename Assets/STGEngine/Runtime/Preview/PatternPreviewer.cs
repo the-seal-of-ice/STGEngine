@@ -62,6 +62,9 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Current bullet states for external consumers (e.g. CollisionVisualizer).</summary>
         public List<BulletState> CurrentStates => _currStates;
 
+        /// <summary>Expose the simulation evaluator for BulletClear operations.</summary>
+        public SimulationEvaluator SimEvaluator => _simEvaluator;
+
         /// <summary>
         /// Dynamic target provider for PlayerHomingModifier. When set, player-homing
         /// bullets track this position each tick. Typically set to IPlayerProvider.Position.

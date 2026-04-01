@@ -83,6 +83,8 @@ namespace STGEngine.Editor.UI.Timeline
 
         private const float TrackRowHeight = 34f;
         private const float TrackPadding = 4f;
+        // Equilateral triangle: base = TrackRowHeight - 6, width = base * sqrt(3)/2
+        private static readonly float MarkerTriangleWidth = (TrackRowHeight - 6f) * 0.866f;
         private float _currentPlayTime;
 
         // Double-click: track which block was last clicked
@@ -449,34 +451,59 @@ namespace STGEngine.Editor.UI.Timeline
 
         private void CreateBlock(ITimelineBlock blk, int row)
         {
+            bool isMarkerTriangle = blk is ActionBlock ab0 && ab0.IsMarker && CanResizeDuration(blk);
+
             var element = new VisualElement();
             element.style.position = Position.Absolute;
             element.style.height = TrackRowHeight - 6;
-            // Lower opacity for blocks with thumbnails so child content is more visible
-            var bgColor = blk.BlockColor;
-            if (blk.HasThumbnail)
-                bgColor.a = 0.45f;
-            element.style.backgroundColor = bgColor;
-            element.style.borderTopLeftRadius = element.style.borderTopRightRadius =
-                element.style.borderBottomLeftRadius = element.style.borderBottomRightRadius = 3;
-            element.style.borderTopWidth = element.style.borderBottomWidth =
-                element.style.borderLeftWidth = element.style.borderRightWidth = 1;
-            element.style.borderTopColor = element.style.borderBottomColor =
-                element.style.borderLeftColor = element.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
 
-            // Modified (override) blocks: orange border highlight
-            if (blk.IsModified)
+            if (isMarkerTriangle)
             {
-                var modColor = new Color(1f, 0.65f, 0.2f, 0.9f);
-                element.style.borderTopColor = element.style.borderBottomColor =
-                    element.style.borderLeftColor = element.style.borderRightColor = modColor;
+                // Triangle marker: near-transparent background ensures hit-testing works
+                // (fully transparent Color.clear can cause missed clicks in some Unity versions)
+                element.style.backgroundColor = new Color(0f, 0f, 0f, 0.005f);
                 element.style.borderTopWidth = element.style.borderBottomWidth =
-                    element.style.borderLeftWidth = element.style.borderRightWidth = 2;
+                    element.style.borderLeftWidth = element.style.borderRightWidth = 0;
+                element.style.overflow = Overflow.Visible;
+
+                var triColor = blk.BlockColor;
+                element.generateVisualContent += ctx =>
+                {
+                    DrawMarkerTriangle(ctx, triColor, element.resolvedStyle.width, element.resolvedStyle.height);
+                };
+            }
+            else
+            {
+                // Normal rectangular block
+                var bgColor = blk.BlockColor;
+                if (blk.HasThumbnail)
+                    bgColor.a = 0.45f;
+                element.style.backgroundColor = bgColor;
+                element.style.borderTopLeftRadius = element.style.borderTopRightRadius =
+                    element.style.borderBottomLeftRadius = element.style.borderBottomRightRadius = 3;
+                element.style.borderTopWidth = element.style.borderBottomWidth =
+                    element.style.borderLeftWidth = element.style.borderRightWidth = 1;
+                element.style.borderTopColor = element.style.borderBottomColor =
+                    element.style.borderLeftColor = element.style.borderRightColor = new Color(0.4f, 0.4f, 0.4f);
+
+                // Modified (override) blocks: orange border highlight
+                if (blk.IsModified)
+                {
+                    var modColor = new Color(1f, 0.65f, 0.2f, 0.9f);
+                    element.style.borderTopColor = element.style.borderBottomColor =
+                        element.style.borderLeftColor = element.style.borderRightColor = modColor;
+                    element.style.borderTopWidth = element.style.borderBottomWidth =
+                        element.style.borderLeftWidth = element.style.borderRightWidth = 2;
+                }
+
+                element.style.overflow = Overflow.Hidden;
             }
 
-            element.style.overflow = Overflow.Hidden;
-            element.style.paddingLeft = 4;
-            element.style.justifyContent = Justify.Center;
+            if (!isMarkerTriangle)
+            {
+                element.style.paddingLeft = 4;
+                element.style.justifyContent = Justify.Center;
+            }
 
             // Layout: horizontal row for label + inline thumbnail
             var contentRow = new VisualElement();
@@ -618,7 +645,8 @@ namespace STGEngine.Editor.UI.Timeline
                 }
             }
 
-            element.Add(contentRow);
+            if (!isMarkerTriangle)
+                element.Add(contentRow);
 
             // Background thumbnail (color bars, hatching — drawn underneath content)
             if (blk.HasThumbnail && !blk.ThumbnailInline)
@@ -647,7 +675,43 @@ namespace STGEngine.Editor.UI.Timeline
                 element.generateVisualContent += ctx => DrawBlockingProgressLine(ctx, actBlk);
             }
 
-            // Resize handle — hide for blocks with read-only Duration (e.g. path-derived)
+            // BranchJump annotation: show target segment name as a label below the block
+            if (blk is ActionBlock branchBlk && branchBlk.IsBranchJump)
+            {
+                string targetId = branchBlk.BranchTargetId;
+                string fallbackId = branchBlk.BranchFallbackId;
+                if (!string.IsNullOrEmpty(targetId))
+                {
+                    var branchLabel = new Label($"\u2192 {targetId}");
+                    branchLabel.style.position = Position.Absolute;
+                    branchLabel.style.left = 0;
+                    branchLabel.style.top = new Length(100, LengthUnit.Percent);
+                    branchLabel.style.fontSize = 9;
+                    branchLabel.style.color = new Color(0.15f, 0.68f, 0.38f); // #27AE60
+                    branchLabel.style.unityFontStyleAndWeight = UnityEngine.FontStyle.Italic;
+                    branchLabel.style.whiteSpace = WhiteSpace.NoWrap;
+                    branchLabel.style.overflow = Overflow.Visible;
+                    branchLabel.pickingMode = PickingMode.Ignore;
+                    element.Add(branchLabel);
+                }
+                if (!string.IsNullOrEmpty(fallbackId))
+                {
+                    var fallbackLabel = new Label($"\u2193 {fallbackId}");
+                    fallbackLabel.style.position = Position.Absolute;
+                    fallbackLabel.style.left = 0;
+                    fallbackLabel.style.top = new Length(100, LengthUnit.Percent);
+                    fallbackLabel.style.marginTop = 11;
+                    fallbackLabel.style.fontSize = 9;
+                    fallbackLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+                    fallbackLabel.style.unityFontStyleAndWeight = UnityEngine.FontStyle.Italic;
+                    fallbackLabel.style.whiteSpace = WhiteSpace.NoWrap;
+                    fallbackLabel.style.overflow = Overflow.Visible;
+                    fallbackLabel.pickingMode = PickingMode.Ignore;
+                    element.Add(fallbackLabel);
+                }
+            }
+
+            // Resize handle — hide for marker triangles and blocks with read-only Duration
             var resizeHandle = new VisualElement();
             resizeHandle.style.position = Position.Absolute;
             resizeHandle.style.right = 0;
@@ -656,7 +720,7 @@ namespace STGEngine.Editor.UI.Timeline
             resizeHandle.style.width = 6;
             resizeHandle.style.backgroundColor = new Color(1f, 1f, 1f, 0.15f);
             bool canResize = CanResizeDuration(blk);
-            if (!canResize)
+            if (!canResize || isMarkerTriangle)
                 resizeHandle.style.display = DisplayStyle.None;
             element.Add(resizeHandle);
 
@@ -685,6 +749,24 @@ namespace STGEngine.Editor.UI.Timeline
 
                     _lastClickedBlock = blk;
                     SelectBlock(blk);
+
+                    // Marker triangle: right half → resize (if meaningful) or move
+                    if (blk is ActionBlock abClick && abClick.IsMarker && CanResizeDuration(blk))
+                    {
+                        var localPos = element.WorldToLocal(e.mousePosition);
+                        float midX = element.resolvedStyle.width * 0.5f;
+                        if (localPos.x > midX && abClick.HasMeaningfulDuration)
+                        {
+                            StartDrag(DragMode.Resize, info, e.mousePosition.x);
+                            e.StopPropagation();
+                            return;
+                        }
+                        // Left half or no meaningful duration → move
+                        StartDrag(DragMode.Move, info, e.mousePosition.x);
+                        e.StopPropagation();
+                        return;
+                    }
+
                     if (blk.CanMove)
                     {
                         StartDrag(DragMode.Move, info, e.mousePosition.x);
@@ -779,6 +861,58 @@ namespace STGEngine.Editor.UI.Timeline
             painter.Stroke();
         }
 
+        /// <summary>
+        /// Draw an equilateral triangle for Duration=0 marker blocks.
+        /// The left edge (vertical) is the base, aligned to the trigger time.
+        /// The right vertex points right at the midpoint height.
+        /// The median line bisects the altitude (perpendicular from base to tip),
+        /// drawn as a vertical line at x = w/2, clipped to the triangle interior.
+        /// Left half = move zone, right half = resize zone.
+        /// </summary>
+        private static void DrawMarkerTriangle(MeshGenerationContext ctx, Color color, float w, float h)
+        {
+            if (w <= 0f || h <= 0f) return;
+            var painter = ctx.painter2D;
+
+            // Equilateral triangle with vertical base on the left:
+            //   A = (0, 0)        top-left
+            //   B = (0, h)        bottom-left
+            //   C = (w, h/2)      right tip
+            float midY = h * 0.5f;
+
+            // Filled triangle
+            painter.fillColor = color;
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(0, 0));
+            painter.LineTo(new Vector2(w, midY));
+            painter.LineTo(new Vector2(0, h));
+            painter.ClosePath();
+            painter.Fill();
+
+            // Triangle border (same triangle path, stroked)
+            painter.strokeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
+            painter.lineWidth = 1f;
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(0, 0));
+            painter.LineTo(new Vector2(w, midY));
+            painter.LineTo(new Vector2(0, h));
+            painter.ClosePath();
+            painter.Stroke();
+
+            // Median line: vertical line at x = w/2, clipped to triangle interior.
+            // At x = w/2, the upper edge (A→C) has y = midY * (w/2) / w = midY / 2 = h/4
+            // and the lower edge (B→C) has y = h - midY * (w/2) / w = h - h/4 = 3h/4
+            float mx = w * 0.5f;
+            float myTop = h * 0.25f;
+            float myBot = h * 0.75f;
+            painter.strokeColor = new Color(1f, 1f, 1f, 0.3f);
+            painter.lineWidth = 1f;
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(mx, myTop));
+            painter.LineTo(new Vector2(mx, myBot));
+            painter.Stroke();
+        }
+
         private bool IsOverResizeHandle(MouseDownEvent e, VisualElement element)
         {
             var localPos = element.WorldToLocal(e.mousePosition);
@@ -863,13 +997,18 @@ namespace STGEngine.Editor.UI.Timeline
                 // In sequential mode, blocks can freely resize (total duration adjusts)
                 bool isSequential = _layer?.IsSequential ?? false;
                 float maxTime = isSequential ? float.MaxValue : (_layer?.TotalDuration ?? float.MaxValue);
-                float rawDuration = Mathf.Max(0.5f, _dragStartValue + deltaTime);
+
+                // ActionBlocks with CanResizeDuration allow Duration=0 (marker triangle)
+                bool allowZero = blk is ActionBlock abResize && CanResizeDuration(blk);
+                float minDur = allowZero ? 0f : 0.5f;
+
+                float rawDuration = Mathf.Max(minDur, _dragStartValue + deltaTime);
                 float startTime = blk.StartTime;
                 // Clamp duration so block end doesn't exceed layer duration
-                float maxDuration = Mathf.Max(0.5f, maxTime - startTime);
+                float maxDuration = Mathf.Max(minDur, maxTime - startTime);
                 rawDuration = Mathf.Min(rawDuration, maxDuration);
                 float snappedEnd = SnapTime(startTime + rawDuration);
-                float newDuration = Mathf.Clamp(snappedEnd - startTime, 0.5f, maxDuration);
+                float newDuration = Mathf.Clamp(snappedEnd - startTime, minDur, maxDuration);
                 blk.Duration = newDuration;
 
                 // Repaint thumbnail with clip-based rendering during drag
@@ -945,8 +1084,18 @@ namespace STGEngine.Editor.UI.Timeline
                         OnEventValuesChanged?.Invoke(resizeEvt);
                 }
 
-                // Trigger thumbnail repaint after resize
-                _dragBlockInfo.Element.MarkDirtyRepaint();
+                // If marker state changed (0↔non-zero), rebuild to switch triangle/rect
+                bool wasMarker = oldVal <= 0f;
+                bool isMarker = newVal <= 0f;
+                if (wasMarker != isMarker)
+                {
+                    RebuildBlocks();
+                }
+                else
+                {
+                    // Trigger thumbnail repaint after resize
+                    _dragBlockInfo.Element.MarkDirtyRepaint();
+                }
             }
             else if (_dragMode == DragMode.Reorder)
             {
@@ -1302,12 +1451,22 @@ namespace STGEngine.Editor.UI.Timeline
             float origin = _layer?.TimeOrigin ?? 0f;
             foreach (var info in _blocks)
             {
-                float left = (info.Block.StartTime + origin) * _pixelsPerSecond - _scrollOffset;
-                float width = info.Block.Duration * _pixelsPerSecond;
-
-                info.Element.style.left = left;
+                bool isMarker = info.Block is ActionBlock abPos && abPos.IsMarker && CanResizeDuration(info.Block);
+                if (isMarker)
+                {
+                    // Triangle marker: fixed width, left edge of vertical side at StartTime
+                    float triggerX = (info.Block.StartTime + origin) * _pixelsPerSecond - _scrollOffset;
+                    info.Element.style.left = triggerX;
+                    info.Element.style.width = MarkerTriangleWidth;
+                }
+                else
+                {
+                    float left = (info.Block.StartTime + origin) * _pixelsPerSecond - _scrollOffset;
+                    float width = info.Block.Duration * _pixelsPerSecond;
+                    info.Element.style.left = left;
+                    info.Element.style.width = Mathf.Max(width, 4f);
+                }
                 info.Element.style.top = TrackPadding + info.Row * TrackRowHeight;
-                info.Element.style.width = Mathf.Max(width, 4f);
             }
             UpdateParentDurationLine();
         }

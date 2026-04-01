@@ -4969,6 +4969,7 @@ namespace STGEngine.Editor.UI.Timeline
                 Duration = defaultDuration,
                 ActionType = actionType,
                 Blocking = defaultBlocking,
+                BlockingDelay = actionType == ActionType.ScoreTally ? 0.3f : 0f,
                 Params = ActionParamsRegistry.CreateDefault(actionType)
             };
 
@@ -5070,6 +5071,26 @@ namespace STGEngine.Editor.UI.Timeline
                 OnStageDataChanged();
             });
             props.Add(blockingToggle);
+
+            // BlockingDelay (only visible when Blocking is true)
+            var delayField = new FloatField("Blocking Delay") { value = ae.BlockingDelay };
+            delayField.isDelayed = true;
+            delayField.style.display = ae.Blocking ? DisplayStyle.Flex : DisplayStyle.None;
+            delayField.RegisterValueChangedCallback(e =>
+            {
+                var cmd = new PropertyChangeCommand<float>(
+                    "Change Blocking Delay",
+                    () => ae.BlockingDelay, v => ae.BlockingDelay = v,
+                    Mathf.Max(0f, e.newValue));
+                _commandStack.Execute(cmd);
+            });
+            props.Add(delayField);
+
+            // Sync delay field visibility with blocking toggle
+            blockingToggle.RegisterValueChangedCallback(e2 =>
+            {
+                delayField.style.display = e2.newValue ? DisplayStyle.Flex : DisplayStyle.None;
+            });
 
             // ── Type-specific params ──
             if (ae.Params != null)

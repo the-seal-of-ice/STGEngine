@@ -191,7 +191,7 @@ namespace STGEngine.Runtime.Preview
             {
                 foreach (var evt in _segment.Events)
                 {
-                    if (evt is ActionEvent ae && ae.Blocking && CurrentTime > ae.StartTime)
+                    if (evt is ActionEvent ae && ae.Blocking && CurrentTime > ae.StartTime + ae.BlockingDelay)
                         _executedBlockingIds.Add(ae.Id);
                 }
             }
@@ -272,7 +272,7 @@ namespace STGEngine.Runtime.Preview
                     foreach (var evt in _segment.Events)
                     {
                         if (evt is ActionEvent ae && ae.Blocking
-                            && CurrentTime >= ae.StartTime
+                            && CurrentTime >= ae.StartTime + ae.BlockingDelay
                             && !_executedBlockingIds.Contains(ae.Id))
                         {
                             _executedBlockingIds.Add(ae.Id);

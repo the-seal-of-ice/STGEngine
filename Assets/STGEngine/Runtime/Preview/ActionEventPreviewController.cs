@@ -8,8 +8,9 @@ namespace STGEngine.Runtime.Preview
 {
     /// <summary>
     /// Manages visual previews for ActionEvents during timeline playback.
-    /// Handles ShowTitle overlay, ScreenEffect (camera shake), and
-    /// BulletClear range visualization.
+    /// Handles ShowTitle overlay, ScreenEffect (camera shake + flash),
+    /// ScoreTally overlay, BulletClear (gizmos + actual clearing),
+    /// BackgroundSwitch delegation, and ItemDrop/AutoCollect delegation.
     /// Driven by PatternSandboxSetup each frame.
     /// </summary>
     public class ActionEventPreviewController
@@ -29,8 +30,26 @@ namespace STGEngine.Runtime.Preview
         private float _shakeEndTime;
         private FreeCameraController _freeCam;
 
-        // ── BulletClear visualization ──
+        // ── ScreenEffect (flash) state ──
+        private VisualElement _flashOverlay;
+
+        // ── ScoreTally overlay ──
+        private VisualElement _tallyContainer;
+        private Label _tallyTitle;
+        private Label _tallyScore;
+
+        // ── BulletClear visualization + actual clearing ──
         private ActionEvent _activeClearEvent;
+        private readonly HashSet<string> _triggeredClearIds = new();
+        private System.Func<IReadOnlyList<ActiveEvent>> _activeEventsProvider;
+
+        // ── BackgroundSwitch ──
+        private readonly HashSet<string> _triggeredBgIds = new();
+        private BackgroundLayer _backgroundLayer;
+
+        // ── ItemDrop / AutoCollect ──
+        private readonly HashSet<string> _triggeredItemIds = new();
+        private ItemPreviewSystem _itemSystem;
 
         // ── Audio ──
         private AudioService _audio;
@@ -47,10 +66,22 @@ namespace STGEngine.Runtime.Preview
             if (camera != null)
                 _freeCam = camera.GetComponent<FreeCameraController>();
             BuildTitleOverlay();
+            BuildFlashOverlay();
+            BuildTallyOverlay();
         }
 
         /// <summary>Set the audio service for BGM/SE playback.</summary>
         public void SetAudioService(AudioService audio) => _audio = audio;
+
+        /// <summary>Provide access to active previewers for BulletClear actual clearing.</summary>
+        public void SetActiveEventsProvider(System.Func<IReadOnlyList<ActiveEvent>> provider)
+            => _activeEventsProvider = provider;
+
+        /// <summary>Set the background layer for BackgroundSwitch events.</summary>
+        public void SetBackgroundLayer(BackgroundLayer layer) => _backgroundLayer = layer;
+
+        /// <summary>Set the item preview system for ItemDrop/AutoCollect events.</summary>
+        public void SetItemSystem(ItemPreviewSystem system) => _itemSystem = system;
 
         /// <summary>Set the current segment for event lookup. Only fully resets when segment ID changes.</summary>
         public void SetSegment(TimelineSegment segment)
@@ -85,6 +116,33 @@ namespace STGEngine.Runtime.Preview
                     }
                     return false;
                 });
+                _triggeredClearIds.RemoveWhere(id =>
+                {
+                    foreach (var evt in _segment.Events)
+                    {
+                        if (evt is ActionEvent ae && ae.Id == id && ae.StartTime >= currentTime)
+                            return true;
+                    }
+                    return false;
+                });
+                _triggeredBgIds.RemoveWhere(id =>
+                {
+                    foreach (var evt in _segment.Events)
+                    {
+                        if (evt is ActionEvent ae && ae.Id == id && ae.StartTime >= currentTime)
+                            return true;
+                    }
+                    return false;
+                });
+                _triggeredItemIds.RemoveWhere(id =>
+                {
+                    foreach (var evt in _segment.Events)
+                    {
+                        if (evt is ActionEvent ae && ae.Id == id && ae.StartTime >= currentTime)
+                            return true;
+                    }
+                    return false;
+                });
                 // Stop all looping SE handles that were cleared
                 foreach (var kvp in new Dictionary<string, int>(_loopingSeHandles))
                 {
@@ -108,13 +166,15 @@ namespace STGEngine.Runtime.Preview
 
             bool foundTitle = false;
             bool foundShake = false;
+            bool foundFlash = false;
+            bool foundTally = false;
             _activeClearEvent = null;
 
             foreach (var evt in _segment.Events)
             {
                 if (evt is not ActionEvent ae) continue;
 
-                // Audio events
+                // Audio events (fire-once, not range-based)
                 if (ae.ActionType == ActionType.BgmControl || ae.ActionType == ActionType.SePlay)
                 {
                     if (currentTime >= ae.StartTime && _audio != null && !_triggeredAudioIds.Contains(ae.Id))
@@ -159,7 +219,54 @@ namespace STGEngine.Runtime.Preview
                     continue;
                 }
 
-                // All other events: range-based active check
+                // Fire-once events: BackgroundSwitch, BulletClear (clearing), ItemDrop, AutoCollect
+                if (currentTime >= ae.StartTime)
+                {
+                    switch (ae.ActionType)
+                    {
+                        case ActionType.BackgroundSwitch:
+                            if (!_triggeredBgIds.Contains(ae.Id))
+                            {
+                                _triggeredBgIds.Add(ae.Id);
+                                if (ae.Params is BackgroundSwitchParams bgParams && _backgroundLayer != null)
+                                {
+                                    _backgroundLayer.SetBackground(
+                                        bgParams.BackgroundId,
+                                        bgParams.Transition,
+                                        bgParams.TransitionDuration,
+                                        new Vector2(bgParams.ScrollSpeedX, bgParams.ScrollSpeedY));
+                                }
+                            }
+                            break;
+
+                        case ActionType.BulletClear:
+                            if (!_triggeredClearIds.Contains(ae.Id))
+                            {
+                                _triggeredClearIds.Add(ae.Id);
+                                ExecuteBulletClear(ae);
+                            }
+                            break;
+
+                        case ActionType.ItemDrop:
+                            if (!_triggeredItemIds.Contains(ae.Id))
+                            {
+                                _triggeredItemIds.Add(ae.Id);
+                                if (ae.Params is ItemDropParams itemParams && _itemSystem != null)
+                                    _itemSystem.SpawnItems(itemParams, Vector3.zero);
+                            }
+                            break;
+
+                        case ActionType.AutoCollect:
+                            if (!_triggeredItemIds.Contains(ae.Id))
+                            {
+                                _triggeredItemIds.Add(ae.Id);
+                                _itemSystem?.TriggerAutoCollect();
+                            }
+                            break;
+                    }
+                }
+
+                // Range-based active check for visual effects
                 bool active = currentTime >= ae.StartTime && (ae.Duration <= 0f || currentTime < ae.StartTime + ae.Duration);
                 if (!active) continue;
 
@@ -171,16 +278,37 @@ namespace STGEngine.Runtime.Preview
                         break;
 
                     case ActionType.ScreenEffect:
-                        if (ae.Params is ScreenEffectParams sfx && sfx.EffectType == ScreenEffectType.Shake)
+                        if (ae.Params is ScreenEffectParams sfx)
                         {
-                            foundShake = true;
-                            _shakeIntensity = sfx.Intensity;
-                            _shakeEndTime = ae.StartTime + ae.Duration;
+                            if (sfx.EffectType == ScreenEffectType.Shake)
+                            {
+                                foundShake = true;
+                                _shakeIntensity = sfx.Intensity;
+                                _shakeEndTime = ae.StartTime + ae.Duration;
+                            }
+                            else if (sfx.EffectType == ScreenEffectType.FlashWhite
+                                  || sfx.EffectType == ScreenEffectType.FlashRed)
+                            {
+                                foundFlash = true;
+                                float localT = currentTime - ae.StartTime;
+                                float dur = Mathf.Max(0.01f, ae.Duration);
+                                float alpha = (1f - Mathf.Clamp01(localT / dur)) * sfx.Intensity;
+                                Color c = sfx.EffectType == ScreenEffectType.FlashWhite
+                                    ? new Color(1f, 1f, 1f, alpha)
+                                    : new Color(1f, 0.2f, 0.1f, alpha);
+                                _flashOverlay.style.backgroundColor = c;
+                                _flashOverlay.style.display = DisplayStyle.Flex;
+                            }
                         }
                         break;
 
                     case ActionType.BulletClear:
                         _activeClearEvent = ae;
+                        break;
+
+                    case ActionType.ScoreTally:
+                        foundTally = true;
+                        UpdateTallyOverlay(ae, currentTime);
                         break;
                 }
             }
@@ -191,6 +319,14 @@ namespace STGEngine.Runtime.Preview
                 _titleContainer.style.display = DisplayStyle.None;
                 _activeTitleEventId = null;
             }
+
+            // Hide flash overlay if no active flash event
+            if (!foundFlash && _flashOverlay != null)
+                _flashOverlay.style.display = DisplayStyle.None;
+
+            // Hide tally overlay if no active ScoreTally event
+            if (!foundTally && _tallyContainer != null)
+                _tallyContainer.style.display = DisplayStyle.None;
 
             // Camera shake via FreeCameraController.ShakeOffset
             if (_freeCam != null)
@@ -209,27 +345,39 @@ namespace STGEngine.Runtime.Preview
                     _freeCam.ShakeOffset = Vector3.zero;
                 }
             }
+
+            // Tick subsystems
+            _backgroundLayer?.Tick(deltaTime);
+            _itemSystem?.Tick(deltaTime);
         }
 
-        /// <summary>Draw BulletClear range gizmos. Call from OnDrawGizmos or similar.</summary>
-        public void DrawClearGizmos()
+        /// <summary>Draw BulletClear range gizmos + item gizmos. Call from OnDrawGizmos.</summary>
+        public void DrawGizmos()
         {
-            if (_activeClearEvent?.Params is not BulletClearParams clearParams) return;
-
-            Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
-            switch (clearParams.Shape)
+            // BulletClear range
+            if (_activeClearEvent?.Params is BulletClearParams clearParams)
             {
-                case ClearShape.Circle:
-                    DrawWireCircle(clearParams.Origin, clearParams.Radius, 32);
-                    break;
-                case ClearShape.Rectangle:
-                    Gizmos.DrawWireCube(clearParams.Origin, clearParams.Extents * 2f);
-                    break;
-                case ClearShape.FullScreen:
-                    // No gizmo needed for full screen
-                    break;
+                Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
+                switch (clearParams.Shape)
+                {
+                    case ClearShape.Circle:
+                        DrawWireCircle(clearParams.Origin, clearParams.Radius, 32);
+                        break;
+                    case ClearShape.Rectangle:
+                        Gizmos.DrawWireCube(clearParams.Origin, clearParams.Extents * 2f);
+                        break;
+                    case ClearShape.FullScreen:
+                        // No gizmo needed for full screen
+                        break;
+                }
             }
+
+            // Item gizmos
+            _itemSystem?.DrawGizmos();
         }
+
+        /// <summary>Draw BulletClear range gizmos. Legacy alias for DrawGizmos.</summary>
+        public void DrawClearGizmos() => DrawGizmos();
 
         /// <summary>Reset all preview state.</summary>
         public void Reset()
@@ -238,15 +386,25 @@ namespace STGEngine.Runtime.Preview
                 _titleContainer.style.display = DisplayStyle.None;
             _activeTitleEventId = null;
 
+            if (_flashOverlay != null)
+                _flashOverlay.style.display = DisplayStyle.None;
+
+            if (_tallyContainer != null)
+                _tallyContainer.style.display = DisplayStyle.None;
+
             if (_freeCam != null)
                 _freeCam.ShakeOffset = Vector3.zero;
 
             _activeClearEvent = null;
             _triggeredAudioIds.Clear();
+            _triggeredClearIds.Clear();
+            _triggeredBgIds.Clear();
+            _triggeredItemIds.Clear();
             _loopingSeHandles.Clear();
             _lastTickTime = -1f;
             _audio?.StopBgm(0.1f);
             _audio?.StopAllSe();
+            _itemSystem?.Reset();
         }
 
         // ── ShowTitle ──
@@ -424,6 +582,118 @@ namespace STGEngine.Runtime.Preview
                     _titleLabel.text = fullText.Substring(0, Mathf.Clamp(charCount, 0, fullText.Length));
                     _titleContainer.style.opacity = outT;
                     break;
+                }
+            }
+        }
+
+        // ── Flash Overlay (FlashWhite / FlashRed) ──
+
+        private void BuildFlashOverlay()
+        {
+            _flashOverlay = new VisualElement();
+            _flashOverlay.style.position = Position.Absolute;
+            _flashOverlay.style.left = 0;
+            _flashOverlay.style.right = 0;
+            _flashOverlay.style.top = 0;
+            _flashOverlay.style.bottom = 0;
+            _flashOverlay.style.display = DisplayStyle.None;
+            _flashOverlay.pickingMode = PickingMode.Ignore;
+            _overlayRoot.Add(_flashOverlay);
+        }
+
+        // ── ScoreTally Overlay ──
+
+        private void BuildTallyOverlay()
+        {
+            _tallyContainer = new VisualElement();
+            _tallyContainer.style.position = Position.Absolute;
+            _tallyContainer.style.left = 0;
+            _tallyContainer.style.right = 0;
+            _tallyContainer.style.top = 0;
+            _tallyContainer.style.bottom = 0;
+            _tallyContainer.style.backgroundColor = new Color(0f, 0f, 0f, 0.6f);
+            _tallyContainer.style.alignItems = Align.Center;
+            _tallyContainer.style.justifyContent = Justify.Center;
+            _tallyContainer.style.display = DisplayStyle.None;
+            _tallyContainer.pickingMode = PickingMode.Ignore;
+
+            _tallyTitle = new Label();
+            _tallyTitle.style.fontSize = 36;
+            _tallyTitle.style.color = new Color(1f, 0.95f, 0.6f);
+            _tallyTitle.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _tallyTitle.style.unityFontStyleAndWeight = UnityEngine.FontStyle.Bold;
+            _tallyTitle.style.textShadow = new TextShadow
+            {
+                offset = new Vector2(2, 2),
+                blurRadius = 6,
+                color = new Color(0, 0, 0, 0.8f)
+            };
+            _tallyTitle.pickingMode = PickingMode.Ignore;
+            _tallyContainer.Add(_tallyTitle);
+
+            _tallyScore = new Label();
+            _tallyScore.style.fontSize = 22;
+            _tallyScore.style.color = Color.white;
+            _tallyScore.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _tallyScore.style.marginTop = 16;
+            _tallyScore.style.textShadow = new TextShadow
+            {
+                offset = new Vector2(1, 1),
+                blurRadius = 3,
+                color = new Color(0, 0, 0, 0.6f)
+            };
+            _tallyScore.pickingMode = PickingMode.Ignore;
+            _tallyContainer.Add(_tallyScore);
+
+            _overlayRoot.Add(_tallyContainer);
+        }
+
+        private void UpdateTallyOverlay(ActionEvent ae, float currentTime)
+        {
+            if (ae.Params is not ScoreTallyParams p) return;
+
+            _tallyContainer.style.display = DisplayStyle.Flex;
+
+            // Title text based on TallyType
+            _tallyTitle.text = p.Type switch
+            {
+                TallyType.SpellCardBonus => "Spell Card Bonus!",
+                TallyType.ChapterClear  => "Chapter Clear!",
+                TallyType.StageClear    => "Stage Clear!",
+                _ => "Clear!"
+            };
+
+            // Placeholder score (no real score in preview mode)
+            _tallyScore.text = p.Type switch
+            {
+                TallyType.SpellCardBonus => "Bonus: 1,000,000",
+                _ => "Score: 999,999,999"
+            };
+
+            // Fade-in animation
+            float localT = currentTime - ae.StartTime;
+            float fadeIn = 0.3f;
+            float opacity = Mathf.Clamp01(localT / fadeIn);
+            _tallyContainer.style.opacity = opacity;
+        }
+
+        // ── BulletClear actual clearing ──
+
+        private void ExecuteBulletClear(ActionEvent ae)
+        {
+            if (ae.Params is not BulletClearParams clearParams) return;
+
+            var activeEvents = _activeEventsProvider?.Invoke();
+            if (activeEvents == null) return;
+
+            int shapeType = (int)clearParams.Shape;
+            foreach (var active in activeEvents)
+            {
+                var evaluator = active.Previewer?.SimEvaluator;
+                if (evaluator != null)
+                {
+                    evaluator.ClearBullets(shapeType, clearParams.Origin,
+                        clearParams.Radius, clearParams.Extents);
                 }
             }
         }

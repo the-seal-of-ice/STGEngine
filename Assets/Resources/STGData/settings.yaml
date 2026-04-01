@@ -1,1 +1,2 @@
 simulationTickRate: 240
+maxConcurrentSe: 32

@@ -9,28 +9,105 @@ segments:
   events:
   - type: spawn_pattern
     id: evt_b9544e
-    start_time: 0.02708842
-    duration: 4.566591
+    start_time: 1.49172
+    duration: 12.34289
     pattern_id: 3f93f01c3aff
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_25c900
-    start_time: 0.7116373
-    duration: 6.584649
+    start_time: 0.162527
+    duration: 10.37747
     pattern_id: demo_sphere_homing
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_fa559c
-    start_time: 0
-    duration: 5
+    start_time: 2.77171
+    duration: 12.04769
     pattern_id: 4cf7ab95555b
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_fa2fb8
-    start_time: 8.653845
+    start_time: 9.804288
     duration: 5
     pattern_id: fbd54cab4147
     spawn_position: {x: 0, y: 0, z: 0}
+  - type: action
+    id: act_a8e834
+    start_time: 2.290362
+    duration: 3.758175
+    action_type: wait_condition
+    params:
+      condition: time_elapsed
+      target_value: 0
+  - type: action
+    id: act_19e65d
+    start_time: 1.624462
+    duration: 3
+    action_type: show_title
+    params:
+      text: 123
+      sub_text: ''
+      animation: slide_right
+      position: top_center
+      offset: {x: -70, y: -13.72}
+      fade_in_duration: 0.3
+      fade_out_duration: 0.5
+      font_size: 28
+      sub_font_size: 16
+      font_style: bold
+      title_color: {r: 1, g: 1, b: 1, a: 1}
+      sub_title_color: {r: 0.85, g: 0.85, b: 0.85, a: 1}
+      image_path: ''
+      image_width: 0
+      image_height: 0
+  - type: action
+    id: act_a111b9
+    start_time: 1.760722
+    duration: 1.853784
+    action_type: screen_effect
+    params:
+      effect_type: shake
+      intensity: 0.1
+  - type: action
+    id: act_b21e08
+    start_time: 5.525723
+    duration: 2.194286
+    action_type: se_play
+    params:
+      se_id: se_lazer00
+      volume: 1
+      pitch: 1
+      loop: true
+  - type: action
+    id: act_e1da8a
+    start_time: 2.61461
+    duration: 1
+    action_type: screen_effect
+    params:
+      effect_type: flash_red
+      intensity: 0.5
+  - type: action
+    id: act_8ffdb2
+    start_time: 10.52768
+    duration: 3
+    action_type: score_tally
+    blocking: true
+    blocking_delay: 0.3
+    params:
+      type: chapter_clear
+      display_duration: 3
+  - type: action
+    id: act_5ebf67
+    start_time: 8.066698
+    duration: 0
+    action_type: bullet_clear
+    params:
+      shape: full_screen
+      origin: {x: 0, y: 0, z: 0}
+      radius: 50
+      extents: {x: 30, y: 30, z: 30}
+      convert_to_score: true
+      expand_speed: 30
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
@@ -50,4 +127,4 @@ segments:
     duration: 10
     pattern_id: 4cf7ab95555b
     spawn_position: {x: 0, y: 8, z: 0}
-  spell_card_ids: [6b81c96539f5, ff6a80680a1d]
+  spell_card_ids: [ff6a80680a1d, 09de05227a16, 6b81c96539f5]

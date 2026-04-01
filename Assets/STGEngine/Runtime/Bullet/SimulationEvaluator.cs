@@ -158,6 +158,37 @@ namespace STGEngine.Runtime.Bullet
         }
 
         /// <summary>
+        /// Clear bullets within a specified range. Used by BulletClear ActionEvent.
+        /// Shape types: 0=FullScreen, 1=Circle, 2=Rectangle.
+        /// Uses int shapeType to avoid cross-assembly dependency on Core.Timeline.ClearShape.
+        /// </summary>
+        /// <returns>Number of bullets cleared.</returns>
+        public int ClearBullets(int shapeType, Vector3 origin, float radius, Vector3 extents)
+        {
+            if (_bullets == null) return 0;
+            int cleared = 0;
+            foreach (var b in _bullets)
+            {
+                if (!b.Active) continue;
+                bool inRange = shapeType switch
+                {
+                    0 => true, // FullScreen
+                    1 => Vector3.Distance(b.Position, origin) <= radius, // Circle
+                    2 => Mathf.Abs(b.Position.x - origin.x) <= extents.x // Rectangle
+                      && Mathf.Abs(b.Position.y - origin.y) <= extents.y
+                      && Mathf.Abs(b.Position.z - origin.z) <= extents.z,
+                    _ => false
+                };
+                if (inRange)
+                {
+                    b.Active = false;
+                    cleared++;
+                }
+            }
+            return cleared;
+        }
+
+        /// <summary>
         /// Get current bullet states for rendering.
         /// </summary>
         public List<BulletState> GetStates()

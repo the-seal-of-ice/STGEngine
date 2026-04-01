@@ -27,9 +27,16 @@ namespace STGEngine.Core.Timeline
 
         /// <summary>
         /// Whether this action freezes timeline progression until completed.
-        /// When true, CurrentTime stops advancing at this event's StartTime.
+        /// When true, CurrentTime stops advancing at this event's StartTime + BlockingDelay.
         /// Duration controls the timeout (0 = infinite wait).
         /// </summary>
         public bool Blocking { get; set; } = false;
+
+        /// <summary>
+        /// Delay (seconds) before blocking takes effect, relative to StartTime.
+        /// Allows visual intro animations (e.g. ScoreTally fade-in) to play
+        /// before the timeline freezes. 0 = block immediately at StartTime.
+        /// </summary>
+        public float BlockingDelay { get; set; } = 0f;
     }
 }

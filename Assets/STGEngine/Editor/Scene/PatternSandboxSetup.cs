@@ -171,6 +171,18 @@ namespace STGEngine.Editor.Scene
                 _audioService = new AudioService(audioBackend);
                 _actionPreview.SetAudioService(_audioService);
 
+                // BulletClear: provide access to active previewers for actual clearing
+                _actionPreview.SetActiveEventsProvider(() => _timelinePlayback.ActiveEvents);
+
+                // Background layer (scrolling background + transitions)
+                var bgGo = new GameObject("BackgroundLayer");
+                var bgLayer = bgGo.AddComponent<BackgroundLayer>();
+                bgLayer.Initialize();
+                _actionPreview.SetBackgroundLayer(bgLayer);
+
+                // Item preview system (ItemDrop + AutoCollect visualization)
+                _actionPreview.SetItemSystem(new ItemPreviewSystem());
+
                 // Boss placeholder (hidden until spell card editing)
                 var bossGo = new GameObject("BossPlaceholder");
                 _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();

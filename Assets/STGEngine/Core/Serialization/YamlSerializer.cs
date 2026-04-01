@@ -486,6 +486,11 @@ namespace STGEngine.Core.Serialization
                                 {
                                     EmitScalar(emitter, "blocking");
                                     EmitScalar(emitter, "true");
+                                    if (ae.BlockingDelay > 0f)
+                                    {
+                                        EmitScalar(emitter, "blocking_delay");
+                                        EmitScalar(emitter, ae.BlockingDelay.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                                    }
                                 }
                                 if (ae.Params != null)
                                 {
@@ -655,6 +660,8 @@ namespace STGEngine.Core.Serialization
                         ae.ActionType = (ActionType)System.Enum.Parse(typeof(ActionType), SnakeToPascal(atVal.ToString()), true);
                     if (dict.TryGetValue("blocking", out var blk))
                         ae.Blocking = blk.ToString().Equals("true", System.StringComparison.OrdinalIgnoreCase);
+                    if (dict.TryGetValue("blocking_delay", out var bdelay))
+                        ae.BlockingDelay = ParseFloat(bdelay);
                     if (dict.TryGetValue("params", out var paramsObj2))
                     {
                         var paramsType = ActionParamsRegistry.Resolve(ae.ActionType);
