@@ -686,14 +686,23 @@ namespace STGEngine.Runtime.Preview
             var activeEvents = _activeEventsProvider?.Invoke();
             if (activeEvents == null) return;
 
+            bool isFullScreen = clearParams.Shape == ClearShape.FullScreen;
             int shapeType = (int)clearParams.Shape;
+
             foreach (var active in activeEvents)
             {
-                var evaluator = active.Previewer?.SimEvaluator;
-                if (evaluator != null)
+                if (active.Previewer == null) continue;
+
+                if (isFullScreen)
                 {
-                    evaluator.ClearBullets(shapeType, clearParams.Origin,
-                        clearParams.Radius, clearParams.Extents);
+                    // FullScreen: clear everything — simulation AND formula bullets, immediately
+                    active.Previewer.ClearAllBullets();
+                }
+                else
+                {
+                    // Shape-based: only simulation bullets can be selectively cleared
+                    active.Previewer.SimEvaluator?.ClearBullets(shapeType,
+                        clearParams.Origin, clearParams.Radius, clearParams.Extents);
                 }
             }
         }

@@ -66,6 +66,24 @@ namespace STGEngine.Runtime.Preview
         public SimulationEvaluator SimEvaluator => _simEvaluator;
 
         /// <summary>
+        /// When true, all bullets are suppressed (cleared). OnTimeChanged produces
+        /// empty states until the next ForceRefresh/Seek resets this flag.
+        /// Used by FullScreen BulletClear to also clear formula-path bullets.
+        /// </summary>
+        public bool Cleared { get; set; }
+
+        /// <summary>
+        /// Immediately clear all visible bullets this frame.
+        /// Sets Cleared flag and wipes current render states.
+        /// </summary>
+        public void ClearAllBullets()
+        {
+            Cleared = true;
+            _currStates = new List<BulletState>(0);
+            _prevStates = _currStates;
+        }
+
+        /// <summary>
         /// Dynamic target provider for PlayerHomingModifier. When set, player-homing
         /// bullets track this position each tick. Typically set to IPlayerProvider.Position.
         /// </summary>
@@ -116,6 +134,9 @@ namespace STGEngine.Runtime.Preview
         public void ForceRefresh()
         {
             if (_pattern == null) return;
+
+            // Reset cleared state on refresh (e.g. after Seek)
+            Cleared = false;
 
             // Re-evaluate whether simulation is needed (modifier list may have changed)
             bool needsSim = SimulationEvaluator.RequiresSimulation(_pattern);
@@ -177,6 +198,12 @@ namespace STGEngine.Runtime.Preview
             if (_pattern == null) return;
 
             _prevStates = _currStates;
+
+            if (Cleared)
+            {
+                _currStates = new List<BulletState>(0);
+                return;
+            }
 
             if (_useSimulation)
             {
