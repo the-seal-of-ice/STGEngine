@@ -700,9 +700,11 @@ namespace STGEngine.Runtime.Preview
                 }
                 else
                 {
-                    // Shape-based: only simulation bullets can be selectively cleared
+                    // Shape-based: convert world-space origin to previewer-local coordinates
+                    // (bullet positions in SimulationEvaluator are local to the previewer)
+                    Vector3 localOrigin = clearParams.Origin - active.Previewer.transform.position;
                     active.Previewer.SimEvaluator?.ClearBullets(shapeType,
-                        clearParams.Origin, clearParams.Radius, clearParams.Extents);
+                        localOrigin, clearParams.Radius, clearParams.Extents);
                 }
             }
         }
