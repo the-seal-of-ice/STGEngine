@@ -35,6 +35,7 @@ namespace STGEngine.Runtime.Preview
         // ── Audio ──
         private AudioService _audio;
         private readonly HashSet<string> _triggeredAudioIds = new();
+        private readonly Dictionary<string, int> _loopingSeHandles = new();
         private float _lastTickTime = -1f;
 
         // Cached segment for event lookup
@@ -84,6 +85,15 @@ namespace STGEngine.Runtime.Preview
                     }
                     return false;
                 });
+                // Stop all looping SE handles that were cleared
+                foreach (var kvp in new Dictionary<string, int>(_loopingSeHandles))
+                {
+                    if (!_triggeredAudioIds.Contains(kvp.Key))
+                    {
+                        _audio?.StopSe(kvp.Value);
+                        _loopingSeHandles.Remove(kvp.Key);
+                    }
+                }
                 _audio?.StopBgm(0.05f);
                 _audio?.StopAllSe();
             }
@@ -104,7 +114,7 @@ namespace STGEngine.Runtime.Preview
             {
                 if (evt is not ActionEvent ae) continue;
 
-                // Audio events: trigger at StartTime (one-shot, not range-based)
+                // Audio events
                 if (ae.ActionType == ActionType.BgmControl || ae.ActionType == ActionType.SePlay)
                 {
                     if (currentTime >= ae.StartTime && _audio != null && !_triggeredAudioIds.Contains(ae.Id))
@@ -126,10 +136,27 @@ namespace STGEngine.Runtime.Preview
                         }
                         else if (ae.ActionType == ActionType.SePlay && ae.Params is SePlayParams se)
                         {
-                            _audio.PlaySe(se.SeId, se.Volume, se.Pitch);
+                            int handle = _audio.PlaySe(se.SeId, se.Volume, se.Pitch, se.Loop);
+                            if (se.Loop && handle != 0)
+                                _loopingSeHandles[ae.Id] = handle;
                         }
                     }
-                    continue; // skip range-based active check for audio events
+
+                    // Stop looping SE when playhead leaves the block's Duration range
+                    if (ae.ActionType == ActionType.SePlay && ae.Params is SePlayParams sep && sep.Loop
+                        && _loopingSeHandles.ContainsKey(ae.Id))
+                    {
+                        bool inRange = ae.Duration > 0f
+                            ? (currentTime >= ae.StartTime && currentTime < ae.StartTime + ae.Duration)
+                            : currentTime >= ae.StartTime;
+                        if (!inRange)
+                        {
+                            _audio?.StopSe(_loopingSeHandles[ae.Id]);
+                            _loopingSeHandles.Remove(ae.Id);
+                        }
+                    }
+
+                    continue;
                 }
 
                 // All other events: range-based active check
@@ -216,6 +243,7 @@ namespace STGEngine.Runtime.Preview
 
             _activeClearEvent = null;
             _triggeredAudioIds.Clear();
+            _loopingSeHandles.Clear();
             _lastTickTime = -1f;
             _audio?.StopBgm(0.1f);
             _audio?.StopAllSe();

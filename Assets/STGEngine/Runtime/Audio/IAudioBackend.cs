@@ -33,7 +33,7 @@ namespace STGEngine.Runtime.Audio
         // ── SE (multi-track, one-shot) ──
 
         /// <summary>Play a sound effect. Returns a handle for optional early stop.</summary>
-        int PlaySe(string clipId, float volume = 1f, float pitch = 1f);
+        int PlaySe(string clipId, float volume = 1f, float pitch = 1f, bool loop = false);
 
         /// <summary>Stop a specific SE instance by handle.</summary>
         void StopSe(int handle);

@@ -26,8 +26,8 @@ namespace STGEngine.Runtime.Audio
         public void ResumeBgm() => _backend.ResumeBgm();
         public void SetBgmTime(float seconds) => _backend.SetBgmTime(seconds);
 
-        public int PlaySe(string clipId, float volume = 1f, float pitch = 1f)
-            => _backend.PlaySe(clipId, volume, pitch);
+        public int PlaySe(string clipId, float volume = 1f, float pitch = 1f, bool loop = false)
+            => _backend.PlaySe(clipId, volume, pitch, loop);
 
         public void StopSe(int handle) => _backend.StopSe(handle);
         public void StopAllSe() => _backend.StopAllSe();

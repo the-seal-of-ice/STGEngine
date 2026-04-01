@@ -121,7 +121,7 @@ namespace STGEngine.Runtime.Audio
 
         // ═══ SE ═══
 
-        public int PlaySe(string clipId, float volume = 1f, float pitch = 1f)
+        public int PlaySe(string clipId, float volume = 1f, float pitch = 1f, bool loop = false)
         {
             // Throttle: skip if same clip played too recently
             float now = Time.unscaledTime;
@@ -139,6 +139,7 @@ namespace STGEngine.Runtime.Audio
             src.clip = clip;
             src.volume = volume * _seVolume * _masterVolume;
             src.pitch = pitch;
+            src.loop = loop;
             src.Play();
 
             _sePool.Add(new SeInstance { Source = src, Handle = handle, Active = true });
