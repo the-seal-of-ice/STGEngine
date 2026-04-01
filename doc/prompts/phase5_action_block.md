@@ -752,11 +752,11 @@ ActionEvent 在编辑器预览中的表现：
 ### Step 4：属性面板 ✅
 
 ### Step 5：预览集成 ✅
-- [x] ShowTitle overlay（白色文字 + 阴影 + 淡入淡出）
-- [x] ScreenEffect 相机震动预览
+- [x] ShowTitle overlay（5种动画 + 字体/颜色/偏移/图片 + 实时编辑刷新）
+- [x] ScreenEffect 相机震动预览（FreeCameraController.ShakeOffset）
 - [x] BulletClear 范围 Gizmos 线框（Circle/Rectangle）
-- [x] 阻塞机制（时间轴冻结 + 绿色进度线）
-- [x] BossFight 右键添加 ActionEvent
+- [x] 阻塞机制（时间轴冻结 + 绿色扫描线 + playhead 停在左边缘）
+- [x] BossFight 右键添加/删除 ActionEvent
 
 ### Step 6：SpellCard/Segment 属性 UI ✅
 
@@ -764,18 +764,39 @@ ActionEvent 在编辑器预览中的表现：
 - [x] Timeout 字段合并到 Duration（简化数据模型）
 - [x] 阻塞 playhead 视觉：块内绿色扫描线 + playhead 停在左边缘
 - [x] ActionEventPreviewController 统一管理预览效果
+- [x] Delete 键 / Copy / Paste / Duplicate 全层级支持
+- [x] 弹窗 ClampPopupToScreen（全部 9 个弹窗位置）
+- [x] 音频系统：IAudioBackend + UnityAudioBackend + AudioService
+- [x] BGM：单轨交叉淡入淡出 + 自定义循环点
+- [x] SE：对象池（最大并发可配置 8-64）+ 30ms 同 clip 节流
+- [x] SE/BGM 在 StartTime 即触发（不依赖 Duration 范围）
+- [x] Seek 回退时清理已触发 ID，音效可重复播放
+- [x] SE/BGM 块不可 resize，Duration 自动检测 clip 时长
+- [x] SE Loop：Duration snap 到 N × clip 长度，+/- 按钮调整循环次数
+- [x] MaxConcurrentSe 作为 Gameplay 设置，ESC 菜单可配置
 
 ---
 
-## 九、未来扩展预留
+## 九、已知问题与 Gotcha
 
-### 9.1 镜头控制系统
+1. **FreeCameraController 覆盖相机位置**：不能直接修改 camera.transform，必须通过 ShakeOffset 属性叠加偏移
+2. **tempSegment 不包含 ActionEvent**：LoadMidStagePreview / LoadStageOverviewPreview / LoadBossFightPreview 创建临时 segment 时必须复制 ActionEvent，否则阻塞/音频不生效
+3. **YamlDotNet 嵌套字典类型**：反序列化时嵌套 mapping 返回 Dictionary<object,object>，ConvertToType 需要先 ToStringDict 转换
+4. **SetSegment 每帧调用**：必须用 ReferenceEquals 守卫避免每帧 Reset 清除预览状态
+5. **SE/BGM 触发时机**：必须在 StartTime 即触发（一次性），不能用 Duration 范围检查，否则会在块末尾才触发
+6. **UI Toolkit 默认字体不支持 Unicode 符号**：ActionBlock 标签使用纯 ASCII 大写标签（TITLE/FX/BGM 等）
+
+---
+
+## 十、未来扩展预留
+
+### 10.1 镜头控制系统
 预留 `ActionType.CameraControl`，待独立设计。参数类 `CameraControlParams` 包含：
 - CameraAction（Zoom/Pan/Follow/Shake/Reset）
 - 关键帧列表
 - 过渡曲线
 
-### 9.2 自定义脚本事件
+### 10.2 自定义脚本事件
 预留 `ActionType.CustomScript`，允许用户编写 Lua/VisualScript 脚本：
 ```csharp
 public class CustomScriptParams : IActionParams
@@ -785,11 +806,11 @@ public class CustomScriptParams : IActionParams
 }
 ```
 
-### 9.3 护盾/屏障系统
+### 10.3 护盾/屏障系统
 如果需要独立的护盾机制（有血量、可被打破），可新增 `ActionType.SpawnShield`。
 
-### 9.4 Boss 形态切换
+### 10.4 Boss 形态切换
 `ActionType.BossFormChange`：切换 Boss 外观/模型/动画状态。
 
-### 9.5 粒子/VFX 触发
+### 10.5 粒子/VFX 触发
 `ActionType.SpawnVfx`：在指定位置播放一次性粒子特效。
