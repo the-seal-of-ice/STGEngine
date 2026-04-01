@@ -147,6 +147,28 @@ namespace STGEngine.Editor.UI.Settings
             });
             tickRateRow.Add(tickDropdown);
 
+            // Max Concurrent SE
+            var seChoices = new List<string> { "8", "16", "24", "32", "48", "64" };
+            int seIdx = seChoices.IndexOf(gameplay.MaxConcurrentSe.ToString());
+            if (seIdx < 0) seIdx = 1; // default 16
+
+            var seRow = AddSettingRow(
+                "Max Concurrent SE",
+                "Maximum simultaneous sound effects. Higher = richer audio during " +
+                "dense patterns, but more CPU. Oldest SE is stolen when limit is reached.",
+                true);
+
+            var seDropdown = new DropdownField(seChoices, seIdx);
+            seDropdown.style.width = 100;
+            seDropdown.RegisterValueChangedCallback(e =>
+            {
+                if (int.TryParse(e.newValue, out int count))
+                {
+                    EngineSettingsManager.ApplyGameplay(g => g.MaxConcurrentSe = count);
+                }
+            });
+            seRow.Add(seDropdown);
+
             // ════════════════════════════════════════
             // [EDITOR] section — editor only
             // ════════════════════════════════════════

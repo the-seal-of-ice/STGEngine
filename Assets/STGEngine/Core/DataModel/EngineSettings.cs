@@ -66,6 +66,15 @@ namespace STGEngine.Core.DataModel
         /// </summary>
         public int SimulationTickRate { get; set; } = 240;
 
+        /// <summary>
+        /// [GAMEPLAY] Maximum concurrent sound effect AudioSources.
+        /// Higher values allow more simultaneous SE (bullet impacts, explosions, etc.)
+        /// at the cost of CPU. When the limit is reached, the oldest SE is stolen.
+        /// Affects audio fidelity during dense bullet patterns.
+        /// Allowed values: 8, 16, 24, 32, 48, 64.
+        /// </summary>
+        public int MaxConcurrentSe { get; set; } = 16;
+
         // ── Future GAMEPLAY settings ──
         // Uncomment and implement when needed. Each MUST have a [GAMEPLAY] comment.
         //

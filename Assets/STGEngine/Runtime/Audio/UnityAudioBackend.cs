@@ -26,7 +26,14 @@ namespace STGEngine.Runtime.Audio
         // ── SE pool ──
         private readonly List<SeInstance> _sePool = new();
         private int _nextSeHandle = 1;
-        private const int MaxConcurrentSe = 16;
+        private int _maxConcurrentSe = 16;
+
+        /// <summary>Maximum concurrent SE AudioSources. Can be changed at runtime.</summary>
+        public int MaxConcurrentSe
+        {
+            get => _maxConcurrentSe;
+            set => _maxConcurrentSe = Mathf.Max(4, value);
+        }
 
         // ── SE throttle: same clip can only trigger once per N ms ──
         private readonly Dictionary<string, float> _seLastPlayTime = new();

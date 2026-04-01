@@ -175,8 +175,9 @@ namespace STGEngine.Editor.Scene
                 var bossGo = new GameObject("BossPlaceholder");
                 _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();
 
-                // Apply initial tick rate from settings
+                // Apply initial settings
                 ApplyTickRate(EngineSettingsManager.Gameplay.SimulationTickRate);
+                audioBackend.MaxConcurrentSe = EngineSettingsManager.Gameplay.MaxConcurrentSe;
             }
 
             // Subscribe to settings changes for live updates
@@ -348,6 +349,10 @@ namespace STGEngine.Editor.Scene
 
             // [GAMEPLAY] Tick rate → SimulationLoop.FixedDt on all controllers
             ApplyTickRate(gameplay.SimulationTickRate);
+
+            // [GAMEPLAY] Max concurrent SE → audio backend pool limit
+            if (_audioService?.Backend is UnityAudioBackend uab)
+                uab.MaxConcurrentSe = gameplay.MaxConcurrentSe;
 
             // [EDITOR] Preview FPS limit → Application.targetFrameRate
             Application.targetFrameRate = editor.PreviewFpsLimit > 0 ? editor.PreviewFpsLimit : -1;
