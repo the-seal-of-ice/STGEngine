@@ -35,6 +35,7 @@ namespace STGEngine.Runtime.Preview
         // ── Audio ──
         private AudioService _audio;
         private readonly HashSet<string> _triggeredAudioIds = new();
+        private float _lastTickTime = -1f;
 
         // Cached segment for event lookup
         private TimelineSegment _segment;
@@ -62,6 +63,23 @@ namespace STGEngine.Runtime.Preview
         public void Tick(float currentTime, float deltaTime)
         {
             if (_segment?.Events == null) return;
+
+            // Detect time jump (Seek backward) — clear triggered IDs for events after new time
+            if (currentTime < _lastTickTime)
+            {
+                _triggeredAudioIds.RemoveWhere(id =>
+                {
+                    foreach (var evt in _segment.Events)
+                    {
+                        if (evt is ActionEvent ae && ae.Id == id && ae.StartTime >= currentTime)
+                            return true;
+                    }
+                    return false;
+                });
+                _audio?.StopBgm(0.05f);
+                _audio?.StopAllSe();
+            }
+            _lastTickTime = currentTime;
 
             // Refresh FreeCameraController reference if needed
             if (_freeCam == null)
@@ -192,6 +210,7 @@ namespace STGEngine.Runtime.Preview
 
             _activeClearEvent = null;
             _triggeredAudioIds.Clear();
+            _lastTickTime = -1f;
             _audio?.StopBgm(0.1f);
             _audio?.StopAllSe();
         }
