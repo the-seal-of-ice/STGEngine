@@ -85,6 +85,8 @@ namespace STGEngine.Editor.UI.Timeline
         private const float TrackPadding = 4f;
         // Equilateral triangle: base = TrackRowHeight - 6, width = base * sqrt(3)/2
         private static readonly float MarkerTriangleWidth = (TrackRowHeight - 6f) * 0.866f;
+        // Extra padding on each side of the triangle for easier clicking
+        private const float MarkerHitPadding = 8f;
         private float _currentPlayTime;
 
         // Double-click: track which block was last clicked
@@ -750,18 +752,18 @@ namespace STGEngine.Editor.UI.Timeline
                     _lastClickedBlock = blk;
                     SelectBlock(blk);
 
-                    // Marker triangle: right half → resize (if meaningful) or move
+                    // Marker triangle: split at visual median line
                     if (blk is ActionBlock abClick && abClick.IsMarker && CanResizeDuration(blk))
                     {
                         var localPos = element.WorldToLocal(e.mousePosition);
-                        float midX = element.resolvedStyle.width * 0.5f;
-                        if (localPos.x > midX && abClick.HasMeaningfulDuration)
+                        float medianX = MarkerHitPadding + MarkerTriangleWidth * 0.5f;
+                        if (localPos.x > medianX && abClick.HasMeaningfulDuration)
                         {
                             StartDrag(DragMode.Resize, info, e.mousePosition.x);
                             e.StopPropagation();
                             return;
                         }
-                        // Left half or no meaningful duration → move
+                        // Left of median or no meaningful duration → move
                         StartDrag(DragMode.Move, info, e.mousePosition.x);
                         e.StopPropagation();
                         return;
@@ -863,46 +865,40 @@ namespace STGEngine.Editor.UI.Timeline
 
         /// <summary>
         /// Draw an equilateral triangle for Duration=0 marker blocks.
-        /// The left edge (vertical) is the base, aligned to the trigger time.
-        /// The right vertex points right at the midpoint height.
-        /// The median line bisects the altitude (perpendicular from base to tip),
-        /// drawn as a vertical line at x = w/2, clipped to the triangle interior.
-        /// Left half = move zone, right half = resize zone.
+        /// The element is wider than the triangle (hit padding on each side).
+        /// The triangle's left vertical edge sits at x = MarkerHitPadding.
         /// </summary>
         private static void DrawMarkerTriangle(MeshGenerationContext ctx, Color color, float w, float h)
         {
             if (w <= 0f || h <= 0f) return;
             var painter = ctx.painter2D;
 
-            // Equilateral triangle with vertical base on the left:
-            //   A = (0, 0)        top-left
-            //   B = (0, h)        bottom-left
-            //   C = (w, h/2)      right tip
+            // Triangle drawn with left edge offset by hit padding
+            float pad = MarkerHitPadding;
+            float triW = MarkerTriangleWidth;
             float midY = h * 0.5f;
 
-            // Filled triangle
+            // A = (pad, 0)  B = (pad, h)  C = (pad + triW, midY)
             painter.fillColor = color;
             painter.BeginPath();
-            painter.MoveTo(new Vector2(0, 0));
-            painter.LineTo(new Vector2(w, midY));
-            painter.LineTo(new Vector2(0, h));
+            painter.MoveTo(new Vector2(pad, 0));
+            painter.LineTo(new Vector2(pad + triW, midY));
+            painter.LineTo(new Vector2(pad, h));
             painter.ClosePath();
             painter.Fill();
 
-            // Triangle border (same triangle path, stroked)
+            // Border
             painter.strokeColor = new Color(0.9f, 0.9f, 0.9f, 0.5f);
             painter.lineWidth = 1f;
             painter.BeginPath();
-            painter.MoveTo(new Vector2(0, 0));
-            painter.LineTo(new Vector2(w, midY));
-            painter.LineTo(new Vector2(0, h));
+            painter.MoveTo(new Vector2(pad, 0));
+            painter.LineTo(new Vector2(pad + triW, midY));
+            painter.LineTo(new Vector2(pad, h));
             painter.ClosePath();
             painter.Stroke();
 
-            // Median line: vertical line at x = w/2, clipped to triangle interior.
-            // At x = w/2, the upper edge (A→C) has y = midY * (w/2) / w = midY / 2 = h/4
-            // and the lower edge (B→C) has y = h - midY * (w/2) / w = h - h/4 = 3h/4
-            float mx = w * 0.5f;
+            // Median line: vertical at x = pad + triW/2, clipped to triangle interior
+            float mx = pad + triW * 0.5f;
             float myTop = h * 0.25f;
             float myBot = h * 0.75f;
             painter.strokeColor = new Color(1f, 1f, 1f, 0.3f);
@@ -1454,10 +1450,11 @@ namespace STGEngine.Editor.UI.Timeline
                 bool isMarker = info.Block is ActionBlock abPos && abPos.IsMarker && CanResizeDuration(info.Block);
                 if (isMarker)
                 {
-                    // Triangle marker: fixed width, left edge of vertical side at StartTime
+                    // Triangle marker: element is wider than visual triangle for easier clicking.
+                    // Visual triangle starts at MarkerHitPadding offset within the element.
                     float triggerX = (info.Block.StartTime + origin) * _pixelsPerSecond - _scrollOffset;
-                    info.Element.style.left = triggerX;
-                    info.Element.style.width = MarkerTriangleWidth;
+                    info.Element.style.left = triggerX - MarkerHitPadding;
+                    info.Element.style.width = MarkerTriangleWidth + MarkerHitPadding * 2f;
                 }
                 else
                 {
