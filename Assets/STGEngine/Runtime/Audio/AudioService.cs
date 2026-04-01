@@ -36,6 +36,8 @@ namespace STGEngine.Runtime.Audio
         public float BgmVolume { get => _backend.BgmVolume; set => _backend.BgmVolume = value; }
         public float SeVolume { get => _backend.SeVolume; set => _backend.SeVolume = value; }
 
+        public float GetClipDuration(string clipId) => _backend.GetClipDuration(clipId);
+
         public void Tick(float deltaTime) => _backend.Tick(deltaTime);
     }
 }

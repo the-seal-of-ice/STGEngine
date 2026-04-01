@@ -446,6 +446,10 @@ namespace STGEngine.Editor.UI.Timeline
                 LoadPreviewForLayer(_currentLayer);
         }
 
+        /// <summary>Set the audio service for clip duration queries in property panels.</summary>
+        public void SetAudioService(STGEngine.Runtime.Audio.AudioService audio) => _audioService = audio;
+        private STGEngine.Runtime.Audio.AudioService _audioService;
+
         /// <summary>
         /// Add a SpawnPatternEvent to the current MidStage segment at the playback time.
         /// Called from AssetLibraryPanel via PatternSandboxSetup.
@@ -5080,11 +5084,35 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     var field = new TextField(prop.Name) { value = val as string ?? "" };
                     field.isDelayed = true;
+                    bool isClipId = prop.Name == "SeId" || prop.Name == "BgmId";
                     field.RegisterValueChangedCallback(e =>
                     {
                         prop.SetValue(paramsObj, e.newValue);
+                        // Auto-detect clip duration for SE/BGM
+                        if (isClipId && _audioService != null && !string.IsNullOrEmpty(e.newValue))
+                        {
+                            float clipDur = _audioService.GetClipDuration(e.newValue);
+                            if (clipDur > 0f)
+                            {
+                                ae.Duration = clipDur;
+                                _trackArea.RebuildBlocks();
+                            }
+                        }
                         OnStageDataChanged();
                     });
+                    // Show detected duration hint for clip ID fields
+                    if (isClipId && _audioService != null)
+                    {
+                        string clipId = val as string ?? "";
+                        float dur = !string.IsNullOrEmpty(clipId) ? _audioService.GetClipDuration(clipId) : 0f;
+                        if (dur > 0f)
+                        {
+                            var hint = new Label($"  Clip: {dur:F2}s");
+                            hint.style.color = new Color(0.5f, 0.8f, 0.5f);
+                            hint.style.fontSize = 10;
+                            container.Add(hint);
+                        }
+                    }
                     container.Add(field);
                 }
                 else if (prop.PropertyType == typeof(float))

@@ -194,6 +194,14 @@ namespace STGEngine.Runtime.Audio
             set => _seVolume = Mathf.Clamp01(value);
         }
 
+        // ═══ Clip Info ═══
+
+        public float GetClipDuration(string clipId)
+        {
+            var clip = _clipResolver?.Invoke(clipId);
+            return clip != null ? clip.length : 0f;
+        }
+
         // ═══ Tick ═══
 
         public void Tick(float deltaTime)

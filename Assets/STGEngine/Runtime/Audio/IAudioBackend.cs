@@ -47,6 +47,11 @@ namespace STGEngine.Runtime.Audio
         float BgmVolume { get; set; }
         float SeVolume { get; set; }
 
+        // ── Clip info ──
+
+        /// <summary>Get the duration of an audio clip by ID. Returns 0 if not found.</summary>
+        float GetClipDuration(string clipId);
+
         // ── Lifecycle ──
 
         /// <summary>Called each frame to update fades, pool cleanup, etc.</summary>

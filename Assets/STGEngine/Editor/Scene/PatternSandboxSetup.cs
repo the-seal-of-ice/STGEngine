@@ -408,6 +408,7 @@ namespace STGEngine.Editor.Scene
 
             _timelineView = new TimelineEditorView(_timelinePlayback, _patternLibrary, _previewer);
             _timelineView.SetCatalog(_catalog);
+            _timelineView.SetAudioService(_audioService);
             _timelineView.OnSpellCardEditingChanged += OnSpellCardEditingChanged;
             _timelineView.OnWaveEditingChanged += OnWaveEditingChanged;
             _timelineView.OnLayerChanged += () => _assetLibrary?.RefreshButtonStates();
