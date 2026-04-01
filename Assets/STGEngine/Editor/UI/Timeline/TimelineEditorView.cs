@@ -5023,8 +5023,14 @@ namespace STGEngine.Editor.UI.Timeline
             props.Add(startField);
 
             // Duration
+            bool isAudioType = ae.ActionType == ActionType.SePlay || ae.ActionType == ActionType.BgmControl;
             var durField = new FloatField("Duration") { value = ae.Duration };
             durField.isDelayed = true;
+            if (isAudioType)
+            {
+                // Audio blocks: duration is read-only (driven by clip length)
+                durField.SetEnabled(false);
+            }
             durField.RegisterValueChangedCallback(e =>
             {
                 var cmd = new PropertyChangeCommand<float>(
@@ -5035,6 +5041,25 @@ namespace STGEngine.Editor.UI.Timeline
                 _trackArea.RebuildBlocks();
             });
             props.Add(durField);
+
+            // Audio clip info label + Loop snap controls
+            Label clipInfoLabel = null;
+            if (isAudioType && _audioService != null)
+            {
+                string clipId = ae.ActionType == ActionType.SePlay
+                    ? (ae.Params as SePlayParams)?.SeId
+                    : (ae.Params as BgmControlParams)?.BgmId;
+                float clipDur = !string.IsNullOrEmpty(clipId) ? _audioService.GetClipDuration(clipId) : 0f;
+
+                if (clipDur > 0f)
+                {
+                    int loopCount = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / clipDur));
+                    clipInfoLabel = new Label($"  Clip: {clipDur:F2}s  ({loopCount}x)");
+                    clipInfoLabel.style.color = new Color(0.5f, 0.8f, 0.5f);
+                    clipInfoLabel.style.fontSize = 10;
+                    props.Add(clipInfoLabel);
+                }
+            }
 
             // Blocking toggle
             var blockingToggle = new Toggle("Blocking") { value = ae.Blocking };
@@ -5062,14 +5087,15 @@ namespace STGEngine.Editor.UI.Timeline
                 paramsLabel.style.marginBottom = 4;
                 props.Add(paramsLabel);
 
-                BuildActionParamsUI(props, ae);
+                BuildActionParamsUI(props, ae, durField, clipInfoLabel);
             }
 
             _propertyContent.Add(props);
             ApplyLightTextTheme(_propertyContent);
         }
 
-        private void BuildActionParamsUI(VisualElement container, ActionEvent ae)
+        private void BuildActionParamsUI(VisualElement container, ActionEvent ae,
+            FloatField durField, Label clipInfoLabel)
         {
             var paramsObj = ae.Params;
             if (paramsObj == null) return;
@@ -5094,7 +5120,23 @@ namespace STGEngine.Editor.UI.Timeline
                             float clipDur = _audioService.GetClipDuration(e.newValue);
                             if (clipDur > 0f)
                             {
-                                ae.Duration = clipDur;
+                                // If Loop is on, snap to N*clip (at least 1x)
+                                bool isLoop = (ae.Params is SePlayParams sp && sp.Loop);
+                                if (isLoop && ae.Duration > clipDur)
+                                {
+                                    int n = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / clipDur));
+                                    ae.Duration = n * clipDur;
+                                }
+                                else
+                                {
+                                    ae.Duration = clipDur;
+                                }
+                                durField.SetValueWithoutNotify(ae.Duration);
+                                if (clipInfoLabel != null)
+                                {
+                                    int lc = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / clipDur));
+                                    clipInfoLabel.text = $"  Clip: {clipDur:F2}s  ({lc}x)";
+                                }
                                 _trackArea.RebuildBlocks();
                             }
                         }
@@ -5140,12 +5182,97 @@ namespace STGEngine.Editor.UI.Timeline
                 else if (prop.PropertyType == typeof(bool))
                 {
                     var field = new Toggle(prop.Name) { value = (bool)(val ?? false) };
+                    bool isLoopToggle = prop.Name == "Loop";
                     field.RegisterValueChangedCallback(e =>
                     {
                         prop.SetValue(paramsObj, e.newValue);
+                        // Loop toggle: snap Duration to clip length or 1x
+                        if (isLoopToggle && _audioService != null)
+                        {
+                            string clipId = null;
+                            if (ae.Params is SePlayParams sep) clipId = sep.SeId;
+                            else if (ae.Params is BgmControlParams bgp) clipId = bgp.BgmId;
+                            if (!string.IsNullOrEmpty(clipId))
+                            {
+                                float clipDur = _audioService.GetClipDuration(clipId);
+                                if (clipDur > 0f)
+                                {
+                                    if (!e.newValue)
+                                    {
+                                        // Loop off: snap to 1x clip length
+                                        ae.Duration = clipDur;
+                                    }
+                                    else
+                                    {
+                                        // Loop on: keep current duration but snap to nearest N*clip
+                                        int n = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / clipDur));
+                                        ae.Duration = n * clipDur;
+                                    }
+                                    durField.SetValueWithoutNotify(ae.Duration);
+                                    if (clipInfoLabel != null)
+                                    {
+                                        int loopCount = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / clipDur));
+                                        clipInfoLabel.text = $"  Clip: {clipDur:F2}s  ({loopCount}x)";
+                                    }
+                                    _trackArea.RebuildBlocks();
+                                }
+                            }
+                        }
                         OnStageDataChanged();
                     });
                     container.Add(field);
+
+                    // For Loop=true SE, add +/- buttons to adjust loop count
+                    if (isLoopToggle && (bool)(val ?? false) && _audioService != null)
+                    {
+                        string clipId2 = null;
+                        if (ae.Params is SePlayParams sep2) clipId2 = sep2.SeId;
+                        else if (ae.Params is BgmControlParams bgp2) clipId2 = bgp2.BgmId;
+                        float clipDur2 = !string.IsNullOrEmpty(clipId2) ? _audioService.GetClipDuration(clipId2) : 0f;
+                        if (clipDur2 > 0f)
+                        {
+                            var loopRow = new VisualElement();
+                            loopRow.style.flexDirection = FlexDirection.Row;
+                            loopRow.style.alignItems = Align.Center;
+                            loopRow.style.marginTop = 2;
+
+                            int curN = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / clipDur2));
+                            var loopLabel = new Label($"  Loops: {curN}x");
+                            loopLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+                            loopLabel.style.fontSize = 11;
+                            loopLabel.style.minWidth = 80;
+                            loopRow.Add(loopLabel);
+
+                            float cd = clipDur2; // capture for lambdas
+                            var minusBtn = new Button(() =>
+                            {
+                                int n = Mathf.Max(1, Mathf.RoundToInt(ae.Duration / cd) - 1);
+                                ae.Duration = n * cd;
+                                durField.SetValueWithoutNotify(ae.Duration);
+                                loopLabel.text = $"  Loops: {n}x";
+                                if (clipInfoLabel != null) clipInfoLabel.text = $"  Clip: {cd:F2}s  ({n}x)";
+                                _trackArea.RebuildBlocks();
+                                OnStageDataChanged();
+                            }) { text = "-" };
+                            minusBtn.style.width = 24;
+                            loopRow.Add(minusBtn);
+
+                            var plusBtn = new Button(() =>
+                            {
+                                int n = Mathf.RoundToInt(ae.Duration / cd) + 1;
+                                ae.Duration = n * cd;
+                                durField.SetValueWithoutNotify(ae.Duration);
+                                loopLabel.text = $"  Loops: {n}x";
+                                if (clipInfoLabel != null) clipInfoLabel.text = $"  Clip: {cd:F2}s  ({n}x)";
+                                _trackArea.RebuildBlocks();
+                                OnStageDataChanged();
+                            }) { text = "+" };
+                            plusBtn.style.width = 24;
+                            loopRow.Add(plusBtn);
+
+                            container.Add(loopRow);
+                        }
+                    }
                 }
                 else if (prop.PropertyType.IsEnum)
                 {
