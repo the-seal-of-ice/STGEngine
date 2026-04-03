@@ -26,6 +26,9 @@ namespace STGEngine.Core.DataModel
     [TypeTag("player_profile")]
     public class PlayerProfile
     {
+        public string Id { get; set; } = "default";
+        public string Name { get; set; } = "Default";
+
         // ── 移动 ──
         public float MoveSpeed { get; set; } = WorldScale.PlayerMoveSpeed;
         public float SlowMultiplier { get; set; } = WorldScale.PlayerSlowMultiplier;
@@ -120,6 +123,10 @@ namespace STGEngine.Core.DataModel
         public int BasePointItemValue { get; set; } = 10000;
 
         /// <summary>返回使用所有默认值的东方风实例。</summary>
-        public static PlayerProfile TouhouDefault => new();
+        public static PlayerProfile TouhouDefault => new()
+        {
+            Id = "touhou_default",
+            Name = "东方系默认",
+        };
     }
 }
