@@ -5376,24 +5376,28 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
-        /// Scan all BulletClear events in the layer's data and recompute their
-        /// duration from ExpandSpeed + boundary. Fixes stale duration=0 from
-        /// old YAML or after boundary size changes.
+        /// Scan all BulletClear events across all segments in the current stage
+        /// and recompute their duration from ExpandSpeed + boundary.
+        /// Fixes stale duration=0 from old YAML or after boundary size changes.
         /// </summary>
-        private static void RecalcAllBulletClearDurations(ITimelineLayer layer)
+        private void RecalcAllBulletClearDurations(ITimelineLayer layer)
         {
-            if (layer == null) return;
-            var blocks = layer.GetAllBlocks();
-            foreach (var blk in blocks)
+            // Scan all segments in the stage, not just the current layer
+            if (_stage == null) return;
+            foreach (var seg in _stage.Segments)
             {
-                if (blk.DataSource is ActionEvent ae
-                    && ae.ActionType == ActionType.BulletClear
-                    && ae.Params is BulletClearParams bcp
-                    && bcp.ExpandSpeed > 0f)
+                if (seg.Events == null) continue;
+                foreach (var evt in seg.Events)
                 {
-                    float dur = ActionEventPreviewController.ComputeClearDuration(bcp);
-                    if (dur > 0f)
-                        ae.Duration = dur;
+                    if (evt is ActionEvent ae
+                        && ae.ActionType == ActionType.BulletClear
+                        && ae.Params is BulletClearParams bcp
+                        && bcp.ExpandSpeed > 0f)
+                    {
+                        float dur = ActionEventPreviewController.ComputeClearDuration(bcp);
+                        if (dur > 0f)
+                            ae.Duration = dur;
+                    }
                 }
             }
         }
