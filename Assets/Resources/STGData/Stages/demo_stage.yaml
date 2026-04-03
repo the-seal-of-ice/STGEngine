@@ -9,20 +9,20 @@ segments:
   events:
   - type: spawn_pattern
     id: evt_b9544e
-    start_time: 1.49172
+    start_time: 2.47651
     duration: 12.34289
     pattern_id: 3f93f01c3aff
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_25c900
-    start_time: 0.162527
+    start_time: 0.1772614
     duration: 10.37747
     pattern_id: demo_sphere_homing
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
     id: evt_fa559c
-    start_time: 2.77171
-    duration: 12.04769
+    start_time: 0
+    duration: 1.055602
     pattern_id: 4cf7ab95555b
     spawn_position: {x: 0, y: 5, z: 0}
   - type: spawn_pattern
@@ -80,7 +80,7 @@ segments:
       loop: true
   - type: action
     id: act_e1da8a
-    start_time: 2.61461
+    start_time: 7.577904
     duration: 1
     action_type: screen_effect
     params:
@@ -97,17 +97,18 @@ segments:
       type: chapter_clear
       display_duration: 3
   - type: action
-    id: act_5ebf67
-    start_time: 8.066698
-    duration: 0
+    id: act_60233f
+    start_time: 4.397493
+    duration: 0.5773503
     action_type: bullet_clear
     params:
-      shape: full_screen
+      shape: circle
       origin: {x: 0, y: 0, z: 0}
       radius: 50
-      extents: {x: 30, y: 30, z: 30}
+      extents: {x: 25, y: 25, z: 25}
       convert_to_score: true
       expand_speed: 30
+      range: to_boundary
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight
