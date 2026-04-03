@@ -415,7 +415,6 @@ namespace STGEngine.Runtime.Preview
                         break;
                 }
             }
-            }
 
             // Item gizmos
             _itemSystem?.DrawGizmos();
