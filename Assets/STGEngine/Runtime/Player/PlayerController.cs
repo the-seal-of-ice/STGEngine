@@ -40,6 +40,11 @@ namespace STGEngine.Runtime.Player
         private System.Func<IReadOnlyList<BulletState>> _bulletStateProvider;
         private float _bulletCollisionRadius = 0.1f;
 
+        private PlayerShotSystem _shotSystem;
+        private ItemPreviewSystem _itemSystem;
+        private System.Func<IReadOnlyList<HitTarget>> _hitTargetProvider;
+        private bool _isShooting;
+
         public event System.Action OnPlayerHit;
         public event System.Action<int> OnGraze;
         public event System.Action OnPlayerDeath;
@@ -48,6 +53,7 @@ namespace STGEngine.Runtime.Player
 
         public PlayerState State => _state;
         public PlayerCamera Camera => _playerCamera;
+        public PlayerShotSystem ShotSystem => _shotSystem;
 
         // ── IPlayerProvider ──
         Vector3 IPlayerProvider.Position => _state?.Position ?? transform.position;
@@ -84,7 +90,12 @@ namespace STGEngine.Runtime.Player
             // 摄像头跟随球体
             if (camera != null)
                 camera.SetTarget(transform);
+
+            _shotSystem = new PlayerShotSystem(profile);
         }
+
+        public void SetItemSystem(ItemPreviewSystem itemSystem) { _itemSystem = itemSystem; }
+        public void SetHitTargetProvider(System.Func<IReadOnlyList<HitTarget>> provider) { _hitTargetProvider = provider; }
 
         private void Update()
         {
@@ -165,6 +176,37 @@ namespace STGEngine.Runtime.Player
                     }
                 }
             }
+
+            // ── 射击 ──
+            if (_shotSystem != null)
+            {
+                _shotSystem.UpdateOptions(_state.Power, _state.Position,
+                    _playerCamera?.ViewRight ?? Vector3.right,
+                    _playerCamera?.ViewUp ?? Vector3.up,
+                    _playerCamera?.ViewForward ?? Vector3.forward,
+                    transform, dt);
+                _shotSystem.TryShoot(_isShooting, _state.IsSlow,
+                    _playerCamera?.ViewForward ?? Vector3.forward);
+                var targets = _hitTargetProvider?.Invoke();
+                _shotSystem.FixedTick(dt, targets, _boundaryMin, _boundaryMax);
+            }
+
+            // ── 道具拾取 ──
+            if (_itemSystem != null)
+            {
+                var pickup = _itemSystem.CheckPickup(_state.Position, _profile.ItemCollectRadius);
+                ItemEffects.Apply(pickup, _state, _profile);
+
+                // 动态回收目标
+                _itemSystem.SetCollectTarget(_state.Position);
+
+                // HighPower 自动回收
+                if (_profile.AutoCollectMode == AutoCollectTrigger.HighPower
+                    && _state.Power >= _state.MaxPower)
+                {
+                    _itemSystem.TriggerAutoCollect();
+                }
+            }
         }
 
         private void EnterDying()
@@ -174,6 +216,13 @@ namespace STGEngine.Runtime.Player
 
             // Power loss
             _state.Power = Mathf.Max(0f, _state.Power - _profile.DeathPowerLoss);
+
+            // 死亡掉落 Power 道具
+            if (_itemSystem != null)
+            {
+                int dropCount = Mathf.CeilToInt(_profile.DeathPowerLoss / Mathf.Max(0.01f, _profile.PowerPerSmallItem));
+                _itemSystem.SpawnDeathDrop(_state.Position, dropCount);
+            }
 
             if (_state.IsDead)
             {
@@ -237,6 +286,9 @@ namespace STGEngine.Runtime.Player
                 _state.InvincibleTimer = _state.BombInvincibleDuration;
                 OnBomb?.Invoke();
             }
+
+            // 射击（鼠标左键）
+            _isShooting = Input.GetMouseButton(0);
         }
 
         private void OnDrawGizmos()
