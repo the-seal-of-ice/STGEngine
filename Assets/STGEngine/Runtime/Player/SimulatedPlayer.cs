@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
+using STGEngine.Core;
+using STGEngine.Core.DataModel;
 using STGEngine.Runtime.Bullet;
 using STGEngine.Runtime.Preview;
 
@@ -16,12 +18,8 @@ namespace STGEngine.Runtime.Player
     [AddComponentMenu("STGEngine/Simulated Player")]
     public class SimulatedPlayer : MonoBehaviour, IPlayerProvider
     {
-        [Header("移动")]
-        [SerializeField] private float _moveSpeed = 6f;
-
-        [Header("判定")]
-        [SerializeField] private float _hitboxRadius = 0.15f;
-        [SerializeField] private float _grazeRadius = 0.8f;
+        // ── Profile ──
+        private PlayerProfile _profile;
 
         // ── AI 决策 ──
         private RandomWalkBrain _brain;
@@ -57,19 +55,16 @@ namespace STGEngine.Runtime.Player
         /// </summary>
         public void Initialize(
             RandomWalkBrain brain,
+            PlayerProfile profile,
             System.Func<IReadOnlyList<BulletState>> bulletProvider = null,
             float bulletRadius = 0.1f)
         {
             _brain = brain;
+            _profile = profile;
             _bulletStateProvider = bulletProvider;
             _bulletCollisionRadius = bulletRadius;
 
-            _state = new PlayerState
-            {
-                Position = transform.position,
-                HitboxRadius = _hitboxRadius,
-                GrazeRadius = _grazeRadius
-            };
+            _state = PlayerState.FromProfile(profile, transform.position);
 
             // 查找场景边界
             var boundary = FindAnyObjectByType<SandboxBoundary>();
@@ -94,7 +89,8 @@ namespace STGEngine.Runtime.Player
             var moveDir = _brain.Tick(_state.Position, _boundaryMin, _boundaryMax, dt);
 
             // ── 移动 ──
-            _state.Position += moveDir * _moveSpeed * dt;
+            float speed = _profile.MoveSpeed; // AI doesn't use slow mode
+            _state.Position += moveDir * speed * dt;
 
             // 边界 clamp
             _state.Position = Vector3.Max(_boundaryMin, Vector3.Min(_boundaryMax, _state.Position));
@@ -148,7 +144,7 @@ namespace STGEngine.Runtime.Player
             var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             sphere.transform.SetParent(transform);
             sphere.transform.localPosition = Vector3.zero;
-            sphere.transform.localScale = Vector3.one * 0.4f;
+            sphere.transform.localScale = Vector3.one * _profile.VisualScale * 0.25f;
             var col = sphere.GetComponent<Collider>();
             if (col != null) DestroyImmediate(col);
             var sphereRend = sphere.GetComponent<Renderer>();
