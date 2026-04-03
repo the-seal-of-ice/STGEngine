@@ -2147,6 +2147,9 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private void LoadPreviewForLayer(ITimelineLayer layer)
         {
+            // Auto-fix BulletClear durations that are 0 but should be computed from boundary
+            RecalcAllBulletClearDurations(layer);
+
             if (layer is BossFightLayer bfLayer)
             {
                 LoadBossFightPreview(bfLayer.Segment);
@@ -5369,6 +5372,29 @@ namespace STGEngine.Editor.UI.Timeline
                 ae.Duration = dur;
                 durField?.SetValueWithoutNotify(dur);
                 _trackArea.RebuildBlocks();
+            }
+        }
+
+        /// <summary>
+        /// Scan all BulletClear events in the layer's data and recompute their
+        /// duration from ExpandSpeed + boundary. Fixes stale duration=0 from
+        /// old YAML or after boundary size changes.
+        /// </summary>
+        private static void RecalcAllBulletClearDurations(ITimelineLayer layer)
+        {
+            if (layer == null) return;
+            var blocks = layer.GetAllBlocks();
+            foreach (var blk in blocks)
+            {
+                if (blk.DataSource is ActionEvent ae
+                    && ae.ActionType == ActionType.BulletClear
+                    && ae.Params is BulletClearParams bcp
+                    && bcp.ExpandSpeed > 0f)
+                {
+                    float dur = ActionEventPreviewController.ComputeClearDuration(bcp);
+                    if (dur > 0f)
+                        ae.Duration = dur;
+                }
             }
         }
 
