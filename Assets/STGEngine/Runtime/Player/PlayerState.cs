@@ -1,4 +1,5 @@
 using UnityEngine;
+using STGEngine.Core.DataModel;
 
 namespace STGEngine.Runtime.Player
 {
@@ -18,6 +19,29 @@ namespace STGEngine.Runtime.Player
 
         /// <summary>无敌持续时间（秒）。被弹后进入无敌。</summary>
         public float InvincibleDuration = 2f;
+
+        // ── Power（新增）──
+        public float Power;
+        public float MaxPower;
+
+        // ── Score（新增）──
+        public long Score;
+        public int PointItemValue;
+
+        // ── Bomb 状态（新增）──
+        public bool IsBombing;
+        public float BombTimer;
+        public float BombDuration;
+        public float BombInvincibleDuration;
+
+        // ── 死亡/复活（新增）──
+        public bool IsDead;
+        public float RespawnTimer;
+        public float RespawnInvincibleDuration;
+
+        // ── 碎片（新增）──
+        public int LifeFragments;
+        public int BombFragments;
 
         // ── 擦弹 ──
         public int GrazeTotal;
@@ -48,10 +72,43 @@ namespace STGEngine.Runtime.Player
         /// <summary>触发被弹。</summary>
         public void OnHit()
         {
-            if (IsInvincible) return;
+            if (IsInvincible || IsBombing) return;
             Lives--;
             IsInvincible = true;
             InvincibleTimer = InvincibleDuration;
+            IsDead = Lives <= 0;
+        }
+
+        /// <summary>更新 Bomb 计时器。在逻辑 tick 中调用。</summary>
+        public void TickBomb(float dt)
+        {
+            if (!IsBombing) return;
+            BombTimer -= dt;
+            if (BombTimer <= 0f)
+            {
+                IsBombing = false;
+                BombTimer = 0f;
+            }
+        }
+
+        /// <summary>从 PlayerProfile 创建初始状态。</summary>
+        public static PlayerState FromProfile(PlayerProfile profile, Vector3 spawnPos)
+        {
+            return new PlayerState
+            {
+                Position = spawnPos,
+                Lives = profile.InitialLives,
+                Bombs = profile.InitialBombs,
+                Power = profile.InitialPower,
+                MaxPower = profile.MaxPower,
+                PointItemValue = profile.BasePointItemValue,
+                HitboxRadius = profile.HitboxRadius,
+                GrazeRadius = profile.GrazeRadius,
+                InvincibleDuration = profile.InvincibleDuration,
+                BombDuration = profile.BombDuration,
+                BombInvincibleDuration = profile.BombInvincibleDuration,
+                RespawnInvincibleDuration = profile.RespawnInvincibleDuration,
+            };
         }
     }
 }
