@@ -49,8 +49,9 @@ namespace STGEngine.Runtime.Preview
             public string EventId;
             public BulletClearParams Params;
             public float StartTime;       // timeline time when wave started
-            public float MaxRadius;        // target radius (from params)
-            public Vector3 MaxExtents;     // target extents (from params)
+            public float MaxRadius;        // target radius (ToRadius/ToBoundary)
+            public Vector3 MaxExtents;     // target extents (Rectangle)
+            public bool IsInfinite;        // Infinite range mode
         }
         private readonly List<ActiveClearWave> _activeClearWaves = new();
         // Reusable list to avoid per-frame allocation
@@ -376,25 +377,37 @@ namespace STGEngine.Runtime.Preview
             foreach (var wave in _activeClearWaves)
             {
                 float elapsed = _lastTickTime - wave.StartTime;
+                if (elapsed < 0f) continue;
                 float speed = wave.Params.ExpandSpeed;
+
+                // Compute current radius (same formula as UpdateClearWaves)
+                float r;
+                if (wave.IsInfinite)
+                {
+                    float accel = speed * 2f;
+                    r = speed * elapsed + 0.5f * accel * elapsed * elapsed;
+                }
+                else
+                {
+                    r = Mathf.Min(elapsed * speed, wave.MaxRadius);
+                }
 
                 Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
                 switch (wave.Params.Shape)
                 {
                     case ClearShape.FullScreen:
                     case ClearShape.Circle:
-                        float r = speed > 0f ? elapsed * speed : wave.MaxRadius;
-                        r = Mathf.Min(r, wave.MaxRadius);
                         DrawWireCircle(wave.Params.Origin, r, 32);
-                        // Also draw target radius as dim outline
-                        if (speed > 0f && r < wave.MaxRadius)
+                        // Draw target radius as dim outline (not for Infinite)
+                        if (!wave.IsInfinite && r < wave.MaxRadius)
                         {
                             Gizmos.color = new Color(1f, 0.5f, 0f, 0.15f);
                             DrawWireCircle(wave.Params.Origin, wave.MaxRadius, 32);
                         }
                         break;
                     case ClearShape.Rectangle:
-                        float t = speed > 0f ? Mathf.Clamp01(elapsed * speed / wave.MaxExtents.magnitude) : 1f;
+                        float maxDim = wave.MaxExtents.magnitude;
+                        float t = maxDim > 0f ? Mathf.Clamp01(r / maxDim) : 1f;
                         Vector3 ext = wave.MaxExtents * t;
                         Gizmos.DrawWireCube(wave.Params.Origin, ext * 2f);
                         break;
@@ -735,8 +748,24 @@ namespace STGEngine.Runtime.Preview
                 return;
             }
 
-            // For FullScreen, treat as a circle expanding from origin to a very large radius
-            float maxRadius = p.Shape == ClearShape.FullScreen ? 500f : p.Radius;
+            float maxRadius;
+            bool isInfinite = false;
+
+            switch (p.Range)
+            {
+                case ClearRange.ToBoundary:
+                    // Compute radius needed to cover entire sandbox boundary from origin
+                    maxRadius = ComputeBoundaryRadius(p.Origin);
+                    break;
+                case ClearRange.Infinite:
+                    // No cap — accelerates until all bullets gone
+                    maxRadius = float.MaxValue;
+                    isInfinite = true;
+                    break;
+                default: // ToRadius
+                    maxRadius = p.Shape == ClearShape.FullScreen ? ComputeBoundaryRadius(p.Origin) : p.Radius;
+                    break;
+            }
 
             _activeClearWaves.Add(new ActiveClearWave
             {
@@ -744,8 +773,71 @@ namespace STGEngine.Runtime.Preview
                 Params = p,
                 StartTime = currentTime,
                 MaxRadius = maxRadius,
-                MaxExtents = p.Extents
+                MaxExtents = p.Extents,
+                IsInfinite = isInfinite
             });
+        }
+
+        /// <summary>
+        /// Compute the radius from origin needed to fully cover the sandbox boundary.
+        /// Returns the distance from origin to the farthest corner of the boundary box.
+        /// </summary>
+        private static float ComputeBoundaryRadius(Vector3 origin)
+        {
+            var boundary = Object.FindAnyObjectByType<SandboxBoundary>();
+            if (boundary == null) return 100f; // fallback
+            return BoundaryRadiusFrom(origin, boundary);
+        }
+
+        /// <summary>
+        /// Compute the estimated duration for a BulletClear event based on its params
+        /// and the current sandbox boundary. Returns 0 if instant or cannot compute.
+        /// Call this when creating a BulletClear event or when its params change.
+        /// </summary>
+        public static float ComputeClearDuration(BulletClearParams p)
+        {
+            if (p == null || p.ExpandSpeed <= 0f) return 0f;
+
+            var boundary = Object.FindAnyObjectByType<SandboxBoundary>();
+            if (boundary == null) return 0f;
+
+            float targetRadius;
+            switch (p.Range)
+            {
+                case ClearRange.ToBoundary:
+                    targetRadius = BoundaryRadiusFrom(p.Origin, boundary);
+                    break;
+                case ClearRange.Infinite:
+                    // For Infinite, estimate time to cover boundary (wave accelerates)
+                    // r = v*t + 0.5*a*t^2, a = 2v → r = v*t + v*t^2 = v*t*(1+t)
+                    // Solve for t: v*t^2 + v*t - r = 0 → t = (-1 + sqrt(1 + 4r/v)) / 2
+                    targetRadius = BoundaryRadiusFrom(p.Origin, boundary);
+                    float v = p.ExpandSpeed;
+                    float disc = 1f + 4f * targetRadius / v;
+                    return (-1f + Mathf.Sqrt(disc)) * 0.5f;
+                default: // ToRadius
+                    targetRadius = p.Radius;
+                    break;
+            }
+
+            return targetRadius / p.ExpandSpeed;
+        }
+
+        private static float BoundaryRadiusFrom(Vector3 origin, SandboxBoundary boundary)
+        {
+            Vector3 center = boundary.transform.position;
+            Vector3 half = boundary.HalfExtents;
+
+            float maxDist = 0f;
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                Vector3 corner = center + new Vector3(half.x * x, half.y * y, half.z * z);
+                float dist = Vector3.Distance(origin, corner);
+                if (dist > maxDist) maxDist = dist;
+            }
+            return maxDist;
         }
 
         /// <summary>Instant clear (ExpandSpeed = 0): same as old behavior.</summary>
@@ -788,11 +880,24 @@ namespace STGEngine.Runtime.Preview
                     float speed = wave.Params.ExpandSpeed;
                     Vector3 localOrigin = wave.Params.Origin - previewerPos;
 
+                    // Compute current radius based on range mode
+                    float currentRadius;
+                    if (wave.IsInfinite)
+                    {
+                        // Accelerating expansion: r = speed * t + 0.5 * accel * t^2
+                        // Use acceleration = speed * 2 (doubles speed every second)
+                        float accel = speed * 2f;
+                        currentRadius = speed * elapsed + 0.5f * accel * elapsed * elapsed;
+                    }
+                    else
+                    {
+                        currentRadius = Mathf.Min(elapsed * speed, wave.MaxRadius);
+                    }
+
                     if (wave.Params.Shape == ClearShape.Rectangle)
                     {
-                        // Rectangle: extents grow proportionally
                         float maxDim = wave.MaxExtents.magnitude;
-                        float t = maxDim > 0f ? Mathf.Clamp01(elapsed * speed / maxDim) : 1f;
+                        float t = maxDim > 0f ? Mathf.Clamp01(currentRadius / maxDim) : 1f;
                         _tempZones.Add(new ClearZone
                         {
                             ShapeType = 2,
@@ -803,13 +908,11 @@ namespace STGEngine.Runtime.Preview
                     }
                     else
                     {
-                        // Circle or FullScreen-as-circle
-                        float r = Mathf.Min(elapsed * speed, wave.MaxRadius);
                         _tempZones.Add(new ClearZone
                         {
-                            ShapeType = 1, // always circle for expanding wave
+                            ShapeType = 1,
                             Origin = localOrigin,
-                            Radius = r,
+                            Radius = currentRadius,
                             Extents = Vector3.zero
                         });
                     }

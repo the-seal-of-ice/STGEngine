@@ -4973,6 +4973,14 @@ namespace STGEngine.Editor.UI.Timeline
                 Params = ActionParamsRegistry.CreateDefault(actionType)
             };
 
+            // Auto-compute BulletClear duration from expand speed + boundary
+            if (actionType == ActionType.BulletClear && evt.Params is BulletClearParams bcp)
+            {
+                float clearDur = ActionEventPreviewController.ComputeClearDuration(bcp);
+                if (clearDur > 0f)
+                    evt.Duration = clearDur;
+            }
+
             // MidStageLayer uses TrackAreaView.AddEvent; BossFightLayer needs direct insertion
             if (_currentLayer is BossFightLayer bfLayer3)
             {
@@ -5185,6 +5193,7 @@ namespace STGEngine.Editor.UI.Timeline
                     field.RegisterValueChangedCallback(e =>
                     {
                         prop.SetValue(paramsObj, e.newValue);
+                        RecalcBulletClearDuration(ae, durField);
                         OnStageDataChanged();
                     });
                     container.Add(field);
@@ -5302,6 +5311,7 @@ namespace STGEngine.Editor.UI.Timeline
                     field.RegisterValueChangedCallback(e =>
                     {
                         prop.SetValue(paramsObj, e.newValue);
+                        RecalcBulletClearDuration(ae, durField);
                         OnStageDataChanged();
                     });
                     container.Add(field);
@@ -5313,6 +5323,7 @@ namespace STGEngine.Editor.UI.Timeline
                     field.RegisterValueChangedCallback(e =>
                     {
                         prop.SetValue(paramsObj, e.newValue);
+                        RecalcBulletClearDuration(ae, durField);
                         OnStageDataChanged();
                     });
                     container.Add(field);
@@ -5340,6 +5351,24 @@ namespace STGEngine.Editor.UI.Timeline
                     };
                     container.Add(field);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Recalculate BulletClear event duration from its params + sandbox boundary.
+        /// No-op for non-BulletClear events.
+        /// </summary>
+        private void RecalcBulletClearDuration(ActionEvent ae, FloatField durField)
+        {
+            if (ae.ActionType != ActionType.BulletClear) return;
+            if (ae.Params is not BulletClearParams bcp) return;
+
+            float dur = ActionEventPreviewController.ComputeClearDuration(bcp);
+            if (dur > 0f)
+            {
+                ae.Duration = dur;
+                durField?.SetValueWithoutNotify(dur);
+                _trackArea.RebuildBlocks();
             }
         }
 
