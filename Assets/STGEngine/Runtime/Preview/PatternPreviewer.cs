@@ -7,6 +7,32 @@ using STGEngine.Runtime.Rendering;
 namespace STGEngine.Runtime.Preview
 {
     /// <summary>
+    /// Describes a region where bullets have been cleared.
+    /// </summary>
+    public struct ClearZone
+    {
+        /// <summary>0=FullScreen, 1=Circle, 2=Rectangle</summary>
+        public int ShapeType;
+        /// <summary>Center in previewer-local space.</summary>
+        public Vector3 Origin;
+        public float Radius;
+        public Vector3 Extents;
+
+        public bool Contains(Vector3 localPos)
+        {
+            return ShapeType switch
+            {
+                0 => true,
+                1 => Vector3.Distance(localPos, Origin) <= Radius,
+                2 => Mathf.Abs(localPos.x - Origin.x) <= Extents.x
+                  && Mathf.Abs(localPos.y - Origin.y) <= Extents.y
+                  && Mathf.Abs(localPos.z - Origin.z) <= Extents.z,
+                _ => false
+            };
+        }
+    }
+
+    /// <summary>
     /// Sandbox previewer MonoBehaviour. Owns no time logic — delegates entirely
     /// to PlaybackController (validation #10). Evaluates bullet states via
     /// BulletEvaluator (formula path) or SimulationEvaluator (simulation path)
@@ -79,9 +105,30 @@ namespace STGEngine.Runtime.Preview
         public void ClearAllBullets()
         {
             Cleared = true;
+            _clearZones.Clear();
             _currStates = new List<BulletState>(0);
             _prevStates = _currStates;
         }
+
+        /// <summary>
+        /// Add a shape-based clear zone. Bullets inside this zone are filtered out
+        /// every frame (works for both simulation and formula paths).
+        /// Origin must be in previewer-local space.
+        /// </summary>
+        public void AddClearZone(int shapeType, Vector3 localOrigin, float radius, Vector3 extents)
+        {
+            _clearZones.Add(new ClearZone
+            {
+                ShapeType = shapeType,
+                Origin = localOrigin,
+                Radius = radius,
+                Extents = extents
+            });
+            // Immediately filter current states
+            ApplyClearZones();
+        }
+
+        private readonly List<ClearZone> _clearZones = new();
 
         /// <summary>
         /// Dynamic target provider for PlayerHomingModifier. When set, player-homing
@@ -137,6 +184,7 @@ namespace STGEngine.Runtime.Preview
 
             // Reset cleared state on refresh (e.g. after Seek)
             Cleared = false;
+            _clearZones.Clear();
 
             // Re-evaluate whether simulation is needed (modifier list may have changed)
             bool needsSim = SimulationEvaluator.RequiresSimulation(_pattern);
@@ -217,6 +265,24 @@ namespace STGEngine.Runtime.Preview
             {
                 _currStates = BulletEvaluator.EvaluateAll(_pattern, t);
             }
+
+            // Filter out bullets inside any active clear zones
+            if (_clearZones.Count > 0)
+                ApplyClearZones();
+        }
+
+        /// <summary>Remove bullets that fall inside any registered clear zone.</summary>
+        private void ApplyClearZones()
+        {
+            if (_currStates == null || _clearZones.Count == 0) return;
+            _currStates.RemoveAll(b =>
+            {
+                foreach (var zone in _clearZones)
+                {
+                    if (zone.Contains(b.Position)) return true;
+                }
+                return false;
+            });
         }
 
         /// <summary>Render with alpha interpolation between prev and curr states.</summary>

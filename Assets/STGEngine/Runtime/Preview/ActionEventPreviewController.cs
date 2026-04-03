@@ -695,15 +695,20 @@ namespace STGEngine.Runtime.Preview
 
                 if (isFullScreen)
                 {
-                    // FullScreen: clear everything — simulation AND formula bullets, immediately
+                    // FullScreen: clear everything immediately
                     active.Previewer.ClearAllBullets();
                 }
                 else
                 {
                     // Shape-based: convert world-space origin to previewer-local coordinates
-                    // (bullet positions in SimulationEvaluator are local to the previewer)
                     Vector3 localOrigin = clearParams.Origin - active.Previewer.transform.position;
+
+                    // Clear simulation bullets via evaluator
                     active.Previewer.SimEvaluator?.ClearBullets(shapeType,
+                        localOrigin, clearParams.Radius, clearParams.Extents);
+
+                    // Register clear zone so formula bullets are also filtered each frame
+                    active.Previewer.AddClearZone(shapeType,
                         localOrigin, clearParams.Radius, clearParams.Extents);
                 }
             }
