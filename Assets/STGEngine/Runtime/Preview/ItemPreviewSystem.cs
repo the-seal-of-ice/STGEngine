@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using STGEngine.Core.Timeline;
 using STGEngine.Core.Random;
+using STGEngine.Runtime.Player;
 
 namespace STGEngine.Runtime.Preview
 {
@@ -23,7 +24,7 @@ namespace STGEngine.Runtime.Preview
 
         private readonly List<PreviewItem> _items = new();
         private bool _autoCollecting;
-        private readonly Vector3 _collectTarget = new(0f, 15f, 0f); // screen top world approx
+        private Vector3 _collectTarget = new(0f, 15f, 0f); // screen top world approx
         private DeterministicRng _rng;
 
         private const float Gravity = -9.8f;
@@ -136,6 +137,65 @@ namespace STGEngine.Runtime.Preview
 
                 _items[i] = item;
             }
+        }
+
+        /// <summary>
+        /// Check if player is close enough to pick up items.
+        /// Returns counts of each item type picked up.
+        /// </summary>
+        public ItemPickupResult CheckPickup(Vector3 playerPos, float collectRadius)
+        {
+            var result = new ItemPickupResult();
+            for (int i = 0; i < _items.Count; i++)
+            {
+                var item = _items[i];
+                if (!item.Active) continue;
+
+                if (Vector3.Distance(item.Position, playerPos) <= collectRadius)
+                {
+                    item.Active = false;
+                    _items[i] = item;
+                    switch (item.Type)
+                    {
+                        case ItemType.PowerSmall:   result.PowerSmallCount++; break;
+                        case ItemType.PowerLarge:   result.PowerLargeCount++; break;
+                        case ItemType.PointItem:    result.PointItemCount++; break;
+                        case ItemType.BombFragment: result.BombFragmentCount++; break;
+                        case ItemType.LifeFragment: result.LifeFragmentCount++; break;
+                        case ItemType.FullPower:    result.FullPowerCount++; break;
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Spawn Power items at death position (called when player dies).
+        /// </summary>
+        public void SpawnDeathDrop(Vector3 deathPosition, int powerItemCount)
+        {
+            for (int i = 0; i < powerItemCount; i++)
+            {
+                var scatter = new Vector3(
+                    _rng.Range(-1f, 1f),
+                    _rng.Range(0.5f, 1.5f),
+                    _rng.Range(-1f, 1f)
+                );
+                _items.Add(new PreviewItem
+                {
+                    Position = deathPosition + scatter * 0.3f,
+                    Velocity = scatter * 3f + Vector3.up * 4f,
+                    Type = ItemType.PowerSmall,
+                    Active = true,
+                    Elapsed = 0f
+                });
+            }
+        }
+
+        /// <summary>Set dynamic collect target (player position).</summary>
+        public void SetCollectTarget(Vector3 target)
+        {
+            _collectTarget = target;
         }
 
         /// <summary>
