@@ -8,6 +8,7 @@ namespace STGEngine.Runtime.Preview
 {
     /// <summary>
     /// Describes a region where bullets have been cleared.
+    /// Updated each frame by ActionEventPreviewController as the wave expands.
     /// </summary>
     public struct ClearZone
     {
@@ -15,7 +16,9 @@ namespace STGEngine.Runtime.Preview
         public int ShapeType;
         /// <summary>Center in previewer-local space.</summary>
         public Vector3 Origin;
+        /// <summary>Current radius (grows over time for expanding wave).</summary>
         public float Radius;
+        /// <summary>Current half-extents (grows over time for expanding wave).</summary>
         public Vector3 Extents;
 
         public bool Contains(Vector3 localPos)
@@ -111,20 +114,24 @@ namespace STGEngine.Runtime.Preview
         }
 
         /// <summary>
-        /// Add a shape-based clear zone. Bullets inside this zone are filtered out
-        /// every frame (works for both simulation and formula paths).
-        /// Origin must be in previewer-local space.
+        /// Replace the active clear zones. Called each frame by the controller
+        /// as expanding waves grow. Also immediately filters current states
+        /// and marks simulation bullets inactive.
         /// </summary>
-        public void AddClearZone(int shapeType, Vector3 localOrigin, float radius, Vector3 extents)
+        public void SetClearZones(List<ClearZone> zones)
         {
-            _clearZones.Add(new ClearZone
+            _clearZones.Clear();
+            if (zones != null)
+                _clearZones.AddRange(zones);
+
+            // Immediately mark simulation bullets inactive inside new zones
+            if (_simEvaluator != null)
             {
-                ShapeType = shapeType,
-                Origin = localOrigin,
-                Radius = radius,
-                Extents = extents
-            });
-            // Immediately filter current states
+                foreach (var z in _clearZones)
+                    _simEvaluator.ClearBullets(z.ShapeType, z.Origin, z.Radius, z.Extents);
+            }
+
+            // Immediately filter current render states
             ApplyClearZones();
         }
 

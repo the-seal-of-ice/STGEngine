@@ -38,10 +38,23 @@ namespace STGEngine.Runtime.Preview
         private Label _tallyTitle;
         private Label _tallyScore;
 
-        // ── BulletClear visualization + actual clearing ──
+        // ── BulletClear visualization + expanding wave ──
         private ActionEvent _activeClearEvent;
         private readonly HashSet<string> _triggeredClearIds = new();
         private System.Func<IReadOnlyList<ActiveEvent>> _activeEventsProvider;
+
+        /// <summary>Tracks an active expanding clear wave.</summary>
+        private class ActiveClearWave
+        {
+            public string EventId;
+            public BulletClearParams Params;
+            public float StartTime;       // timeline time when wave started
+            public float MaxRadius;        // target radius (from params)
+            public Vector3 MaxExtents;     // target extents (from params)
+        }
+        private readonly List<ActiveClearWave> _activeClearWaves = new();
+        // Reusable list to avoid per-frame allocation
+        private readonly List<ClearZone> _tempZones = new();
 
         // ── BackgroundSwitch ──
         private readonly HashSet<string> _triggeredBgIds = new();
@@ -125,6 +138,8 @@ namespace STGEngine.Runtime.Preview
                     }
                     return false;
                 });
+                // Remove clear waves that started after the new time
+                _activeClearWaves.RemoveAll(w => w.StartTime >= currentTime);
                 _triggeredBgIds.RemoveWhere(id =>
                 {
                     foreach (var evt in _segment.Events)
@@ -243,7 +258,7 @@ namespace STGEngine.Runtime.Preview
                             if (!_triggeredClearIds.Contains(ae.Id))
                             {
                                 _triggeredClearIds.Add(ae.Id);
-                                ExecuteBulletClear(ae);
+                                StartClearWave(ae, currentTime);
                             }
                             break;
 
@@ -346,6 +361,9 @@ namespace STGEngine.Runtime.Preview
                 }
             }
 
+            // ── Update expanding clear waves ──
+            UpdateClearWaves(currentTime);
+
             // Tick subsystems
             _backgroundLayer?.Tick(deltaTime);
             _itemSystem?.Tick(deltaTime);
@@ -354,8 +372,37 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Draw BulletClear range gizmos + item gizmos. Call from OnDrawGizmos.</summary>
         public void DrawGizmos()
         {
-            // BulletClear range
-            if (_activeClearEvent?.Params is BulletClearParams clearParams)
+            // BulletClear: draw expanding wave front for each active wave
+            foreach (var wave in _activeClearWaves)
+            {
+                float elapsed = _lastTickTime - wave.StartTime;
+                float speed = wave.Params.ExpandSpeed;
+
+                Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
+                switch (wave.Params.Shape)
+                {
+                    case ClearShape.FullScreen:
+                    case ClearShape.Circle:
+                        float r = speed > 0f ? elapsed * speed : wave.MaxRadius;
+                        r = Mathf.Min(r, wave.MaxRadius);
+                        DrawWireCircle(wave.Params.Origin, r, 32);
+                        // Also draw target radius as dim outline
+                        if (speed > 0f && r < wave.MaxRadius)
+                        {
+                            Gizmos.color = new Color(1f, 0.5f, 0f, 0.15f);
+                            DrawWireCircle(wave.Params.Origin, wave.MaxRadius, 32);
+                        }
+                        break;
+                    case ClearShape.Rectangle:
+                        float t = speed > 0f ? Mathf.Clamp01(elapsed * speed / wave.MaxExtents.magnitude) : 1f;
+                        Vector3 ext = wave.MaxExtents * t;
+                        Gizmos.DrawWireCube(wave.Params.Origin, ext * 2f);
+                        break;
+                }
+            }
+
+            // Also draw static gizmo for the range-based active clear event (legacy)
+            if (_activeClearEvent?.Params is BulletClearParams clearParams && _activeClearWaves.Count == 0)
             {
                 Gizmos.color = new Color(1f, 0.5f, 0f, 0.4f);
                 switch (clearParams.Shape)
@@ -366,10 +413,8 @@ namespace STGEngine.Runtime.Preview
                     case ClearShape.Rectangle:
                         Gizmos.DrawWireCube(clearParams.Origin, clearParams.Extents * 2f);
                         break;
-                    case ClearShape.FullScreen:
-                        // No gizmo needed for full screen
-                        break;
                 }
+            }
             }
 
             // Item gizmos
@@ -396,6 +441,7 @@ namespace STGEngine.Runtime.Preview
                 _freeCam.ShakeOffset = Vector3.zero;
 
             _activeClearEvent = null;
+            _activeClearWaves.Clear();
             _triggeredAudioIds.Clear();
             _triggeredClearIds.Clear();
             _triggeredBgIds.Clear();
@@ -677,40 +723,100 @@ namespace STGEngine.Runtime.Preview
             _tallyContainer.style.opacity = opacity;
         }
 
-        // ── BulletClear actual clearing ──
+        // ── BulletClear expanding wave ──
 
-        private void ExecuteBulletClear(ActionEvent ae)
+        private void StartClearWave(ActionEvent ae, float currentTime)
         {
-            if (ae.Params is not BulletClearParams clearParams) return;
+            if (ae.Params is not BulletClearParams p) return;
 
+            // ExpandSpeed = 0 means instant clear (no wave)
+            if (p.ExpandSpeed <= 0f)
+            {
+                ExecuteInstantClear(p);
+                return;
+            }
+
+            // For FullScreen, treat as a circle expanding from origin to a very large radius
+            float maxRadius = p.Shape == ClearShape.FullScreen ? 500f : p.Radius;
+
+            _activeClearWaves.Add(new ActiveClearWave
+            {
+                EventId = ae.Id,
+                Params = p,
+                StartTime = currentTime,
+                MaxRadius = maxRadius,
+                MaxExtents = p.Extents
+            });
+        }
+
+        /// <summary>Instant clear (ExpandSpeed = 0): same as old behavior.</summary>
+        private void ExecuteInstantClear(BulletClearParams clearParams)
+        {
             var activeEvents = _activeEventsProvider?.Invoke();
             if (activeEvents == null) return;
 
-            bool isFullScreen = clearParams.Shape == ClearShape.FullScreen;
-            int shapeType = (int)clearParams.Shape;
+            foreach (var active in activeEvents)
+            {
+                if (active.Previewer == null) continue;
+                active.Previewer.ClearAllBullets();
+            }
+        }
+
+        /// <summary>
+        /// Each frame: grow active waves, build ClearZone list, push to all previewers.
+        /// Waves that have reached max size are kept (bullets stay cleared).
+        /// Waves are removed on Reset/Seek.
+        /// </summary>
+        private void UpdateClearWaves(float currentTime)
+        {
+            if (_activeClearWaves.Count == 0) return;
+
+            var activeEvents = _activeEventsProvider?.Invoke();
+            if (activeEvents == null) return;
 
             foreach (var active in activeEvents)
             {
                 if (active.Previewer == null) continue;
 
-                if (isFullScreen)
-                {
-                    // FullScreen: clear everything immediately
-                    active.Previewer.ClearAllBullets();
-                }
-                else
-                {
-                    // Shape-based: convert world-space origin to previewer-local coordinates
-                    Vector3 localOrigin = clearParams.Origin - active.Previewer.transform.position;
+                _tempZones.Clear();
+                Vector3 previewerPos = active.Previewer.transform.position;
 
-                    // Clear simulation bullets via evaluator
-                    active.Previewer.SimEvaluator?.ClearBullets(shapeType,
-                        localOrigin, clearParams.Radius, clearParams.Extents);
+                foreach (var wave in _activeClearWaves)
+                {
+                    float elapsed = currentTime - wave.StartTime;
+                    if (elapsed < 0f) continue;
 
-                    // Register clear zone so formula bullets are also filtered each frame
-                    active.Previewer.AddClearZone(shapeType,
-                        localOrigin, clearParams.Radius, clearParams.Extents);
+                    float speed = wave.Params.ExpandSpeed;
+                    Vector3 localOrigin = wave.Params.Origin - previewerPos;
+
+                    if (wave.Params.Shape == ClearShape.Rectangle)
+                    {
+                        // Rectangle: extents grow proportionally
+                        float maxDim = wave.MaxExtents.magnitude;
+                        float t = maxDim > 0f ? Mathf.Clamp01(elapsed * speed / maxDim) : 1f;
+                        _tempZones.Add(new ClearZone
+                        {
+                            ShapeType = 2,
+                            Origin = localOrigin,
+                            Radius = 0f,
+                            Extents = wave.MaxExtents * t
+                        });
+                    }
+                    else
+                    {
+                        // Circle or FullScreen-as-circle
+                        float r = Mathf.Min(elapsed * speed, wave.MaxRadius);
+                        _tempZones.Add(new ClearZone
+                        {
+                            ShapeType = 1, // always circle for expanding wave
+                            Origin = localOrigin,
+                            Radius = r,
+                            Extents = Vector3.zero
+                        });
+                    }
                 }
+
+                active.Previewer.SetClearZones(_tempZones);
             }
         }
 
