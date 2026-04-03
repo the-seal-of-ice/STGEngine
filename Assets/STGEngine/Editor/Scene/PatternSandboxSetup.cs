@@ -103,6 +103,8 @@ namespace STGEngine.Editor.Scene
         private bool _playerModeActive;
         private bool _playerModeIsAI;
         private Label _playerHudLabel;
+        private PlayerProfile _playerProfile;
+        private bool _gameOverActive;
 
         /// <summary>Current editor mode.</summary>
         public EditorMode CurrentMode => _editorMode;
@@ -807,6 +809,8 @@ namespace STGEngine.Editor.Scene
                 };
             }
 
+            _playerProfile = LoadPlayerProfile();
+
             // Inject homing target provider into previewers so bullets can track the player
             System.Func<Vector3> homingTarget = null; // will be set after player creation
 
@@ -824,7 +828,7 @@ namespace STGEngine.Editor.Scene
                     SlowdownTendency = 0.3f,
                     BoundaryAvoidance = 0.6f
                 };
-                _simulatedPlayer.Initialize(brain, bulletProvider);
+                _simulatedPlayer.Initialize(brain, _playerProfile, bulletProvider);
                 _activePlayer = _simulatedPlayer;
             }
             else
@@ -836,7 +840,7 @@ namespace STGEngine.Editor.Scene
                 var visual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 visual.transform.SetParent(playerGo.transform);
                 visual.transform.localPosition = Vector3.zero;
-                visual.transform.localScale = Vector3.one * 0.4f;
+                visual.transform.localScale = Vector3.one * _playerProfile.VisualScale * 0.25f;
                 var col = visual.GetComponent<Collider>();
                 if (col != null) DestroyImmediate(col);
                 var renderer = visual.GetComponent<Renderer>();
@@ -851,9 +855,17 @@ namespace STGEngine.Editor.Scene
                     _playerCamera = cam.gameObject.AddComponent<PlayerCamera>();
                 _playerCamera.enabled = true;
 
-                _playerController.Initialize(_playerCamera, bulletProvider);
+                _playerController.Initialize(_playerProfile, _playerCamera, bulletProvider);
                 _playerCamera.SetCursorLock(true);
                 _activePlayer = _playerController;
+
+                // Wire hit targets
+                _playerController.SetHitTargetProvider(GetHitTargets);
+
+                // Wire events
+                _playerController.OnBomb += HandleBomb;
+                _playerController.OnRespawnClearBullets += HandleRespawnClear;
+                _playerController.OnPlayerDeath += HandlePlayerDeath;
             }
 
             // Wire homing target: bullets with PlayerHomingModifier will track the active player
@@ -951,6 +963,7 @@ namespace STGEngine.Editor.Scene
             // Destroy manual player
             if (_playerController != null)
             {
+                _playerController.ShotSystem?.Dispose();
                 Destroy(_playerController.gameObject);
                 _playerController = null;
             }
@@ -967,6 +980,82 @@ namespace STGEngine.Editor.Scene
             {
                 _playerHudLabel.RemoveFromHierarchy();
                 _playerHudLabel = null;
+            }
+
+            _gameOverActive = false;
+        }
+
+        private PlayerProfile LoadPlayerProfile()
+        {
+            // Future: load from STGData/PlayerProfiles/ YAML
+            // For now, use default
+            return PlayerProfile.TouhouDefault;
+        }
+
+        private IReadOnlyList<HitTarget> GetHitTargets()
+        {
+            var targets = new List<HitTarget>();
+
+            // Boss
+            if (_bossPlaceholder != null && _bossPlaceholder.gameObject.activeSelf)
+            {
+                targets.Add(new HitTarget
+                {
+                    Position = _bossPlaceholder.transform.position,
+                    Radius = Core.WorldScale.BossVisualScale * 0.5f,
+                    Health = 1000f,
+                    ApplyDamage = dmg => { /* Future: Boss HP tracking */ }
+                });
+            }
+
+            return targets;
+        }
+
+        private void HandleBomb()
+        {
+            ClearAllBullets();
+        }
+
+        private void HandleRespawnClear()
+        {
+            ClearAllBullets();
+        }
+
+        private void ClearAllBullets()
+        {
+            if (_editorMode == EditorMode.PatternEdit && _previewer != null)
+            {
+                _previewer.ForceRefresh();
+            }
+            else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
+            {
+                foreach (var ae in _timelinePlayback.ActiveEvents)
+                {
+                    ae.Previewer?.ForceRefresh();
+                }
+            }
+        }
+
+        private void HandlePlayerDeath()
+        {
+            _gameOverActive = true;
+            if (_timelinePlayback != null)
+                _timelinePlayback.Pause();
+            StartCoroutine(GameOverRecovery());
+        }
+
+        private System.Collections.IEnumerator GameOverRecovery()
+        {
+            yield return new WaitForSeconds(3f);
+            if (_gameOverActive)
+            {
+                _gameOverActive = false;
+                // Reset player state
+                if (_playerController != null && _playerProfile != null)
+                {
+                    // Re-enter player mode to reset everything
+                    ExitPlayerMode();
+                }
             }
         }
 
@@ -986,9 +1075,23 @@ namespace STGEngine.Editor.Scene
             {
                 var s = _activePlayer.State;
                 var modeTag = _playerModeIsAI ? "[AI]" : "[Manual]";
-                _playerHudLabel.text = $"{modeTag}  Lives: {s.Lives}  Graze: {s.GrazeTotal}" +
-                    (s.IsSlow ? "  [SLOW]" : "") +
-                    (s.IsInvincible ? "  [INV]" : "");
+
+                if (_gameOverActive)
+                {
+                    _playerHudLabel.text = "<color=red>GAME OVER</color>\n" +
+                        $"Score: {s.Score:N0}  Graze: {s.GrazeTotal}";
+                }
+                else
+                {
+                    _playerHudLabel.text =
+                        $"{modeTag}  ★{s.Lives}  ✦{s.Bombs}  P {s.Power:F2}/{s.MaxPower:F2}\n" +
+                        $"Score: {s.Score:N0}  Graze: {s.GrazeTotal}" +
+                        (s.LifeFragments > 0 ? $"  ◆×{s.LifeFragments}" : "") +
+                        (s.BombFragments > 0 ? $"  ◇×{s.BombFragments}" : "") +
+                        (s.IsSlow ? "  [SLOW]" : "") +
+                        (s.IsInvincible ? "  [INV]" : "") +
+                        (s.IsBombing ? "  [BOMB]" : "");
+                }
             }
         }
 
