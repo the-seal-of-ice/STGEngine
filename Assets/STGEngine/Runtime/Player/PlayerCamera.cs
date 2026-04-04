@@ -37,6 +37,9 @@ namespace STGEngine.Runtime.Player
         /// <summary>视角方向的上方（世界 Up）。</summary>
         public Vector3 ViewUp => Vector3.up;
 
+        /// <summary>相机实际朝向（含俯仰）。用于射击方向。</summary>
+        public Vector3 AimForward => Quaternion.Euler(_pitch, _yaw, 0f) * Vector3.forward;
+
         public float Yaw => _yaw;
         public float Pitch => _pitch;
 

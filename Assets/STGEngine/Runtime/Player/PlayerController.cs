@@ -186,7 +186,7 @@ namespace STGEngine.Runtime.Player
                     _playerCamera?.ViewForward ?? Vector3.forward,
                     transform, dt);
                 _shotSystem.TryShoot(_isShooting, _state.IsSlow,
-                    _playerCamera?.ViewForward ?? Vector3.forward);
+                    _playerCamera?.AimForward ?? Vector3.forward);
                 var targets = _hitTargetProvider?.Invoke();
                 _shotSystem.FixedTick(dt, targets, _boundaryMin, _boundaryMax);
             }
