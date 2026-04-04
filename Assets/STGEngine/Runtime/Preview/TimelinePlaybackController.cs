@@ -255,6 +255,9 @@ namespace STGEngine.Runtime.Preview
 
                 CurrentTime += dt;
 
+                if (Time.frameCount % 120 == 0)
+                    Debug.Log($"[Playback.Tick] t={CurrentTime:F1}/{Duration:F1} active={_activeEvents.Count} playing={IsPlaying}");
+
                 if (Loop && Duration > 0f && CurrentTime >= Duration)
                 {
                     CurrentTime %= Duration;
@@ -355,14 +358,20 @@ namespace STGEngine.Runtime.Preview
             }
 
             // Activate new events
+            int activated = 0;
             foreach (var evt in _segment.Events)
             {
                 if (evt is SpawnPatternEvent spawnEvt && IsEventActive(spawnEvt, CurrentTime))
                 {
                     if (!IsAlreadyActive(spawnEvt))
+                    {
                         ActivateEvent(spawnEvt);
+                        activated++;
+                    }
                 }
             }
+            if (activated > 0 && Time.frameCount % 30 == 0)
+                Debug.Log($"[Playback] t={CurrentTime:F1} active={_activeEvents.Count} newlyActivated={activated}");
         }
 
         private void ActivateEvent(SpawnPatternEvent spawnEvt)
