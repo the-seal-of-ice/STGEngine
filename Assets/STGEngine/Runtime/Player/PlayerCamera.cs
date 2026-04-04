@@ -5,25 +5,25 @@ namespace STGEngine.Runtime.Player
     /// <summary>
     /// 玩家摄像头：从动于玩家球体。
     /// 
-    /// 球体是主体（WASD 移动球体），摄像头位置由球体反推：
-    /// 摄像头位于球体沿视线反方向偏上一定角度、固定距离处，
-    /// 使球体始终固定在屏幕中心偏下的位置。
+    /// 相机位置 = 玩家后方 _distance 处 + 世界 Y 轴上移 _heightOffset。
+    /// 相机朝向 = LookAt 玩家位置。
+    /// 玩家自然出现在屏幕中心偏下（因为相机在上方看下来）。
     /// 
-    /// 鼠标控制视角（yaw/pitch），摄像头围绕球体旋转但距离固定。
+    /// 鼠标控制视角（yaw/pitch），相机围绕玩家旋转但距离固定。
     /// </summary>
     [AddComponentMenu("STGEngine/Player Camera")]
     public class PlayerCamera : MonoBehaviour
     {
         [Header("视角")]
         [SerializeField] private float _mouseSensitivity = 2f;
-        [SerializeField] private float _minPitch = -89.99f;
-        [SerializeField] private float _maxPitch = 89.99f;
+        [SerializeField] private float _minPitch = -60f;
+        [SerializeField] private float _maxPitch = 80f;
 
         [Header("摄像头与球体的位置关系")]
         [Tooltip("摄像头距离球体的固定距离")]
         [SerializeField] private float _distance = 12f;
-        [Tooltip("摄像头相对球体的仰角偏移（度）。正值 = 摄像头在球体上方，球体显示在屏幕下方")]
-        [SerializeField] private float _elevationOffset = 15f;
+        [Tooltip("摄像头相对球体的垂直偏移（米）。正值 = 摄像头在球体上方")]
+        [SerializeField] private float _heightOffset = 3f;
 
         private float _yaw;
         private float _pitch = 20f;
@@ -37,7 +37,7 @@ namespace STGEngine.Runtime.Player
         /// <summary>视角方向的上方（世界 Up）。</summary>
         public Vector3 ViewUp => Vector3.up;
 
-        /// <summary>相机实际朝向（含俯仰和仰角偏移）。用于射击方向。</summary>
+        /// <summary>相机实际朝向（LookAt 玩家后的 forward）。用于射击方向。</summary>
         public Vector3 AimForward => transform.forward;
 
         public float Yaw => _yaw;
@@ -79,19 +79,26 @@ namespace STGEngine.Runtime.Player
         }
 
         /// <summary>
-        /// 摄像头位置 = 球体位置 + 从球体出发、沿视线反方向偏上 _elevationOffset 度、距离 _distance 处。
-        /// 摄像头朝向 = 看向球体（自然使球体固定在屏幕中心偏下）。
+        /// 相机位置 = 玩家位置 + 沿 pitch/yaw 反方向退 _distance + 世界 Y 轴上移 _heightOffset。
+        /// 相机朝向 = LookAt 玩家位置。
         /// </summary>
         private void ApplyTransform()
         {
             if (_target == null) return;
 
-            var lookPitch = _pitch - _elevationOffset;
-            var backDir = Quaternion.Euler(lookPitch, _yaw, 0f) * Vector3.back;
+            // 从玩家出发，沿 pitch/yaw 反方向退 _distance
+            var backDir = Quaternion.Euler(_pitch, _yaw, 0f) * Vector3.back;
+            var camPos = _target.position + backDir * _distance;
 
-            transform.position = _target.position + backDir * _distance;
-            // 用 Quaternion 直接设朝向，避免 LookAt 在极端俯仰角的万向锁
-            transform.rotation = Quaternion.Euler(lookPitch, _yaw, 0f);
+            // 垂直偏移：相机在玩家上方
+            camPos.y += _heightOffset;
+
+            transform.position = camPos;
+
+            // LookAt 玩家
+            var lookDir = _target.position - camPos;
+            if (lookDir.sqrMagnitude > 0.001f)
+                transform.rotation = Quaternion.LookRotation(lookDir);
         }
 
         private void OnDisable()
