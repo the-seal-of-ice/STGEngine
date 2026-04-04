@@ -69,16 +69,6 @@ segments:
       effect_type: shake
       intensity: 0.1
   - type: action
-    id: act_b21e08
-    start_time: 5.525723
-    duration: 2.194286
-    action_type: se_play
-    params:
-      se_id: se_lazer00
-      volume: 1
-      pitch: 1
-      loop: true
-  - type: action
     id: act_e1da8a
     start_time: 7.577904
     duration: 1
@@ -109,6 +99,12 @@ segments:
       convert_to_score: true
       expand_speed: 30
       range: to_boundary
+  - type: spawn_wave
+    id: wevt_904e14
+    start_time: 0
+    duration: 10
+    wave_id: cb5dcaf6453f
+    spawn_offset: {x: 0, y: 0, z: 0}
 - id: boss_phase_1
   name: Boss Phase 1
   type: boss_fight

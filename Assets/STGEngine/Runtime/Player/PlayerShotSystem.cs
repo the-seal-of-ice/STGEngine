@@ -101,7 +101,12 @@ namespace STGEngine.Runtime.Player
         public void TryShoot(bool isShooting, bool isFocused, Vector3 forward)
         {
             _cooldown -= Time.fixedDeltaTime;
-            if (!isShooting || _cooldown > 0f || _currentOptionCount == 0) return;
+            if (!isShooting || _cooldown > 0f || _currentOptionCount == 0)
+            {
+                if (Time.frameCount % 120 == 0)
+                    Debug.Log($"[ShotSystem] isShooting={isShooting} cooldown={_cooldown:F3} options={_currentOptionCount} bullets={_bullets.Count}");
+                return;
+            }
 
             float interval = isFocused ? _profile.FocusShotInterval : _profile.ShotInterval;
             float speed    = isFocused ? _profile.FocusShotSpeed    : _profile.ShotSpeed;

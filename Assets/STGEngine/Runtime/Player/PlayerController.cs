@@ -180,6 +180,8 @@ namespace STGEngine.Runtime.Player
             // ── 射击 ──
             if (_shotSystem != null)
             {
+                if (Time.frameCount % 120 == 0)
+                    Debug.Log($"[PlayerCtrl] phase={_phase} isShooting={_isShooting} power={_state.Power}");
                 _shotSystem.UpdateOptions(_state.Power, _state.Position,
                     _playerCamera?.ViewRight ?? Vector3.right,
                     _playerCamera?.ViewUp ?? Vector3.up,
