@@ -684,6 +684,7 @@ namespace STGEngine.Editor.UI.Timeline
 
             foreach (var seg in _stage.Segments)
             {
+                float scOffset = segmentOffset; // track actual end for BossFight
                 if (seg.Type == SegmentType.MidStage)
                 {
                     float segEnd = segmentOffset + seg.Duration;
@@ -726,14 +727,15 @@ namespace STGEngine.Editor.UI.Timeline
                         else if (evt is ActionEvent ae)
                         {
                             if (ae.StartTime >= seg.Duration) continue;
-                            // Copy ActionEvent with offset time for stage overview blocking
+                            // Copy ActionEvent with offset time for stage overview
+                            // Disable blocking at Stage level — overview is for visual preview only
                             tempSegment.Events.Add(new ActionEvent
                             {
                                 Id = $"_so_{seg.Id}_{ae.Id}",
                                 StartTime = segmentOffset + ae.StartTime,
                                 Duration = ae.Duration,
                                 ActionType = ae.ActionType,
-                                Blocking = ae.Blocking,
+                                Blocking = false,
                                 Params = ae.Params
                             });
                         }
@@ -742,7 +744,7 @@ namespace STGEngine.Editor.UI.Timeline
                 else if (seg.Type == SegmentType.BossFight && _catalog != null)
                 {
                     // Flatten spell card patterns into the overview
-                    float scOffset = segmentOffset;
+                    scOffset = segmentOffset;
                     var localBossPath = new List<PathKeyframe>();
                     var segContext = OverrideManager.SegmentContext(seg.Id);
 
@@ -830,18 +832,29 @@ namespace STGEngine.Editor.UI.Timeline
                     }
 
                     // Record this BossFight segment's time range
+                    float actualBossDur = scOffset - segmentOffset;
                     if (localBossPath.Count > 0)
                     {
                         bossRanges.Add(new BossSegmentRange
                         {
                             StartTime = segmentOffset,
-                            EndTime = segmentOffset + seg.Duration,
+                            EndTime = segmentOffset + Mathf.Max(actualBossDur, seg.Duration),
                             BossPath = localBossPath
                         });
                     }
                 }
 
-                segmentOffset += seg.Duration;
+                // For BossFight, use the larger of declared duration and actual spell card total
+                // to avoid truncating late spell cards in the overview
+                if (seg.Type == SegmentType.BossFight)
+                {
+                    float actualBossDur = scOffset - segmentOffset;
+                    segmentOffset += Mathf.Max(actualBossDur, seg.Duration);
+                }
+                else
+                {
+                    segmentOffset += seg.Duration;
+                }
             }
 
             tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
