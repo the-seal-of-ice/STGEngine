@@ -357,6 +357,65 @@ namespace STGEngine.Editor.Scene
                 _playerController.ShotSystem?.DrawGizmos();
         }
 
+        /// <summary>
+        /// GL rendering for player bullets — visible in Game view without Gizmos toggle.
+        /// </summary>
+        private void OnRenderObject()
+        {
+            if (!_playerModeActive || _playerController == null) return;
+            var shotSystem = _playerController.ShotSystem;
+            if (shotSystem == null) return;
+
+            var bullets = shotSystem.Bullets;
+            var options = shotSystem.OptionPositions;
+            if (bullets.Count == 0 && options.Count == 0) return;
+
+            GetGLMaterial().SetPass(0);
+            GL.PushMatrix();
+            GL.Begin(GL.LINES);
+
+            // Draw bullets as cyan crosses
+            GL.Color(new Color(0.3f, 0.9f, 1f, 0.9f));
+            float sz = 0.3f;
+            for (int i = 0; i < bullets.Count; i++)
+            {
+                if (!bullets[i].Active) continue;
+                var p = bullets[i].Position;
+                GL.Vertex3(p.x - sz, p.y, p.z); GL.Vertex3(p.x + sz, p.y, p.z);
+                GL.Vertex3(p.x, p.y - sz, p.z); GL.Vertex3(p.x, p.y + sz, p.z);
+                GL.Vertex3(p.x, p.y, p.z - sz); GL.Vertex3(p.x, p.y, p.z + sz);
+            }
+
+            // Draw option positions as white diamonds
+            GL.Color(new Color(1f, 1f, 1f, 0.8f));
+            float osz = 0.4f;
+            for (int i = 0; i < options.Count; i++)
+            {
+                var p = options[i];
+                GL.Vertex3(p.x - osz, p.y, p.z); GL.Vertex3(p.x + osz, p.y, p.z);
+                GL.Vertex3(p.x, p.y - osz, p.z); GL.Vertex3(p.x, p.y + osz, p.z);
+                GL.Vertex3(p.x, p.y, p.z - osz); GL.Vertex3(p.x, p.y, p.z + osz);
+            }
+
+            GL.End();
+            GL.PopMatrix();
+        }
+
+        private static Material _glMat;
+        private static Material GetGLMaterial()
+        {
+            if (_glMat == null)
+            {
+                var shader = Shader.Find("Hidden/Internal-Colored");
+                _glMat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                _glMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                _glMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                _glMat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                _glMat.SetInt("_ZWrite", 0);
+            }
+            return _glMat;
+        }
+
         // ─── Settings Live Apply ───
 
         private void OnSettingsChanged()
