@@ -13,7 +13,11 @@ namespace STGEngine.Runtime.Preview
         [SerializeField] private Color _color = new Color(0.3f, 0.6f, 1f, 0.3f);
 
         /// <summary>Half-size of the boundary box along each axis.</summary>
-        public Vector3 HalfExtents => _halfExtents;
+        public Vector3 HalfExtents
+        {
+            get => _halfExtents;
+            set => _halfExtents = value;
+        }
 
         /// <summary>Full size (width, height, depth).</summary>
         public Vector3 Size => _halfExtents * 2f;

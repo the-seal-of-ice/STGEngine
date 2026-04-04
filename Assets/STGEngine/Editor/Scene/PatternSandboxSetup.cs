@@ -803,11 +803,15 @@ namespace STGEngine.Editor.Scene
 
         private void EnsureBoundary()
         {
-            if (FindAnyObjectByType<SandboxBoundary>() == null)
+            var boundary = FindAnyObjectByType<SandboxBoundary>();
+            if (boundary == null)
             {
                 var go = new GameObject("SandboxBoundary");
-                go.AddComponent<SandboxBoundary>();
+                boundary = go.AddComponent<SandboxBoundary>();
             }
+            // Always sync with WorldScale so scene-saved values don't go stale
+            float h = Core.WorldScale.DefaultBoundaryHalf;
+            boundary.HalfExtents = new Vector3(h, h, h);
         }
 
         // ─── Player Mode ───
