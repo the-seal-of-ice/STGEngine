@@ -250,19 +250,18 @@ namespace STGEngine.Editor.Scene
                 UpdatePlayerMode();
 
                 // Only tick player when playback is running (pause = freeze)
+                // Exception: always tick player movement/shooting even when paused
                 bool playbackActive = false;
                 if (_editorMode == EditorMode.PatternEdit && _previewer != null)
                     playbackActive = _previewer.Playback.IsPlaying;
                 else if (_editorMode == EditorMode.TimelineEdit && _timelinePlayback != null)
                     playbackActive = _timelinePlayback.IsPlaying;
 
-                if (playbackActive)
-                {
-                    if (_playerModeIsAI && _simulatedPlayer != null)
-                        _simulatedPlayer.FixedTick(Time.deltaTime);
-                    else if (!_playerModeIsAI && _playerController != null)
-                        _playerController.FixedTick(Time.deltaTime);
-                }
+                // Always tick player (movement + shooting work even when paused)
+                if (_playerModeIsAI && _simulatedPlayer != null)
+                    _simulatedPlayer.FixedTick(Time.deltaTime);
+                else if (!_playerModeIsAI && _playerController != null)
+                    _playerController.FixedTick(Time.deltaTime);
 
                 if (!_playerModeIsAI)
                     return; // Manual mode: skip editor shortcuts
