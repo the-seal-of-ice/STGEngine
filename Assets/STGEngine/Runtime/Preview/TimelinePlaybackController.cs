@@ -357,19 +357,29 @@ namespace STGEngine.Runtime.Preview
             // Activate new events
             foreach (var evt in _segment.Events)
             {
-                if (evt is SpawnPatternEvent spawnEvt && IsEventActive(spawnEvt, CurrentTime))
+                if (evt is SpawnPatternEvent spawnEvt)
                 {
-                    if (!IsAlreadyActive(spawnEvt))
+                    bool active = IsEventActive(spawnEvt, CurrentTime);
+                    bool already = IsAlreadyActive(spawnEvt);
+                    if (active && !already)
+                    {
+                        Debug.Log($"[UpdateActive] ACTIVATE id={spawnEvt.Id} start={spawnEvt.StartTime:F2} end={spawnEvt.EndTime:F2} t={CurrentTime:F2} resolved={spawnEvt.ResolvedPattern != null}");
                         ActivateEvent(spawnEvt);
+                    }
                 }
             }
         }
 
         private void ActivateEvent(SpawnPatternEvent spawnEvt)
         {
-            if (spawnEvt.ResolvedPattern == null) return;
+            if (spawnEvt.ResolvedPattern == null)
+            {
+                Debug.LogWarning($"[ActivateEvent] SKIP null pattern id={spawnEvt.Id}");
+                return;
+            }
 
             var previewer = _pool.Acquire();
+            Debug.Log($"[ActivateEvent] id={spawnEvt.Id} pos={spawnEvt.SpawnPosition} localT={CurrentTime - spawnEvt.StartTime:F2}");
             previewer.HomingTargetProvider = HomingTargetProvider;
             previewer.Pattern = spawnEvt.ResolvedPattern;
             previewer.transform.position = spawnEvt.SpawnPosition;
