@@ -16,7 +16,7 @@ namespace STGEngine.Core.Modifiers
         public bool RequiresSimulation => true;
 
         /// <summary>Half-extents of the box boundary along each axis.</summary>
-        public Vector3 BoundaryHalfExtents { get; set; } = new Vector3(10f, 10f, 10f);
+        public Vector3 BoundaryHalfExtents { get; set; } = new Vector3(40f, 40f, 40f);
 
         /// <summary>Maximum number of bounces before bullet flies free.</summary>
         public int MaxBounces { get; set; } = 3;

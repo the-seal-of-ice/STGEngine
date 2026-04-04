@@ -671,7 +671,6 @@ namespace STGEngine.Editor.UI.Timeline
         /// </summary>
         private void LoadStageOverviewPreview()
         {
-            Debug.Log($"[StageOverview] catalog={(_catalog != null ? "OK" : "NULL")} library={(_library != null ? "OK" : "NULL")} segments={_stage.Segments.Count}");
             var tempSegment = new TimelineSegment
             {
                 Id = "_stage_overview",
@@ -742,7 +741,6 @@ namespace STGEngine.Editor.UI.Timeline
                 }
                 else if (seg.Type == SegmentType.BossFight && _catalog != null)
                 {
-                    Debug.Log($"[StageOverview] BossFight seg={seg.Id} spellCardIds={seg.SpellCardIds?.Count ?? 0}");
                     // Flatten spell card patterns into the overview
                     float scOffset = segmentOffset;
                     var localBossPath = new List<PathKeyframe>();
@@ -770,7 +768,6 @@ namespace STGEngine.Editor.UI.Timeline
                         foreach (var scp in sc.Patterns)
                         {
                             var pattern = _library?.Resolve(scp.PatternId);
-                            Debug.Log($"[StageOverview]   pattern={scp.PatternId} resolved={pattern != null}");
                             if (pattern == null) continue;
 
                             var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
@@ -848,7 +845,6 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
-            Debug.Log($"[StageOverview] total events={tempSegment.Events.Count} duration={tempSegment.Duration:F1}");
             _playback.LoadSegment(tempSegment);
 
             // Store boss ranges for dynamic show/hide in OnPlaybackTimeChanged

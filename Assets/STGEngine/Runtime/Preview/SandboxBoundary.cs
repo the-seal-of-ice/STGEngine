@@ -9,7 +9,7 @@ namespace STGEngine.Runtime.Preview
     [AddComponentMenu("STGEngine/Sandbox Boundary")]
     public class SandboxBoundary : MonoBehaviour
     {
-        [SerializeField] private Vector3 _halfExtents = new Vector3(10f, 10f, 10f);
+        [SerializeField] private Vector3 _halfExtents = new Vector3(40f, 40f, 40f);
         [SerializeField] private Color _color = new Color(0.3f, 0.6f, 1f, 0.3f);
 
         /// <summary>Half-size of the boundary box along each axis.</summary>
