@@ -16,8 +16,8 @@ namespace STGEngine.Runtime.Player
     {
         [Header("视角")]
         [SerializeField] private float _mouseSensitivity = 2f;
-        [SerializeField] private float _minPitch = -85f;
-        [SerializeField] private float _maxPitch = 85f;
+        [SerializeField] private float _minPitch = -89.9f;
+        [SerializeField] private float _maxPitch = 89.9f;
 
         [Header("摄像头与球体的位置关系")]
         [Tooltip("摄像头距离球体的固定距离")]
@@ -99,10 +99,19 @@ namespace STGEngine.Runtime.Player
 
             transform.position = camPos;
 
-            // LookAt 玩家
+            // LookAt 玩家（手动构建旋转，避免极端俯仰角万向锁）
             var lookDir = _target.position - camPos;
             if (lookDir.sqrMagnitude > 0.001f)
-                transform.rotation = Quaternion.LookRotation(lookDir);
+            {
+                lookDir.Normalize();
+                // 当 lookDir 接近垂直时，Vector3.up 不能作为辅助向量
+                // 改用 yaw 方向的 forward 作为稳定的辅助向量
+                float dot = Mathf.Abs(Vector3.Dot(lookDir, Vector3.up));
+                Vector3 upHint = dot > 0.99f
+                    ? Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward
+                    : Vector3.up;
+                transform.rotation = Quaternion.LookRotation(lookDir, upHint);
+            }
         }
 
         private void OnDisable()
