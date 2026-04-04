@@ -376,8 +376,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                         actualDuration += data.transition;
                 }
 
-                // Use actual content length for thumbnail layout (don't modify seg.Duration)
-                float thumbDur = actualDuration > 0f ? actualDuration : segDur;
+                // Use seg.Duration as the normalizing base — it has been synced to actual
+                // spell card total by LoadStageOverviewPreview, so thumbnails match block width
+                float thumbDur = segDur;
 
                 float scOffset = 0f;
                 for (int i = 0; i < seg.SpellCardIds.Count; i++)
