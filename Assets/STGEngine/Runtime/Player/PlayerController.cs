@@ -181,9 +181,9 @@ namespace STGEngine.Runtime.Player
             if (_shotSystem != null)
             {
                 _shotSystem.UpdateOptions(_state.Power, _state.Position,
-                    _playerCamera?.ViewRight ?? Vector3.right,
-                    _playerCamera?.ViewUp ?? Vector3.up,
-                    _playerCamera?.ViewForward ?? Vector3.forward,
+                    _playerCamera?.AimRight ?? Vector3.right,
+                    _playerCamera?.AimUp ?? Vector3.up,
+                    _playerCamera?.AimForward ?? Vector3.forward,
                     transform, dt);
                 _shotSystem.TryShoot(_isShooting, _state.IsSlow,
                     _playerCamera?.AimForward ?? Vector3.forward);

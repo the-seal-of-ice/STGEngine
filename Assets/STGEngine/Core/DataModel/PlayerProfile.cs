@@ -70,26 +70,26 @@ namespace STGEngine.Core.DataModel
             // 2 个浮游炮
             new List<Vector3>
             {
-                new Vector3(-0.5f, 0f, -0.3f),
-                new Vector3( 0.5f, 0f, -0.3f),
+                new Vector3(-1.5f, 0f, -0.5f),
+                new Vector3( 1.5f, 0f, -0.5f),
             },
             // 4 个浮游炮
             new List<Vector3>
             {
-                new Vector3(-0.5f, 0f, -0.3f),
-                new Vector3( 0.5f, 0f, -0.3f),
-                new Vector3(-0.9f, 0f, -0.6f),
-                new Vector3( 0.9f, 0f, -0.6f),
+                new Vector3(-1.5f, 0f, -0.5f),
+                new Vector3( 1.5f, 0f, -0.5f),
+                new Vector3(-2.5f, 0f, -1.2f),
+                new Vector3( 2.5f, 0f, -1.2f),
             },
             // 6 个浮游炮
             new List<Vector3>
             {
-                new Vector3(-0.5f, 0f, -0.3f),
-                new Vector3( 0.5f, 0f, -0.3f),
-                new Vector3(-0.9f, 0f, -0.6f),
-                new Vector3( 0.9f, 0f, -0.6f),
-                new Vector3(-1.3f, 0f, -0.9f),
-                new Vector3( 1.3f, 0f, -0.9f),
+                new Vector3(-1.5f, 0f, -0.5f),
+                new Vector3( 1.5f, 0f, -0.5f),
+                new Vector3(-2.5f, 0f, -1.2f),
+                new Vector3( 2.5f, 0f, -1.2f),
+                new Vector3(-3.5f, 0f, -2.0f),
+                new Vector3( 3.5f, 0f, -2.0f),
             },
         };
 

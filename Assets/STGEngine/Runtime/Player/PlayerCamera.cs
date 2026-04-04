@@ -39,6 +39,10 @@ namespace STGEngine.Runtime.Player
 
         /// <summary>相机实际朝向（LookAt 玩家后的 forward）。用于射击方向。</summary>
         public Vector3 AimForward => transform.forward;
+        /// <summary>相机实际右方向。用于浮游炮定位。</summary>
+        public Vector3 AimRight => transform.right;
+        /// <summary>相机实际上方向。用于浮游炮定位。</summary>
+        public Vector3 AimUp => transform.up;
 
         public float Yaw => _yaw;
         public float Pitch => _pitch;
