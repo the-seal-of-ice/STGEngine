@@ -760,9 +760,13 @@ namespace STGEngine.Editor.UI.Timeline
 
                     // Load all spell cards for this segment
                     var segCards = new List<SpellCard>();
-                    foreach (var scId in seg.SpellCardIds)
+                    for (int idx = 0; idx < seg.SpellCardIds.Count; idx++)
                     {
-                        var path = OverrideManager.ResolveSpellCardPath(_catalog, segContext, scId);
+                        var scId = seg.SpellCardIds[idx];
+                        // Use per-instance context (same as LoadBossFightPreview)
+                        // so overrides are resolved consistently
+                        var instanceCtx = OverrideManager.SpellCardInstanceContext(seg.Id, idx);
+                        var path = OverrideManager.ResolveSpellCardPath(_catalog, instanceCtx, scId);
                         if (!System.IO.File.Exists(path)) { segCards.Add(null); continue; }
                         try
                         {
@@ -776,10 +780,20 @@ namespace STGEngine.Editor.UI.Timeline
                         var sc = segCards[ci];
                         if (sc == null) continue;
                         var scId = seg.SpellCardIds[ci];
+                        // Build pattern override context (same as LoadBossFightPreview)
+                        var patCtx = $"{OverrideManager.SpellCardInstanceContext(seg.Id, ci)}/{scId}";
 
                         foreach (var scp in sc.Patterns)
                         {
-                            var pattern = _library?.Resolve(scp.PatternId);
+                            // Check pattern override first, fall back to library
+                            BulletPattern pattern = null;
+                            if (OverrideManager.HasOverride(patCtx, scp.PatternId))
+                            {
+                                try { pattern = YamlSerializer.DeserializeFromFile(
+                                    OverrideManager.GetOverridePath(patCtx, scp.PatternId)); }
+                                catch { /* fall through */ }
+                            }
+                            pattern ??= _library?.Resolve(scp.PatternId);
                             if (pattern == null) continue;
 
                             var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
@@ -1964,8 +1978,8 @@ namespace STGEngine.Editor.UI.Timeline
             for (int i = 0; i < seg.SpellCardIds.Count; i++)
             {
                 var scId = seg.SpellCardIds[i];
-                var ctx = OverrideManager.SegmentContext(seg.Id);
-                var path = OverrideManager.ResolveSpellCardPath(_catalog, ctx, scId);
+                var instanceCtx = OverrideManager.SpellCardInstanceContext(seg.Id, i);
+                var path = OverrideManager.ResolveSpellCardPath(_catalog, instanceCtx, scId);
                 if (!System.IO.File.Exists(path)) continue;
                 try
                 {
