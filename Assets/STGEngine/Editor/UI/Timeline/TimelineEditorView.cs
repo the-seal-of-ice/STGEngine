@@ -4706,11 +4706,8 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             // Generic double-click: navigate into child layer
-            // For SpellCard inside BossFight, keep the boss phase duration as parent limit
-            float navParentDuration = (_currentLayer is BossFightLayer)
-                ? _parentDurationForCurrentLayer
-                : block.Duration;
-            NavigateTo(childLayer, navParentDuration);
+            // Parent duration = the block's own duration (e.g. SpellCard.TimeLimit, Pattern.Duration)
+            NavigateTo(childLayer, block.Duration);
 
             // SpellCardDetailLayer: track editing context for save/override logic
             if (childLayer is SpellCardDetailLayer scLayer)
