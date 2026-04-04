@@ -2155,8 +2155,13 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 _editingSpellCard = null;
                 _editingSpellCardId = null;
-                _editingBossFightSegment = null;
-                _editingSpellCardInstanceContext = null;
+                // Only clear BossFight context when navigating to BossFight level or above
+                // (depth 0 = Stage, depth 1 = BossFight/MidStage)
+                if (depth <= 1)
+                {
+                    _editingBossFightSegment = null;
+                    _editingSpellCardInstanceContext = null;
+                }
             }
 
             while (_navigationStack.Count > depth && _navigationStack.Count > 0)
@@ -2805,10 +2810,7 @@ namespace STGEngine.Editor.UI.Timeline
                         }
                         else
                         {
-                            if (_editingSpellCard != null)
-                                ExitSpellCardEditing();
-                            else if (_navigationStack.Count > depth)
-                                NavigateToDepth(depth);
+                            NavigateToDepth(depth);
                         }
                     });
                     label.style.cursor = new UnityEngine.UIElements.Cursor(); // indicate clickable
