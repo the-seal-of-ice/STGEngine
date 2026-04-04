@@ -11,12 +11,21 @@ namespace STGEngine.Runtime.Player
         {
             _go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             _go.transform.SetParent(parent);
-            _go.transform.localScale = Vector3.one * 0.5f;
+            _go.transform.localScale = Vector3.one * 0.25f;
             var col = _go.GetComponent<Collider>();
             if (col != null) Object.DestroyImmediate(col);
             var rend = _go.GetComponent<Renderer>();
             if (rend != null)
-                rend.material.color = new Color(0.8f, 0.9f, 1f, 0.7f);
+            {
+                var mat = rend.material;
+                mat.color = new Color(0.7f, 0.85f, 1f, 0.3f);
+                mat.SetFloat("_Surface", 1);
+                mat.SetOverrideTag("RenderType", "Transparent");
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                mat.SetInt("_ZWrite", 0);
+                mat.renderQueue = 3000;
+            }
             return _go;
         }
 

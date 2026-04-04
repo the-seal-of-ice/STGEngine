@@ -374,9 +374,9 @@ namespace STGEngine.Editor.Scene
             GL.PushMatrix();
             GL.Begin(GL.LINES);
 
-            // Draw bullets as cyan crosses
-            GL.Color(new Color(0.3f, 0.9f, 1f, 0.9f));
-            float sz = 0.3f;
+            // Draw bullets as small cyan crosses
+            GL.Color(new Color(0.3f, 0.9f, 1f, 0.4f));
+            float sz = 0.15f;
             for (int i = 0; i < bullets.Count; i++)
             {
                 if (!bullets[i].Active) continue;
@@ -386,9 +386,9 @@ namespace STGEngine.Editor.Scene
                 GL.Vertex3(p.x, p.y, p.z - sz); GL.Vertex3(p.x, p.y, p.z + sz);
             }
 
-            // Draw option positions as white diamonds
-            GL.Color(new Color(1f, 1f, 1f, 0.8f));
-            float osz = 0.4f;
+            // Draw option positions as faint white crosses
+            GL.Color(new Color(1f, 1f, 1f, 0.25f));
+            float osz = 0.2f;
             for (int i = 0; i < options.Count; i++)
             {
                 var p = options[i];
