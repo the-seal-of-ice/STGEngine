@@ -296,7 +296,11 @@ namespace STGEngine.Runtime.Preview
         private void Render()
         {
             if (_currStates == null || _bulletMesh == null || _bulletMaterial == null)
+            {
+                if (_pattern != null && Time.frameCount % 60 == 0)
+                    Debug.Log($"[Previewer:{name}] Render SKIP: states={_currStates?.Count} mesh={_bulletMesh != null} mat={_bulletMaterial != null} pattern={_pattern?.Name}");
                 return;
+            }
 
             float alpha = Playback.Alpha;
             bool canInterpolate = _prevStates != null
