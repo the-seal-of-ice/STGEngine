@@ -3365,13 +3365,28 @@ namespace STGEngine.Editor.UI.Timeline
 
             if (layer is SpellCardDetailLayer scDetailLayer)
             {
-                BossFightLayer parentBf = null;
-                foreach (var entry in _navigationStack)
+                // Show a simple summary — we're already inside the SpellCard,
+                // so don't show the full BossFight-level property panel with Edit button
+                var container = new VisualElement();
+                container.style.paddingTop = 4;
+                container.style.paddingLeft = 8;
+                container.style.paddingRight = 8;
+
+                var sc = scDetailLayer.SpellCard;
+                if (sc != null)
                 {
-                    if (entry.Layer is BossFightLayer bf) { parentBf = bf; break; }
+                    var info = new Label(
+                        $"TimeLimit: {sc.TimeLimit:F1}s\n" +
+                        $"Patterns: {sc.Patterns.Count}\n" +
+                        $"BossPath: {sc.BossPath?.Count ?? 0} keyframes");
+                    info.style.color = new Color(0.7f, 0.7f, 0.7f);
+                    info.style.whiteSpace = WhiteSpace.Normal;
+                    container.Add(info);
                 }
-                BuildSpellCardBlockProperties(scDetailLayer.SpellCard, scDetailLayer.SpellCardId, parentBf,
-                    _editingSpellCardInstanceContext);
+
+                container.Add(CreateSaveContextBar("SpellCard", scDetailLayer.ContextId));
+                _propertyContent.Add(container);
+                ApplyLightTextTheme(container);
                 return;
             }
 
