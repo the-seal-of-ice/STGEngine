@@ -685,6 +685,16 @@ namespace STGEngine.Editor.UI.Timeline
             foreach (var seg in _stage.Segments)
             {
                 float scOffset = segmentOffset; // track actual end for BossFight
+
+                // For BossFight segments, sync Duration to actual spell card total
+                // so block width, time offsets, and boss ranges all stay consistent
+                if (seg.Type == SegmentType.BossFight && _catalog != null)
+                {
+                    float actualDur = ComputeBossFightDuration(seg);
+                    if (actualDur > 0f)
+                        seg.Duration = actualDur;
+                }
+
                 if (seg.Type == SegmentType.MidStage)
                 {
                     float segEnd = segmentOffset + seg.Duration;
@@ -832,29 +842,18 @@ namespace STGEngine.Editor.UI.Timeline
                     }
 
                     // Record this BossFight segment's time range
-                    float actualBossDur = scOffset - segmentOffset;
                     if (localBossPath.Count > 0)
                     {
                         bossRanges.Add(new BossSegmentRange
                         {
                             StartTime = segmentOffset,
-                            EndTime = segmentOffset + Mathf.Max(actualBossDur, seg.Duration),
+                            EndTime = segmentOffset + seg.Duration,
                             BossPath = localBossPath
                         });
                     }
                 }
 
-                // For BossFight, use the larger of declared duration and actual spell card total
-                // to avoid truncating late spell cards in the overview
-                if (seg.Type == SegmentType.BossFight)
-                {
-                    float actualBossDur = scOffset - segmentOffset;
-                    segmentOffset += Mathf.Max(actualBossDur, seg.Duration);
-                }
-                else
-                {
-                    segmentOffset += seg.Duration;
-                }
+                segmentOffset += seg.Duration;
             }
 
             tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
@@ -1946,6 +1945,31 @@ namespace STGEngine.Editor.UI.Timeline
         /// <summary>
         /// Linear interpolation along BossPath keyframes (same logic as BossPlaceholder).
         /// </summary>
+        /// <summary>
+        /// Compute actual BossFight duration from spell card data (TimeLimit + TransitionDuration).
+        /// Returns 0 if no spell cards could be loaded.
+        /// </summary>
+        private float ComputeBossFightDuration(TimelineSegment seg)
+        {
+            float total = 0f;
+            for (int i = 0; i < seg.SpellCardIds.Count; i++)
+            {
+                var scId = seg.SpellCardIds[i];
+                var ctx = OverrideManager.SegmentContext(seg.Id);
+                var path = OverrideManager.ResolveSpellCardPath(_catalog, ctx, scId);
+                if (!System.IO.File.Exists(path)) continue;
+                try
+                {
+                    var sc = YamlSerializer.DeserializeSpellCard(System.IO.File.ReadAllText(path));
+                    total += sc.TimeLimit;
+                    if (i < seg.SpellCardIds.Count - 1)
+                        total += sc.TransitionDuration;
+                }
+                catch { /* skip */ }
+            }
+            return total;
+        }
+
         internal static Vector3 EvaluateBossPath(List<PathKeyframe> path, float t)
         {
             if (path == null || path.Count == 0) return new Vector3(0, 6, 0);
