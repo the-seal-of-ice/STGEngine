@@ -204,6 +204,17 @@ namespace STGEngine.Runtime.Player
                 _bullets.RemoveAll(b => !b.Active);
         }
 
+        /// <summary>Draw player bullets as Gizmos (cyan spheres).</summary>
+        public void DrawGizmos()
+        {
+            Gizmos.color = new Color(0.3f, 0.9f, 1f, 0.8f);
+            for (int i = 0; i < _bullets.Count; i++)
+            {
+                if (!_bullets[i].Active) continue;
+                Gizmos.DrawSphere(_bullets[i].Position, _bullets[i].Radius);
+            }
+        }
+
         /// <summary>Destroy all option visuals and clear bullets.</summary>
         public void Dispose()
         {

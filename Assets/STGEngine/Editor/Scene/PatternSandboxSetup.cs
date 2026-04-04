@@ -352,6 +352,10 @@ namespace STGEngine.Editor.Scene
         private void OnDrawGizmos()
         {
             _actionPreview?.DrawClearGizmos();
+
+            // Player bullets
+            if (_playerModeActive && _playerController != null)
+                _playerController.ShotSystem?.DrawGizmos();
         }
 
         // ─── Settings Live Apply ───
