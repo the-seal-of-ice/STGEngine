@@ -1059,7 +1059,7 @@ namespace STGEngine.Editor.Scene
             var targets = new List<HitTarget>();
 
             // Boss
-            if (_bossPlaceholder != null && _bossPlaceholder.gameObject.activeSelf)
+            if (_bossPlaceholder != null && _bossPlaceholder.IsVisible)
             {
                 targets.Add(new HitTarget
                 {
