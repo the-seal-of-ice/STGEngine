@@ -755,6 +755,7 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     // Flatten spell card patterns into the overview
                     scOffset = segmentOffset;
+                    Debug.Log($"[Overview] BossFight start: segmentOffset={segmentOffset:F1} seg.Duration={seg.Duration:F1}");
                     var localBossPath = new List<PathKeyframe>();
                     var segContext = OverrideManager.SegmentContext(seg.Id);
 
@@ -782,6 +783,7 @@ namespace STGEngine.Editor.UI.Timeline
                             var pattern = _library?.Resolve(scp.PatternId);
                             if (pattern == null) continue;
 
+                            Debug.Log($"[Overview] SC#{ci} pat={scp.PatternId.Substring(0,6)} scOffset={scOffset:F1} delay={scp.Delay:F1} → StartTime={scOffset + scp.Delay:F1}");
                             var bossPos = EvaluateBossPath(sc.BossPath, scp.Delay);
                             tempSegment.Events.Add(new SpawnPatternEvent
                             {
@@ -806,6 +808,7 @@ namespace STGEngine.Editor.UI.Timeline
                         }
 
                         scOffset += sc.TimeLimit;
+                        Debug.Log($"[Overview] SC#{ci} id={scId} TimeLimit={sc.TimeLimit:F1} TransDur={sc.TransitionDuration:F1} → scOffset={scOffset:F1}");
 
                         // Insert transition path to next SC
                         if (ci < segCards.Count - 1 && sc.TransitionDuration > 0f)
