@@ -204,14 +204,22 @@ namespace STGEngine.Runtime.Player
                 _bullets.RemoveAll(b => !b.Active);
         }
 
-        /// <summary>Draw player bullets as Gizmos (cyan spheres).</summary>
+        /// <summary>Draw player bullets and option positions as Gizmos.</summary>
         public void DrawGizmos()
         {
+            // Bullets (cyan)
             Gizmos.color = new Color(0.3f, 0.9f, 1f, 0.8f);
             for (int i = 0; i < _bullets.Count; i++)
             {
                 if (!_bullets[i].Active) continue;
-                Gizmos.DrawSphere(_bullets[i].Position, _bullets[i].Radius);
+                Gizmos.DrawSphere(_bullets[i].Position, Mathf.Max(_bullets[i].Radius, 0.2f));
+            }
+
+            // Option positions (white wireframe)
+            Gizmos.color = new Color(0.8f, 0.9f, 1f, 0.5f);
+            for (int i = 0; i < _optionWorldPositions.Count; i++)
+            {
+                Gizmos.DrawWireSphere(_optionWorldPositions[i], 0.3f);
             }
         }
 

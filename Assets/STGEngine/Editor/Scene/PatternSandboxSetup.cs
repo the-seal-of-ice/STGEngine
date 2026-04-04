@@ -875,7 +875,7 @@ namespace STGEngine.Editor.Scene
             // Wire homing target: bullets with PlayerHomingModifier will track the active player
             if (_activePlayer != null)
             {
-                homingTarget = () => _activePlayer.Position;
+                homingTarget = () => _activePlayer?.Position ?? Vector3.zero;
                 if (_editorMode == EditorMode.PatternEdit && _previewer != null)
                 {
                     _previewer.HomingTargetProvider = homingTarget;
