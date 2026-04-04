@@ -857,6 +857,15 @@ namespace STGEngine.Editor.UI.Timeline
             }
 
             tempSegment.Duration = segmentOffset > 0f ? segmentOffset : 30f;
+
+            // If any BossFight duration was synced, rebuild StageLayer blocks
+            // so thumbnails and block widths reflect the updated durations
+            if (_stageLayer != null && _currentLayer == _stageLayer)
+            {
+                _stageLayer.InvalidateBlocks();
+                _trackArea.SetLayer(_stageLayer);
+            }
+
             _playback.LoadSegment(tempSegment);
 
             // Store boss ranges for dynamic show/hide in OnPlaybackTimeChanged
