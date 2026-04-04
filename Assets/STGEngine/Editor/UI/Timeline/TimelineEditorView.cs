@@ -198,32 +198,6 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbStage = new Label("Stage");
             _breadcrumbStage.style.color = new Color(0.85f, 0.85f, 0.85f);
             _breadcrumbStage.style.marginRight = 4;
-            // Click Stage breadcrumb to return to Stage layer
-            _breadcrumbStage.RegisterCallback<ClickEvent>(_ =>
-            {
-                if (_navigationStack.Count > 0)
-                {
-                    // Exit spell card editing if active
-                    if (_editingSpellCard != null)
-                    {
-                        _editingSpellCard = null;
-                        _editingSpellCardId = null;
-                        _editingBossFightSegment = null;
-                        _editingSpellCardInstanceContext = null;
-                    }
-                    NavigateToDepth(0);
-                    // Restore StageLayer in TrackArea
-                    if (_stageLayer != null)
-                    {
-                        _currentLayer = _stageLayer;
-                        _trackArea.SetLayer(_stageLayer);
-                        // LoadStageOverviewPreview handles OnSpellCardEditingChanged internally
-                        LoadStageOverviewPreview();
-                        RebuildBreadcrumb();
-                        NotifyWavePlaceholders();
-                    }
-                }
-            });
             _breadcrumbBar.Add(_breadcrumbStage);
 
             var sep = new Label(">");
@@ -265,22 +239,6 @@ namespace STGEngine.Editor.UI.Timeline
             _breadcrumbDetail.style.unityFontStyleAndWeight = FontStyle.Bold;
             _breadcrumbDetail.style.display = DisplayStyle.None;
             _breadcrumbBar.Add(_breadcrumbDetail);
-
-            // Make segment label clickable to navigate back
-            _breadcrumbSegment.RegisterCallback<ClickEvent>(_ =>
-            {
-                if (_editingSpellCard != null)
-                    ExitSpellCardEditing();
-                else if (_navigationStack.Count > 1)
-                    NavigateToDepth(1);
-            });
-
-            // Make SpellCard label clickable to navigate back to SpellCard layer
-            _breadcrumbSpellCard.RegisterCallback<ClickEvent>(_ =>
-            {
-                if (_navigationStack.Count > 2)
-                    NavigateToDepth(2);
-            });
 
             // Spacer to push seed controls to the right
             var breadcrumbSpacer = new VisualElement();
@@ -3249,6 +3207,7 @@ namespace STGEngine.Editor.UI.Timeline
                 else
                 {
                     _propertyContent.Clear();
+                    _propertyHeaderLabel.text = _currentLayer.DisplayName;
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
                     ApplyLightTextTheme(_propertyContent);
                 }
@@ -3277,6 +3236,7 @@ namespace STGEngine.Editor.UI.Timeline
                 else
                 {
                     _propertyContent.Clear();
+                    _propertyHeaderLabel.text = _currentLayer.DisplayName;
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
                     ApplyLightTextTheme(_propertyContent);
                 }
@@ -3291,6 +3251,7 @@ namespace STGEngine.Editor.UI.Timeline
                 else
                 {
                     _propertyContent.Clear();
+                    _propertyHeaderLabel.text = scLayer.DisplayName;
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
                     ApplyLightTextTheme(_propertyContent);
                 }
@@ -3305,6 +3266,7 @@ namespace STGEngine.Editor.UI.Timeline
                 else
                 {
                     _propertyContent.Clear();
+                    _propertyHeaderLabel.text = _currentLayer.DisplayName;
                     _currentLayer.BuildPropertiesPanel(_propertyContent, null);
                     ApplyLightTextTheme(_propertyContent);
                 }
@@ -3768,16 +3730,22 @@ namespace STGEngine.Editor.UI.Timeline
             idLabel.style.marginBottom = 4;
             container.Add(idLabel);
 
+            // Helper: execute command + persist SpellCard to disk
+            void ExecAndSave(ICommand cmd)
+            {
+                _commandStack.Execute(cmd);
+                SaveSpellCardInContext(scLayer.SpellCard, scLayer.SpellCardId);
+            }
+
             // Delay
             var delayField = new FloatField("Delay") { value = scp.Delay };
             delayField.isDelayed = true;
             delayField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<float>(
+                ExecAndSave(new PropertyChangeCommand<float>(
                     "Change Pattern Delay",
                     () => scp.Delay, v => scp.Delay = v,
-                    Mathf.Max(0f, e.newValue));
-                _commandStack.Execute(cmd);
+                    Mathf.Max(0f, e.newValue)));
             });
             container.Add(delayField);
 
@@ -3786,11 +3754,10 @@ namespace STGEngine.Editor.UI.Timeline
             durField.isDelayed = true;
             durField.RegisterValueChangedCallback(e =>
             {
-                var cmd = new PropertyChangeCommand<float>(
+                ExecAndSave(new PropertyChangeCommand<float>(
                     "Change Pattern Duration",
                     () => scp.Duration, v => scp.Duration = v,
-                    Mathf.Max(0.1f, e.newValue));
-                _commandStack.Execute(cmd);
+                    Mathf.Max(0.1f, e.newValue)));
             });
             container.Add(durField);
 
@@ -3800,10 +3767,9 @@ namespace STGEngine.Editor.UI.Timeline
             ox.RegisterValueChangedCallback(e =>
             {
                 var newOffset = new Vector3(e.newValue, scp.Offset.y, scp.Offset.z);
-                var cmd = new PropertyChangeCommand<Vector3>(
+                ExecAndSave(new PropertyChangeCommand<Vector3>(
                     "Change Pattern Offset",
-                    () => scp.Offset, v => scp.Offset = v, newOffset);
-                _commandStack.Execute(cmd);
+                    () => scp.Offset, v => scp.Offset = v, newOffset));
             });
             container.Add(ox);
 
@@ -3812,10 +3778,9 @@ namespace STGEngine.Editor.UI.Timeline
             oy.RegisterValueChangedCallback(e =>
             {
                 var newOffset = new Vector3(scp.Offset.x, e.newValue, scp.Offset.z);
-                var cmd = new PropertyChangeCommand<Vector3>(
+                ExecAndSave(new PropertyChangeCommand<Vector3>(
                     "Change Pattern Offset",
-                    () => scp.Offset, v => scp.Offset = v, newOffset);
-                _commandStack.Execute(cmd);
+                    () => scp.Offset, v => scp.Offset = v, newOffset));
             });
             container.Add(oy);
 
@@ -3824,10 +3789,9 @@ namespace STGEngine.Editor.UI.Timeline
             oz.RegisterValueChangedCallback(e =>
             {
                 var newOffset = new Vector3(scp.Offset.x, scp.Offset.y, e.newValue);
-                var cmd = new PropertyChangeCommand<Vector3>(
+                ExecAndSave(new PropertyChangeCommand<Vector3>(
                     "Change Pattern Offset",
-                    () => scp.Offset, v => scp.Offset = v, newOffset);
-                _commandStack.Execute(cmd);
+                    () => scp.Offset, v => scp.Offset = v, newOffset));
             });
             container.Add(oz);
 
@@ -3951,6 +3915,9 @@ namespace STGEngine.Editor.UI.Timeline
                     tempLayer.OnEnemyTypeChanged = () =>
                     {
                         SaveEnemyType(enemyType, ei.EnemyTypeId, waveCtx);
+                        // Refresh WaveLayer blocks so display names stay in sync
+                        waveLayer.InvalidateBlocks();
+                        _trackArea.RebuildBlocks();
                     };
                     tempLayer.BuildEnemyTypePropertiesPanel(container, _commandStack);
                 }

@@ -141,11 +141,26 @@ namespace STGEngine.Editor.UI.Timeline.Layers
 
         public void BuildPropertiesPanel(VisualElement container, ITimelineBlock block)
         {
-            // Properties panel building will be migrated from TimelineEditorView in step 1d.
-            // For now, show a minimal label.
             if (block == null)
             {
-                container.Add(new Label("Select an event to view properties."));
+                var wrapper = new VisualElement();
+                wrapper.style.paddingTop = 4;
+                wrapper.style.paddingLeft = 8;
+                wrapper.style.paddingRight = 8;
+
+                var title = new Label($"Segment: {_segment.Name}");
+                title.style.color = new Color(0.85f, 0.85f, 0.85f);
+                title.style.unityFontStyleAndWeight = FontStyle.Bold;
+                title.style.marginBottom = 6;
+                wrapper.Add(title);
+
+                var info = new Label(
+                    $"Duration: {_segment.Duration:F1}s\n" +
+                    $"Events: {_segment.Events.Count}");
+                info.style.color = new Color(0.6f, 0.6f, 0.6f);
+                wrapper.Add(info);
+
+                container.Add(wrapper);
                 return;
             }
 
