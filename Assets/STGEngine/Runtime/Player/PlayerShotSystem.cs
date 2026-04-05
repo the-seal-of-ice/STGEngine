@@ -185,6 +185,7 @@ namespace STGEngine.Runtime.Player
                 {
                     for (int t = 0; t < targets.Count; t++)
                     {
+                        if (targets[t].Health <= 0f) continue;
                         float dist = Vector3.Distance(b.Position, targets[t].Position);
                         if (dist <= b.Radius + targets[t].Radius)
                         {
@@ -254,6 +255,7 @@ namespace STGEngine.Runtime.Player
             Vector3? nearest = null;
             for (int i = 0; i < targets.Count; i++)
             {
+                if (targets[i].Health <= 0f) continue;
                 float d = Vector3.Distance(pos, targets[i].Position);
                 if (d < minDist)
                 {

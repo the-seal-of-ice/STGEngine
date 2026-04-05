@@ -85,6 +85,8 @@ namespace STGEngine.Editor.Scene
         // Boss placeholder
         private BossPlaceholder _bossPlaceholder;
         private SpellCard _activeBossSpellCard;
+        private List<SpellCardPhase> _bossPhases;
+        private int _currentBossPhaseIndex = -1;
 
         // Enemy placeholders
         private readonly List<EnemyPlaceholder> _enemyPlaceholders = new();
@@ -157,6 +159,7 @@ namespace STGEngine.Editor.Scene
                 _previewerPool = new PreviewerPool(transform, _bulletMesh, _bulletMaterial, 6);
                 _timelinePlayback = new TimelinePlaybackController();
                 _timelinePlayback.Initialize(_previewerPool, _patternLibrary);
+                _timelinePlayback.OnLooped += OnPlaybackLooped;
 
                 // ActionEvent preview controller (title overlay, screen shake, clear gizmos)
                 _actionPreview = new ActionEventPreviewController(
@@ -188,6 +191,7 @@ namespace STGEngine.Editor.Scene
                 // Boss placeholder (hidden until spell card editing)
                 var bossGo = new GameObject("BossPlaceholder");
                 _bossPlaceholder = bossGo.AddComponent<BossPlaceholder>();
+                _bossPlaceholder.OnHealthDepleted += OnBossHealthDepleted;
 
                 // Apply initial settings
                 ApplyTickRate(EngineSettingsManager.Gameplay.SimulationTickRate);
@@ -233,15 +237,65 @@ namespace STGEngine.Editor.Scene
             if (_bossPlaceholder != null && _bossPlaceholder.IsVisible && _activeBossSpellCard != null
                 && _timelinePlayback != null)
             {
-                _bossPlaceholder.SetTime(_timelinePlayback.CurrentTime);
+                float bossTime = _timelinePlayback.CurrentTime;
+
+                // Tick transition tween (overrides SetTime while active)
+                // Playback is paused during spell break — tween runs on real time
+                if (_bossPlaceholder.IsTransitioning)
+                {
+                    bool stillGoing = _bossPlaceholder.TickTransition(Time.deltaTime);
+                    if (!stillGoing)
+                    {
+                        // Tween finished — Seek to next phase and resume playback.
+                        // Boss is already at the exact position EvaluatePathAt(nextStart)
+                        // returned, so no jump when SetTime takes over next frame.
+                        int nextIdx = _currentBossPhaseIndex + 1;
+                        if (_bossPhases != null && nextIdx < _bossPhases.Count)
+                        {
+                            float nextStart = _bossPhases[nextIdx].StartTime;
+                            _timelinePlayback.Seek(nextStart);
+                            bossTime = nextStart;
+                        }
+                        if (_wasPlayingBeforeSpellBreak)
+                            _timelinePlayback.Play();
+                    }
+                }
+                else
+                {
+                    _bossPlaceholder.SetTime(bossTime);
+                }
+
+                // Reset Boss HP when entering a new spell card phase
+                if (_bossPhases != null && !_bossPlaceholder.IsTransitioning)
+                {
+                    int newPhase = -1;
+                    for (int i = 0; i < _bossPhases.Count; i++)
+                    {
+                        if (bossTime >= _bossPhases[i].StartTime && bossTime < _bossPhases[i].TransitionEndTime)
+                        {
+                            newPhase = i;
+                            break;
+                        }
+                    }
+                    if (newPhase != _currentBossPhaseIndex)
+                    {
+                        _currentBossPhaseIndex = newPhase;
+                        if (newPhase >= 0)
+                            _bossPlaceholder.SetHealth(_bossPhases[newPhase].Health);
+                    }
+                }
             }
 
             // Drive Enemy placeholders along paths — synced to playback time
             if (_activeWaves != null && _timelinePlayback != null)
             {
                 float t = _timelinePlayback.CurrentTime;
-                foreach (var ep in _enemyPlaceholders)
+                for (int i = _enemyPlaceholders.Count - 1; i >= 0; i--)
+                {
+                    var ep = _enemyPlaceholders[i];
+                    if (ep == null) { _enemyPlaceholders.RemoveAt(i); continue; }
                     ep.SetTime(t);
+                }
             }
 
             // ── Player mode update (takes priority over all editor shortcuts) ──
@@ -487,6 +541,7 @@ namespace STGEngine.Editor.Scene
             _timelineView.SetAudioService(_audioService);
             _timelineView.OnSpellCardEditingChanged += OnSpellCardEditingChanged;
             _timelineView.OnWaveEditingChanged += OnWaveEditingChanged;
+            _timelineView.OnBossPhaseListChanged += OnBossPhaseListChanged;
             _timelineView.OnLayerChanged += () => _assetLibrary?.RefreshButtonStates();
             _timelineView.OnPlayerModeRequested += () => TogglePlayerMode(false);
             _timelineView.OnPlayerAIModeRequested += () => TogglePlayerMode(true);
@@ -608,6 +663,7 @@ namespace STGEngine.Editor.Scene
             // Initial placeholder notification (events are now subscribed, but SetStage
             // already ran during construction before subscription — trigger once now)
             _timelineView.NotifyWavePlaceholders();
+            _timelineView.NotifyBossPhases();
 
             // ── Pause Menu + Settings (must be last — renders on top of everything) ──
             _settingsPanel = new SettingsPanel();
@@ -1062,15 +1118,37 @@ namespace STGEngine.Editor.Scene
         {
             var targets = new List<HitTarget>();
 
-            // Boss
+            // Boss (always a valid target while visible — not destroyed on HP depletion)
             if (_bossPlaceholder != null && _bossPlaceholder.IsVisible)
             {
+                var boss = _bossPlaceholder;
                 targets.Add(new HitTarget
                 {
-                    Position = _bossPlaceholder.transform.position,
-                    Radius = Core.WorldScale.BossVisualScale * 0.5f,
-                    Health = 1000f,
-                    ApplyDamage = dmg => { /* Future: Boss HP tracking */ }
+                    Position = boss.transform.position,
+                    Radius = boss.CollisionRadius,
+                    Health = Mathf.Max(boss.Health, 1f), // Always positive so bullets still track/hit
+                    ApplyDamage = dmg => boss.ApplyDamage(dmg)
+                });
+            }
+
+            // Enemy placeholders (visible = spawned and alive)
+            // Iterate a copy — ApplyDamage may Destroy entries mid-frame
+            for (int i = _enemyPlaceholders.Count - 1; i >= 0; i--)
+            {
+                var ep = _enemyPlaceholders[i];
+                if (ep == null)
+                {
+                    _enemyPlaceholders.RemoveAt(i);
+                    continue;
+                }
+                if (!ep.IsVisible) continue;
+
+                targets.Add(new HitTarget
+                {
+                    Position = ep.transform.position,
+                    Radius = ep.CollisionRadius,
+                    Health = ep.Health,
+                    ApplyDamage = dmg => ep.ApplyDamage(dmg)
                 });
             }
 
@@ -1149,14 +1227,27 @@ namespace STGEngine.Editor.Scene
                 }
                 else
                 {
-                    _playerHudLabel.text =
-                        $"{modeTag}  ★{s.Lives}  ✦{s.Bombs}  P {s.Power:F2}/{s.MaxPower:F2}\n" +
+                    var hud = $"{modeTag}  ★{s.Lives}  ✦{s.Bombs}  P {s.Power:F2}/{s.MaxPower:F2}\n" +
                         $"Score: {s.Score:N0}  Graze: {s.GrazeTotal}" +
                         (s.LifeFragments > 0 ? $"  ◆×{s.LifeFragments}" : "") +
                         (s.BombFragments > 0 ? $"  ◇×{s.BombFragments}" : "") +
                         (s.IsSlow ? "  [SLOW]" : "") +
                         (s.IsInvincible ? "  [INV]" : "") +
                         (s.IsBombing ? "  [BOMB]" : "");
+
+                    // Boss HP
+                    if (_bossPlaceholder != null && _bossPlaceholder.IsVisible && _bossPlaceholder.MaxHealth < float.MaxValue)
+                    {
+                        float hp = Mathf.Max(0f, _bossPlaceholder.Health);
+                        float max = _bossPlaceholder.MaxHealth;
+                        int pct = max > 0f ? Mathf.CeilToInt(hp / max * 100f) : 0;
+                        string phaseInfo = _bossPhases != null && _currentBossPhaseIndex >= 0
+                            ? $"  [{_currentBossPhaseIndex + 1}/{_bossPhases.Count}]"
+                            : "";
+                        hud += $"\n<color=#ff66cc>BOSS  {hp:F0}/{max:F0}  ({pct}%){phaseInfo}</color>";
+                    }
+
+                    _playerHudLabel.text = hud;
                 }
             }
         }
@@ -1230,14 +1321,75 @@ namespace STGEngine.Editor.Scene
             {
                 _activeBossSpellCard = sc;
                 _bossPlaceholder.SetPath(sc.BossPath);
-                _bossPlaceholder.SetTime(0f);
+                // Don't reset health during transition — phase detection handles it
+                if (!_bossPlaceholder.IsTransitioning)
+                    _bossPlaceholder.SetHealth(sc.Health);
+                // Don't call SetTime here — Update's Boss block handles position each frame.
+                // Calling SetTime(0) would snap Boss to path start, causing a visible jump.
                 _bossPlaceholder.Show();
             }
             else
             {
                 _activeBossSpellCard = null;
                 _bossPlaceholder.Hide();
+                // Clear phases when Boss is hidden
+                _bossPhases = null;
+                _currentBossPhaseIndex = -1;
             }
+        }
+
+        private void OnBossPhaseListChanged(List<SpellCardPhase> phases)
+        {
+            _bossPhases = phases;
+            _currentBossPhaseIndex = -1;
+        }
+
+        private void OnPlaybackLooped()
+        {
+            // Reset Boss phase tracking so HP gets re-applied on first phase entry
+            _currentBossPhaseIndex = -1;
+            if (_bossPlaceholder != null)
+                _bossPlaceholder.CancelTransition();
+
+            // Rebuild enemy placeholders (destroyed ones need to come back)
+            _timelineView?.NotifyWavePlaceholders();
+        }
+
+        private bool _wasPlayingBeforeSpellBreak;
+
+        private void OnBossHealthDepleted(BossPlaceholder boss)
+        {
+            if (_bossPhases == null || _currentBossPhaseIndex < 0 || _timelinePlayback == null) return;
+
+            var phase = _bossPhases[_currentBossPhaseIndex];
+            bool isLastPhase = _currentBossPhaseIndex >= _bossPhases.Count - 1;
+
+            // 1. Clear all bullets on screen
+            ClearAllBullets();
+
+            // 2. Pause playback — no Seek yet, avoid jarring timeline jump
+            _wasPlayingBeforeSpellBreak = _timelinePlayback.IsPlaying;
+            _timelinePlayback.Pause();
+
+            if (isLastPhase)
+            {
+                // Last spell card — skip to end, no transition
+                _timelinePlayback.Seek(phase.EndTime);
+                if (_wasPlayingBeforeSpellBreak) _timelinePlayback.Play();
+                return;
+            }
+
+            // 3. Start Boss tween from current position to next SC start
+            //    Use EvaluatePathAt to get the exact position the path will produce
+            //    at the next phase's StartTime — avoids mismatch with combinedBossPath.
+            int nextIdx = _currentBossPhaseIndex + 1;
+            float nextStart = _bossPhases[nextIdx].StartTime;
+            Vector3 targetPos = boss.EvaluatePathAt(nextStart);
+            float transDur = phase.TransitionDuration;
+            if (transDur <= 0f) transDur = 1f;
+
+            boss.StartTransition(targetPos, transDur);
+            // Playback stays paused — Seek happens when tween finishes (in Update)
         }
 
         private void OnWaveEditingChanged(List<WavePlaceholderData> waves)
@@ -1261,10 +1413,11 @@ namespace STGEngine.Editor.Scene
                     var go = new GameObject($"EnemyPlaceholder_{enemy.EnemyTypeId}");
                     var ep = go.AddComponent<EnemyPlaceholder>();
 
-                    // Try to load EnemyType from catalog for visuals
+                    // Try to load EnemyType from catalog for visuals + health
                     var meshType = MeshType.Diamond;
                     var color = new Color(0.3f, 0.8f, 1f); // Default cyan
                     float scale = 0.8f;
+                    float health = 10f;
 
                     if (_catalog != null)
                     {
@@ -1278,6 +1431,7 @@ namespace STGEngine.Editor.Scene
                                 meshType = et.MeshType;
                                 color = et.Color;
                                 scale = et.Scale * 0.8f;
+                                health = et.Health;
                             }
                             catch (System.Exception e)
                             {
@@ -1287,8 +1441,13 @@ namespace STGEngine.Editor.Scene
                     }
 
                     ep.Setup(meshType, color, scale);
+                    ep.SetHealth(health);
+                    // OnKilled: remove from list (Destroy is handled by EnemyPlaceholder itself)
+                    ep.OnKilled += killed => _enemyPlaceholders.Remove(killed);
                     // Adjust spawnDelay by wave's time offset within the segment/stage
-                    ep.SetPath(enemy.Path, enemy.SpawnDelay + wd.TimeOffset, wd.SpawnOffset);
+                    // Lifetime = wave duration minus this enemy's spawn delay (time remaining after spawn)
+                    float enemyLifetime = wd.Wave.Duration - enemy.SpawnDelay;
+                    ep.SetPath(enemy.Path, enemy.SpawnDelay + wd.TimeOffset, wd.SpawnOffset, enemyLifetime);
                     ep.Show();
                     ep.SetTime(0f);
 

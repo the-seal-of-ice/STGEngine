@@ -31,6 +31,23 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
     /// <summary>
+    /// Time range and health for a single spell card within a BossFight preview.
+    /// Used to reset Boss HP at spell card boundaries and handle spell break transitions.
+    /// </summary>
+    public class SpellCardPhase
+    {
+        public float StartTime;
+        public float EndTime;
+        public float Health;
+        /// <summary>End time of the transition block after this spell card.</summary>
+        public float TransitionEndTime;
+        /// <summary>Duration of the transition block (seconds).</summary>
+        public float TransitionDuration;
+        /// <summary>Boss start position of the next spell card (transition target).</summary>
+        public Vector3 NextStartPosition;
+    }
+
+    /// <summary>
     /// Main timeline editor view. Composes breadcrumb, toolbar, segment list,
     /// track area, and property panel into a unified editing experience.
     /// </summary>
@@ -55,6 +72,13 @@ namespace STGEngine.Editor.UI.Timeline
         /// Null = hide all enemy placeholders.
         /// </summary>
         public Action<List<WavePlaceholderData>> OnWaveEditingChanged;
+
+        /// <summary>
+        /// Fired when BossFight preview is loaded. Provides spell card phase list
+        /// so the scene can reset Boss HP at spell card boundaries.
+        /// Null = no active BossFight.
+        /// </summary>
+        public Action<List<SpellCardPhase>> OnBossPhaseListChanged;
 
         /// <summary>Fired when the current layer changes (navigation). Used to refresh asset library button states.</summary>
         public Action OnLayerChanged;
@@ -160,6 +184,7 @@ namespace STGEngine.Editor.UI.Timeline
         }
         private List<BossSegmentRange> _stageOverviewBossRanges;
         private bool _stageOverviewBossVisible;
+        private List<SpellCardPhase> _lastBossPhases;
 
         // ── Clipboard ──
         private (Type blockType, object yamlData)? _clipboard;
@@ -541,6 +566,7 @@ namespace STGEngine.Editor.UI.Timeline
             ShowLayerSummary(_currentLayer);
             LoadBossFightPreview(seg);
             OnStageDataChanged();
+            AutoSaveStage();
         }
 
         /// <summary>
@@ -638,6 +664,7 @@ namespace STGEngine.Editor.UI.Timeline
             };
 
             var bossRanges = new List<BossSegmentRange>();
+            var allBossPhases = new List<SpellCardPhase>();
             float segmentOffset = 0f;
 
             foreach (var seg in _stage.Segments)
@@ -738,6 +765,7 @@ namespace STGEngine.Editor.UI.Timeline
                         var sc = segCards[ci];
                         if (sc == null) continue;
                         var scId = seg.SpellCardIds[ci];
+                        float phaseStart = scOffset;
                         // Build pattern override context (same as LoadBossFightPreview)
                         var patCtx = $"{OverrideManager.SpellCardInstanceContext(seg.Id, ci)}/{scId}";
 
@@ -778,25 +806,35 @@ namespace STGEngine.Editor.UI.Timeline
                         }
 
                         scOffset += sc.TimeLimit;
+                        float phaseEnd = scOffset;
+
+                        // Compute transition info for phase
+                        float phaseTranDur = 0f;
+                        float phaseTransEnd = phaseEnd;
+                        float boundary = STGEngine.Core.WorldScale.DefaultBoundaryHalf;
+                        Vector3 phaseNextPos = new Vector3(0f, 0f, boundary * 5f / 6f);
 
                         // Insert transition path to next SC
-                        if (ci < segCards.Count - 1 && sc.TransitionDuration > 0f)
+                        if (ci < segCards.Count - 1)
                         {
-                            float transDur = sc.TransitionDuration;
-                            var endPos = sc.BossPath != null && sc.BossPath.Count > 0
-                                ? sc.BossPath[sc.BossPath.Count - 1].Position
-                                : new Vector3(0, 6, 0);
-
                             // Find next valid SC's start position
-                            var startPos = new Vector3(0, 6, 0);
                             for (int ni = ci + 1; ni < segCards.Count; ni++)
                             {
                                 if (segCards[ni]?.BossPath != null && segCards[ni].BossPath.Count > 0)
                                 {
-                                    startPos = segCards[ni].BossPath[0].Position;
+                                    phaseNextPos = segCards[ni].BossPath[0].Position;
                                     break;
                                 }
                             }
+
+                            phaseTranDur = sc.TransitionDuration > 0f ? sc.TransitionDuration : 1f;
+                        }
+
+                        if (ci < segCards.Count - 1 && phaseTranDur > 0f)
+                        {
+                            var endPos = sc.BossPath != null && sc.BossPath.Count > 0
+                                ? sc.BossPath[sc.BossPath.Count - 1].Position
+                                : new Vector3(0, 6, 0);
 
                             localBossPath.Add(new PathKeyframe
                             {
@@ -805,12 +843,24 @@ namespace STGEngine.Editor.UI.Timeline
                             });
                             localBossPath.Add(new PathKeyframe
                             {
-                                Time = scOffset + transDur,
-                                Position = startPos
+                                Time = scOffset + phaseTranDur,
+                                Position = phaseNextPos
                             });
 
-                            scOffset += transDur;
+                            scOffset += phaseTranDur;
+                            phaseTransEnd = scOffset;
                         }
+
+                        // Record spell card phase
+                        allBossPhases.Add(new SpellCardPhase
+                        {
+                            StartTime = phaseStart,
+                            EndTime = phaseEnd,
+                            Health = sc.Health,
+                            TransitionDuration = phaseTranDur,
+                            TransitionEndTime = phaseTransEnd,
+                            NextStartPosition = phaseNextPos
+                        });
                     }
 
                     // Record this BossFight segment's time range
@@ -845,6 +895,9 @@ namespace STGEngine.Editor.UI.Timeline
             _stageOverviewBossVisible = false;
             // Initially hide boss placeholder at Stage level — it will show dynamically
             OnSpellCardEditingChanged?.Invoke(null);
+            // Provide spell card phases for Boss HP reset during playback
+            _lastBossPhases = allBossPhases.Count > 0 ? allBossPhases : null;
+            OnBossPhaseListChanged?.Invoke(_lastBossPhases);
         }
 
         private void LoadDefaultStage()
@@ -1399,9 +1452,12 @@ namespace STGEngine.Editor.UI.Timeline
                 }
             }
 
+            var spellCardPhases = new List<SpellCardPhase>();
+
             for (int ci = 0; ci < loadedCards.Count; ci++)
             {
                 var (scId, sc, patCtx) = loadedCards[ci];
+                float phaseStart = timeOffset;
 
                 // Add patterns with time offset
                 foreach (var scp in sc.Patterns)
@@ -1441,21 +1497,33 @@ namespace STGEngine.Editor.UI.Timeline
                 }
 
                 timeOffset += sc.TimeLimit;
+                float phaseEnd = timeOffset;
+
+                // Compute transition info for this phase
+                float transDur = 0f;
+                float transEndTime = phaseEnd;
+                Vector3 nextStartPos;
+
+                // Default fallback: front of scene, 5/6 of boundary
+                float boundary = STGEngine.Core.WorldScale.DefaultBoundaryHalf;
+                nextStartPos = new Vector3(0f, 0f, boundary * 5f / 6f);
+
+                if (ci < loadedCards.Count - 1)
+                {
+                    var nextSc = loadedCards[ci + 1].sc;
+                    nextStartPos = nextSc.BossPath != null && nextSc.BossPath.Count > 0
+                        ? nextSc.BossPath[0].Position
+                        : nextStartPos;
+
+                    transDur = sc.TransitionDuration > 0f ? sc.TransitionDuration : 1f;
+                }
 
                 // Insert transition path: lerp from this SC's end position to next SC's start position
-                if (ci < loadedCards.Count - 1 && sc.TransitionDuration > 0f)
+                if (ci < loadedCards.Count - 1 && transDur > 0f)
                 {
-                    float transDur = sc.TransitionDuration;
-
                     // End position of current SC
                     var endPos = sc.BossPath != null && sc.BossPath.Count > 0
                         ? sc.BossPath[sc.BossPath.Count - 1].Position
-                        : new Vector3(0, 6, 0);
-
-                    // Start position of next SC
-                    var nextSc = loadedCards[ci + 1].sc;
-                    var startPos = nextSc.BossPath != null && nextSc.BossPath.Count > 0
-                        ? nextSc.BossPath[0].Position
                         : new Vector3(0, 6, 0);
 
                     // Transition start keyframe (at current SC end position)
@@ -1469,11 +1537,23 @@ namespace STGEngine.Editor.UI.Timeline
                     combinedBossPath.Add(new PathKeyframe
                     {
                         Time = timeOffset + transDur,
-                        Position = startPos
+                        Position = nextStartPos
                     });
 
                     timeOffset += transDur;
+                    transEndTime = timeOffset;
                 }
+
+                // Record spell card phase with transition info
+                spellCardPhases.Add(new SpellCardPhase
+                {
+                    StartTime = phaseStart,
+                    EndTime = phaseEnd,
+                    Health = sc.Health,
+                    TransitionDuration = transDur,
+                    TransitionEndTime = transEndTime,
+                    NextStartPosition = nextStartPos
+                });
             }
 
             // Copy ActionEvents from the BossFight segment for blocking during playback
@@ -1496,6 +1576,10 @@ namespace STGEngine.Editor.UI.Timeline
 
             // Load combined preview for playback (弹幕 rendering in scene)
             _playback.LoadSegment(tempSegment);
+
+            // Notify scene of spell card phases for Boss HP reset
+            _lastBossPhases = spellCardPhases.Count > 0 ? spellCardPhases : null;
+            OnBossPhaseListChanged?.Invoke(_lastBossPhases);
 
             if (combinedBossPath.Count > 0)
             {
@@ -1604,6 +1688,7 @@ namespace STGEngine.Editor.UI.Timeline
                         ShowBossFightSpellCards(segment);
                         LoadBossFightPreview(segment);
                         OnStageDataChanged();
+                        AutoSaveStage();
                     }
                 })
                 { text = "\u2715" };
@@ -2998,8 +3083,15 @@ namespace STGEngine.Editor.UI.Timeline
         }
 
         /// <summary>
-        /// Load all waves from SpawnWaveEvents in a segment and build placeholder data.
+        /// Re-fire the cached boss phase list. Call after subscribing to OnBossPhaseListChanged
+        /// when the initial LoadStageOverviewPreview ran before subscription.
         /// </summary>
+        public void NotifyBossPhases()
+        {
+            OnBossPhaseListChanged?.Invoke(_lastBossPhases);
+        }
+
+        /// <summary>
         private List<WavePlaceholderData> BuildWavePlaceholdersForSegment(
             TimelineSegment segment, float segmentOffset)
         {
@@ -3644,6 +3736,9 @@ namespace STGEngine.Editor.UI.Timeline
             patLabel.style.marginTop = 4;
             container.Add(patLabel);
 
+            // ── Boss Path Editor ──
+            BuildBossPathEditor(container, sc, scId, instanceContextId);
+
             // Edit button → enter SpellCard detail
             var editBtn = new Button(() =>
             {
@@ -4043,6 +4138,170 @@ namespace STGEngine.Editor.UI.Timeline
 
             _propertyContent.Add(container);
             ApplyLightTextTheme(container);
+        }
+
+        /// <summary>
+        /// Build a collapsible keyframe list editor for a SpellCard's BossPath.
+        /// </summary>
+        private void BuildBossPathEditor(VisualElement parent, SpellCard sc, string scId, string instanceContextId)
+        {
+            if (sc.BossPath == null) sc.BossPath = new List<PathKeyframe>();
+            var keyframes = sc.BossPath;
+
+            var separator = new VisualElement();
+            separator.style.height = 1;
+            separator.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+            separator.style.marginTop = 8;
+            separator.style.marginBottom = 4;
+            parent.Add(separator);
+
+            var header = new Label($"Boss Path ({keyframes.Count} keyframes)");
+            header.style.color = new Color(0.9f, 0.5f, 0.9f);
+            header.style.unityFontStyleAndWeight = FontStyle.Bold;
+            header.style.marginBottom = 4;
+            parent.Add(header);
+
+            // Save helper
+            void Save()
+            {
+                SaveSpellCardInContext(sc, scId, instanceContextId);
+                // Refresh preview so BossPlaceholder picks up path changes
+                if (_currentLayer is BossFightLayer bfl)
+                    LoadBossFightPreview(bfl.Segment);
+            }
+
+            // Rebuild helper
+            void RebuildPanel()
+            {
+                var selected = _trackArea.SelectedBlock;
+                if (selected != null)
+                    OnBlockSelectedGeneric(selected);
+            }
+
+            var listContainer = new VisualElement();
+            parent.Add(listContainer);
+
+            for (int i = 0; i < keyframes.Count; i++)
+            {
+                int idx = i;
+                var kf = keyframes[i];
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems = Align.Center;
+                row.style.marginBottom = 2;
+                row.style.backgroundColor = new Color(0.16f, 0.16f, 0.2f);
+                row.style.borderTopLeftRadius = row.style.borderTopRightRadius =
+                    row.style.borderBottomLeftRadius = row.style.borderBottomRightRadius = 3;
+                row.style.paddingLeft = 6;
+                row.style.paddingRight = 4;
+                row.style.paddingTop = 2;
+                row.style.paddingBottom = 2;
+
+                // Detail panel (hidden by default)
+                var detail = new VisualElement();
+                detail.style.display = DisplayStyle.None;
+                detail.style.paddingTop = 4;
+                detail.style.paddingLeft = 6;
+
+                var expandLabel = new Label("\u25b6");
+                expandLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+                expandLabel.style.fontSize = 10;
+                expandLabel.style.width = 14;
+                row.Add(expandLabel);
+
+                var summaryText = new Label($"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})");
+                summaryText.style.color = new Color(0.85f, 0.85f, 0.85f);
+                summaryText.style.fontSize = 11;
+                summaryText.style.flexGrow = 1;
+                row.Add(summaryText);
+
+                var delBtn = new Button(() =>
+                {
+                    keyframes.RemoveAt(idx);
+                    header.text = $"Boss Path ({keyframes.Count} keyframes)";
+                    Save();
+                    RebuildPanel();
+                }) { text = "\u2715" };
+                delBtn.style.width = 18;
+                delBtn.style.height = 16;
+                delBtn.style.fontSize = 9;
+                delBtn.style.backgroundColor = new Color(0.35f, 0.2f, 0.2f);
+                delBtn.style.color = new Color(0.85f, 0.85f, 0.85f);
+                delBtn.style.borderTopWidth = delBtn.style.borderBottomWidth =
+                    delBtn.style.borderLeftWidth = delBtn.style.borderRightWidth = 0;
+                row.Add(delBtn);
+
+                // Toggle expand
+                bool expanded = false;
+                row.RegisterCallback<ClickEvent>(evt =>
+                {
+                    if (evt.target is Button) return;
+                    expanded = !expanded;
+                    detail.style.display = expanded ? DisplayStyle.Flex : DisplayStyle.None;
+                    expandLabel.text = expanded ? "\u25bc" : "\u25b6";
+                });
+
+                listContainer.Add(row);
+
+                // Detail fields
+                var timeField = new FloatField("Time") { value = kf.Time };
+                timeField.isDelayed = true;
+                timeField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Time = Mathf.Max(0f, e.newValue);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    Save();
+                });
+                detail.Add(timeField);
+
+                var xField = new FloatField("X") { value = kf.Position.x };
+                xField.isDelayed = true;
+                xField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(e.newValue, kf.Position.y, kf.Position.z);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    Save();
+                });
+                detail.Add(xField);
+
+                var yField = new FloatField("Y") { value = kf.Position.y };
+                yField.isDelayed = true;
+                yField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(kf.Position.x, e.newValue, kf.Position.z);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    Save();
+                });
+                detail.Add(yField);
+
+                var zField = new FloatField("Z") { value = kf.Position.z };
+                zField.isDelayed = true;
+                zField.RegisterValueChangedCallback(e =>
+                {
+                    kf.Position = new Vector3(kf.Position.x, kf.Position.y, e.newValue);
+                    summaryText.text = $"KF {idx}: T={kf.Time:F1}  ({kf.Position.x:F1}, {kf.Position.y:F1}, {kf.Position.z:F1})";
+                    Save();
+                });
+                detail.Add(zField);
+
+                listContainer.Add(detail);
+            }
+
+            // Add keyframe button
+            var addBtn = new Button(() =>
+            {
+                float lastTime = keyframes.Count > 0 ? keyframes[keyframes.Count - 1].Time + 2f : 0f;
+                var lastPos = keyframes.Count > 0 ? keyframes[keyframes.Count - 1].Position : new Vector3(0, 6, 0);
+                keyframes.Add(new PathKeyframe { Time = lastTime, Position = lastPos });
+                header.text = $"Boss Path ({keyframes.Count} keyframes)";
+                Save();
+                RebuildPanel();
+            }) { text = "+ Add Keyframe" };
+            addBtn.style.marginTop = 4;
+            addBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+            addBtn.style.color = new Color(0.9f, 0.9f, 0.9f);
+            parent.Add(addBtn);
         }
 
         /// <summary>

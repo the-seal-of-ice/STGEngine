@@ -1,4 +1,4 @@
-id: 3f93f01c3aff
+id: demo_sphere_homing
 name: Sphere Homing Demo
 emitter:
   type: sphere
@@ -11,8 +11,8 @@ modifiers:
   turn_speed: 120
   delay: 0.8
   anti_parallel: random
-bullet_scale: 0.15
+bullet_scale: 0.4
 bullet_color: {r: 0.3, g: 0.8, b: 1, a: 1}
-duration: 6
+duration: 5
 seed: 0
 mesh_type: Diamond

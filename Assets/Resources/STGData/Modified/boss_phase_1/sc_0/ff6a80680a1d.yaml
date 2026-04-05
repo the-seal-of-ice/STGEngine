@@ -26,7 +26,7 @@ boss_path:
   position: {x: 2, y: 6, z: 0}
 - time: 20
   position: {x: 0, y: 7, z: 0}
-time_limit: 16.77606
+time_limit: 16
 health: 1500
 design_estimate: -1
 transition_duration: 1.5

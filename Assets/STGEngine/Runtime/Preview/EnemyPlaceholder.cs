@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using STGEngine.Core.DataModel;
@@ -9,6 +10,7 @@ namespace STGEngine.Runtime.Preview
     /// Visual placeholder for a single enemy instance during wave editing.
     /// Shows a colored mesh at the interpolated path position,
     /// and draws the movement path as GL lines in the 3D viewport.
+    /// Tracks HP — destroyed (GameObject removed) when health reaches 0.
     /// </summary>
     public class EnemyPlaceholder : MonoBehaviour
     {
@@ -16,13 +18,29 @@ namespace STGEngine.Runtime.Preview
         private MeshRenderer _meshRenderer;
         private List<PathKeyframe> _path;
         private float _spawnDelay;
+        private float _lifetime = float.MaxValue;
         private Vector3 _spawnOffset;
         private bool _visible;
+        private bool _timeActive; // true when localTime is within [0, _lifetime]
         private Color _color = Color.white;
         private Color _pathColor;
 
+        private float _health;
+        private float _collisionRadius = 0.5f;
+
+        /// <summary>Fired just before this placeholder is destroyed by damage.</summary>
+        public event Action<EnemyPlaceholder> OnKilled;
+
         private static Material _glMaterial;
         private const float MarkerSize = 0.12f;
+
+        // ── Public state ──
+
+        public bool IsVisible => _visible && _timeActive;
+        public float Health => _health;
+        public float CollisionRadius => _collisionRadius;
+
+        // ── Setup ──
 
         /// <summary>
         /// Initialize the visual mesh and color.
@@ -32,6 +50,7 @@ namespace STGEngine.Runtime.Preview
         {
             _color = color;
             _pathColor = new Color(color.r, color.g, color.b, 0.5f);
+            _collisionRadius = scale * 0.5f;
 
             if (_visual != null) Destroy(_visual);
 
@@ -57,17 +76,49 @@ namespace STGEngine.Runtime.Preview
             _visual.SetActive(_visible);
         }
 
-        /// <summary>Set the movement path, spawn delay, and world offset for this enemy.</summary>
-        public void SetPath(List<PathKeyframe> path, float spawnDelay, Vector3 spawnOffset = default)
+        /// <summary>Set max health. Call after Setup.</summary>
+        public void SetHealth(float health)
+        {
+            _health = health;
+        }
+
+        /// <summary>Set the movement path, spawn delay, lifetime, and world offset for this enemy.</summary>
+        public void SetPath(List<PathKeyframe> path, float spawnDelay, Vector3 spawnOffset = default, float lifetime = float.MaxValue)
         {
             _path = path;
             _spawnDelay = spawnDelay;
             _spawnOffset = spawnOffset;
+
+            // Lifetime: use explicit value, or fall back to last path keyframe time
+            if (lifetime < float.MaxValue)
+                _lifetime = lifetime;
+            else if (path != null && path.Count > 0 && path[path.Count - 1].Time > 0f)
+                _lifetime = path[path.Count - 1].Time;
+            else
+                _lifetime = float.MaxValue;
         }
+
+        // ── Damage ──
+
+        /// <summary>
+        /// Apply damage. Destroys this GameObject when health reaches 0.
+        /// </summary>
+        public void ApplyDamage(float damage)
+        {
+            _health -= damage;
+            if (_health <= 0f)
+            {
+                OnKilled?.Invoke(this);
+                Destroy(gameObject);
+            }
+        }
+
+        // ── Time ──
 
         /// <summary>
         /// Evaluate position at the given wave-global time.
         /// Accounts for spawnDelay: enemy appears at (t - spawnDelay) along its path.
+        /// Hides when localTime exceeds lifetime.
         /// </summary>
         public void SetTime(float waveTime)
         {
@@ -78,11 +129,21 @@ namespace STGEngine.Runtime.Preview
             // Before spawn: hide
             if (localTime < 0f)
             {
+                _timeActive = false;
                 if (_visual != null) _visual.SetActive(false);
                 return;
             }
 
-            // After path ends: stay at last position
+            // After lifetime expires: hide (enemy has left the field)
+            if (localTime > _lifetime)
+            {
+                _timeActive = false;
+                if (_visual != null) _visual.SetActive(false);
+                return;
+            }
+
+            // Within path: show and interpolate
+            _timeActive = true;
             if (_visual != null && !_visual.activeSelf && _visible)
                 _visual.SetActive(true);
 
@@ -100,8 +161,6 @@ namespace STGEngine.Runtime.Preview
             _visible = false;
             if (_visual != null) _visual.SetActive(false);
         }
-
-        public bool IsVisible => _visible;
 
         private Vector3 EvaluatePath(float t)
         {
@@ -127,7 +186,7 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Draw path lines and keyframe markers in the Game view.</summary>
         private void OnRenderObject()
         {
-            if (!_visible || _path == null || _path.Count == 0) return;
+            if (!_visible || !_timeActive || _path == null || _path.Count == 0) return;
 
             GetGLMaterial().SetPass(0);
             GL.PushMatrix();

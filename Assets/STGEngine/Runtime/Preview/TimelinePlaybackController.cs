@@ -66,6 +66,9 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Fired when play/pause state changes.</summary>
         public event Action<bool> OnPlayStateChanged;
 
+        /// <summary>Fired when playback loops back to the start.</summary>
+        public event Action OnLooped;
+
         /// <summary>Currently active events.</summary>
         public IReadOnlyList<ActiveEvent> ActiveEvents => _activeEvents;
 
@@ -260,6 +263,7 @@ namespace STGEngine.Runtime.Preview
                     CurrentTime %= Duration;
                     _executedBlockingIds.Clear();
                     RebuildActiveEvents();
+                    OnLooped?.Invoke();
                 }
                 else
                 {
