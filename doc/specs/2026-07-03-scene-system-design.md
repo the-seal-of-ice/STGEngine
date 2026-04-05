@@ -187,7 +187,59 @@
 - 符卡宣言：镜头推近 Boss 特写
 - 通路转折：引导镜头暗示前方变化
 
-## 4. 与时间轴系统的集成
+## 4. 与敌人系统的场景联动
+
+场景不只是视觉装饰，而是与小怪/Boss 系统深度耦合的叙事空间。
+
+### 4.1 小怪出生点与场景物体绑定
+
+小怪的出生可以与场景障碍物关联，实现"从树后飞出""从巨石后方涌出"等演出效果：
+
+**SceneAnchoredSpawn（场景锚定出生）：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `AnchorType` | `SpawnAnchorType` | 锚定方式：`BehindObstacle`（障碍物后方）/ `AboveObstacle`（障碍物上方）/ `BetweenObstacles`（障碍物之间） |
+| `ObstacleTag` | `string` | 目标障碍物标签（如 `"bamboo"`、`"rock"`），从散布的障碍物中匹配 |
+| `RelativeOffset` | `FloatVector3` | 相对于锚定障碍物的偏移 |
+| `SpawnDistance` | `float` | 在玩家前方多远处生成（滚动距离），确保出生点在恰当时机位于恰当位置 |
+
+**时序协调：**
+- 时间轴中 EnemyInstance 的出生时间 → 换算为滚动距离 → ChunkGenerator 在生成对应 Chunk 时预留锚定障碍物
+- 散布器在放置障碍物时，标记哪些障碍物被预留为出生锚点，确保这些障碍物不会被跳过或回收过早
+- 小怪出生动画可以利用锚定障碍物做遮挡：先隐藏在障碍物后方，时间到时从后方飞出
+
+### 4.2 Boss 场景存在感
+
+Boss 不应该在触发战斗时突然凭空出现，而是通过场景系统提前建立存在感：
+
+**BossPresence（Boss 场景存在）：**
+
+| 模式 | 说明 |
+|------|------|
+| `DistantObserve` | Boss 在场景远处静止观察，作为场景元素的一部分可见。细心的玩家能在道中阶段就注意到远处的身影 |
+| `DistantFollow` | Boss 在场景远处伴随移动，与场景流动保持相对静止（即跟着玩家走），偶尔做微小动作 |
+| `DistantTrail` | Boss 在场景后方尾随，玩家回头看能发现。随时间逐渐接近 |
+| `Hidden` | Boss 隐藏在场景元素中（如巨石后、云层中），通过局部异常暗示存在（微光、阴影、粒子） |
+
+**触发与过渡：**
+- BossPresence 通过时间轴 ActionEvent 控制，可以在道中任意时间点开始
+- 当 Boss 战正式触发时，BossPresence 平滑过渡到 Boss 战斗状态：
+  - `DistantObserve/Follow` → 镜头演出（CameraScript）拉近 Boss → 通路展开 → 战斗开始
+  - `DistantTrail` → Boss 加速追上 → 镜头演出 → 战斗开始
+  - `Hidden` → 场景元素破碎/散开 → Boss 显现 → 战斗开始
+- 这些过渡序列由时间轴中的复合事件编排（CameraScriptEvent + SceneStyleSwitch + Boss 出场事件）
+
+### 4.3 场景物体的语义标签
+
+为了支持上述联动，障碍物实例需要携带语义信息：
+
+**ObstacleInstance 运行时扩展：**
+- `Tag` — 从 ObstacleConfig 继承的类型标签（`"bamboo"`、`"rock"` 等）
+- `AnchorId` — 如果被预留为出生锚点，记录关联的 EnemyInstance ID
+- `ChunkIndex` — 所属 Chunk 索引，用于生命周期管理
+
+## 5. 与时间轴系统的集成
 
 新增 ActionEvent 类型（扩展现有 `ActionParams`）：
 
@@ -196,10 +248,11 @@
 | `SceneStyleSwitch` | 切换场景风格，指定目标 SceneStyle、过渡时长、过渡曲线 |
 | `CameraScriptEvent` | 触发镜头演出，指定关键帧序列、blend_in/blend_out 时长 |
 | `ScrollSpeedChange` | 改变场景流动速度（也可通过 PathProfile.ScrollSpeed 曲线实现，此为即时覆盖） |
+| `BossPresenceEvent` | 控制 Boss 场景存在模式，指定模式、起始距离、接近速率 |
 
 这些 ActionEvent 在时间轴编辑器中以 Block 形式呈现，与现有的 `BackgroundSwitch`、`ScreenEffect` 等并列。
 
-## 5. 与现有系统的关系
+## 6. 与现有系统的关系
 
 | 现有系统 | 关系 | 备注 |
 |----------|------|------|
@@ -224,7 +277,9 @@ Assets/STGEngine/
 │   │   ├── PathProfile.cs          # 通路轮廓数据
 │   │   ├── ObstacleConfig.cs       # 障碍物配置数据
 │   │   ├── SceneStyle.cs           # 场景风格组合
-│   │   └── CameraKeyframe.cs       # 镜头关键帧数据
+│   │   ├── CameraKeyframe.cs       # 镜头关键帧数据
+│   │   ├── SceneAnchoredSpawn.cs   # 场景锚定出生点数据
+│   │   └── BossPresence.cs         # Boss 场景存在模式数据
 │   └── Timeline/
 │       └── ActionParams.cs         # 扩展新的 ActionEvent 类型（已有文件）
 ├── Runtime/
@@ -233,7 +288,9 @@ Assets/STGEngine/
 │   │   ├── ObstacleScatterer.cs    # 障碍物散布
 │   │   ├── ObstaclePool.cs         # 障碍物对象池
 │   │   ├── BoundaryForce.cs        # 软边界力场
-│   │   └── HazardCollision.cs      # 危险障碍物碰撞判定
+│   │   ├── HazardCollision.cs      # 危险障碍物碰撞判定
+│   │   ├── SpawnAnchorResolver.cs  # 出生锚点解析（匹配障碍物与 EnemyInstance）
+│   │   └── BossPresenceController.cs # Boss 场景存在控制
 │   └── Camera/
 │       ├── DynamicCamera.cs        # 动态响应镜头
 │       └── CameraScriptPlayer.cs   # 演出镜头播放器
