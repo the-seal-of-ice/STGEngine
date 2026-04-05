@@ -239,6 +239,68 @@ Boss 不应该在触发战斗时突然凭空出现，而是通过场景系统提
 - `AnchorId` — 如果被预留为出生锚点，记录关联的 EnemyInstance ID
 - `ChunkIndex` — 所属 Chunk 索引，用于生命周期管理
 
+### 4.4 小怪退场与场景互动
+
+小怪被击败后不应凌空消逝，而是与场景产生物理互动，走可爱/生动的风格：
+
+**EnemyExitBehaviour（退场行为）：**
+
+| 模式 | 说明 |
+|------|------|
+| `CrashLand` | 突然飞不动，坠落到最近的地面/障碍物表面，弹跳几下后消失（可爱风妖精） |
+| `FleeToObstacle` | 立刻高速逃向最近的障碍物（竹林/巨石后方），钻进去消失。逃跑方向由最近障碍物位置决定 |
+| `Tumble` | 失控翻滚坠落，碰到障碍物后弹开，最终消失 |
+| `Dissolve` | 传统消散（作为保底默认行为，或用于特殊敌人） |
+
+**场景感知：**
+- 退场行为需要查询附近的障碍物位置（通过 ObstacleScatterer 的空间索引）
+- `CrashLand` 需要知道"地面在哪"——在 3D 卷轴模式下，通路的下边界即为地面参考
+- `FleeToObstacle` 需要找到最近的、在逃跑方向上的障碍物，并计算隐藏点
+- 退场动画期间敌人不再参与碰撞判定（已被击败），纯视觉表现
+
+**配置方式：**
+- `EnemyType` 数据模型扩展 `ExitBehaviour` 字段，指定该类型敌人的退场模式
+- 可配置退场速度、坠落重力、弹跳次数等参数
+- 同一类型敌人可配置多种退场行为的权重随机
+
+### 4.5 对话与场景节奏联动
+
+玩家与 Boss 的对话不应总是在高速滚动的场景中进行，场景节奏应配合对话氛围：
+
+**DialogueSceneMode（对话场景模式）：**
+
+| 模式 | 说明 |
+|------|------|
+| `SlowScroll` | 场景流动减速（如降到 20%），对话在缓慢移动的场景中进行，保持一定动势但不紧张 |
+| `FullStop` | 场景完全停止流动，玩家和 Boss 在静止的场景中对话。适合严肃/重要的剧情时刻 |
+| `Grounded` | 场景停止 + 角色"落地"——玩家和 Boss 降落到通路地面上，以站立姿态对话。最具临场感 |
+| `KeepScrolling` | 场景保持正常流动，对话在战斗间隙快速进行（适合挑衅/短对话） |
+
+**实现要点：**
+- 对话模式通过时间轴 ActionEvent 触发，与对话事件绑定
+- `SlowScroll` / `FullStop`：修改 `ScrollSpeed` 并平滑插值过渡
+- `Grounded`：额外需要临时修改玩家/Boss 的位置约束，让他们"站"在地面上，对话结束后平滑恢复自由飞行
+- 镜头在对话期间自动切换到对话镜头模式（可由 CameraScript 编排，如正反打、双人中景等）
+
+### 4.6 Boss 退场演出
+
+Boss 被击败后的退场同样应与场景互动，而非简单消失：
+
+**BossExitBehaviour（Boss 退场行为）：**
+
+| 模式 | 说明 |
+|------|------|
+| `RetreatToDistance` | Boss 向场景远处撤退，逐渐缩小消失（为后续再次出场留伏笔） |
+| `CrashIntoScene` | Boss 坠落/撞向场景障碍物，引发场景破坏效果（障碍物碎裂飞散） |
+| `DissolveWithScene` | Boss 与周围场景元素一起消散/变化，场景风格随之过渡（如竹林枯萎→新场景生长） |
+| `FlyAway` | Boss 高速飞离画面（经典东方风格），可指定飞离方向 |
+| `Scripted` | 完全由 CameraScript + 时间轴事件序列编排的自定义退场 |
+
+**场景联动效果：**
+- Boss 退场可以触发场景变化：通路宽度变化、障碍物风格切换、流动速度改变
+- 这些通过时间轴中的复合事件序列实现（BossExit + SceneStyleSwitch + ScrollSpeedChange）
+- `CrashIntoScene` 需要场景破坏系统支持——被撞击的障碍物播放碎裂动画并从场景中移除
+
 ## 5. 与时间轴系统的集成
 
 新增 ActionEvent 类型（扩展现有 `ActionParams`）：
@@ -249,6 +311,8 @@ Boss 不应该在触发战斗时突然凭空出现，而是通过场景系统提
 | `CameraScriptEvent` | 触发镜头演出，指定关键帧序列、blend_in/blend_out 时长 |
 | `ScrollSpeedChange` | 改变场景流动速度（也可通过 PathProfile.ScrollSpeed 曲线实现，此为即时覆盖） |
 | `BossPresenceEvent` | 控制 Boss 场景存在模式，指定模式、起始距离、接近速率 |
+| `DialogueSceneEvent` | 触发对话场景模式（SlowScroll/FullStop/Grounded/KeepScrolling），指定过渡时长 |
+| `BossExitEvent` | 触发 Boss 退场演出，指定退场模式和场景联动效果 |
 
 这些 ActionEvent 在时间轴编辑器中以 Block 形式呈现，与现有的 `BackgroundSwitch`、`ScreenEffect` 等并列。
 
@@ -279,7 +343,10 @@ Assets/STGEngine/
 │   │   ├── SceneStyle.cs           # 场景风格组合
 │   │   ├── CameraKeyframe.cs       # 镜头关键帧数据
 │   │   ├── SceneAnchoredSpawn.cs   # 场景锚定出生点数据
-│   │   └── BossPresence.cs         # Boss 场景存在模式数据
+│   │   ├── BossPresence.cs         # Boss 场景存在模式数据
+│   │   ├── EnemyExitBehaviour.cs   # 小怪退场行为数据
+│   │   ├── DialogueSceneMode.cs    # 对话场景模式数据
+│   │   └── BossExitBehaviour.cs    # Boss 退场行为数据
 │   └── Timeline/
 │       └── ActionParams.cs         # 扩展新的 ActionEvent 类型（已有文件）
 ├── Runtime/
@@ -290,7 +357,9 @@ Assets/STGEngine/
 │   │   ├── BoundaryForce.cs        # 软边界力场
 │   │   ├── HazardCollision.cs      # 危险障碍物碰撞判定
 │   │   ├── SpawnAnchorResolver.cs  # 出生锚点解析（匹配障碍物与 EnemyInstance）
-│   │   └── BossPresenceController.cs # Boss 场景存在控制
+│   │   ├── BossPresenceController.cs # Boss 场景存在控制
+│   │   ├── EnemyExitController.cs  # 小怪退场动画控制
+│   │   └── DialogueSceneController.cs # 对话场景模式控制
 │   └── Camera/
 │       ├── DynamicCamera.cs        # 动态响应镜头
 │       └── CameraScriptPlayer.cs   # 演出镜头播放器
