@@ -44,57 +44,54 @@ namespace STGEngine.Runtime.Scene
             return instances;
         }
 
-        /// <summary>在通路两侧散布障碍物。</summary>
+        /// <summary>在通路两侧散布障碍物。左右两侧独立采样，避免宽通路时大量点被过滤。</summary>
         private void ScatterRoadside(Chunk chunk, ObstacleConfig config, List<ObstacleInstance> instances)
         {
+            // 左右两侧各自独立采样
+            ScatterOneSide(chunk, config, instances, -1); // 左侧
+            ScatterOneSide(chunk, config, instances, +1); // 右侧
+        }
+
+        /// <summary>在通路一侧散布障碍物。</summary>
+        /// <param name="side">-1 = 左侧，+1 = 右侧。</param>
+        private void ScatterOneSide(Chunk chunk, ObstacleConfig config, List<ObstacleInstance> instances, int side)
+        {
             float chunkLen = chunk.Length;
-            // Sample width at chunk midpoint for roadside band estimation
-            float midDist = (chunk.StartDistance + chunk.EndDistance) * 0.5f;
-            var midSample = _profile.SampleAt(midDist);
-            float halfWidth = midSample.Width * 0.5f;
+            float bandWidth = 30f; // 路侧带宽度（从路边向外延伸多远）
 
-            // Roadside band: from path edge to edge + band width
-            float bandWidth = 30f; // how far obstacles extend beyond path edge
-            float totalScatterWidth = bandWidth * 2f + midSample.Width; // left band + path + right band
-
-            // Poisson sampling in 2D: X = across (centered on path), Y = along spline
-            int seed = chunk.Index * 31337;
-            var points = PoissonDiskSampler.Sample(totalScatterWidth, chunkLen, config.MinSpacing, seed);
+            // 泊松采样在 2D 矩形中：X = 路侧带宽度，Y = 沿样条线长度
+            int seed = chunk.Index * 31337 + (side > 0 ? 17 : 0);
+            var points = PoissonDiskSampler.Sample(bandWidth, chunkLen, config.MinSpacing, seed);
 
             var rng = new System.Random(seed + 7);
 
             foreach (var pt in points)
             {
-                // Map X from [0, totalScatterWidth] to lateral offset from path center
-                float lateralOffset = pt.x - totalScatterWidth * 0.5f;
-
-                // Sample the actual width at this along-spline position
+                // 沿样条线的弧长位置
                 float dist = chunk.StartDistance + pt.y;
                 var sample = _profile.SampleAt(dist);
                 float localHalfWidth = sample.Width * 0.5f;
 
-                // Skip points inside the path (roadside only)
-                if (Mathf.Abs(lateralOffset) < localHalfWidth)
-                    continue;
+                // 横向偏移：从路边开始向外
+                // pt.x 在 [0, bandWidth] 范围内，映射到 [halfWidth, halfWidth + bandWidth]
+                float lateralOffset = (localHalfWidth + pt.x) * side;
 
-                // World position: spline center + normal * lateral offset
+                // 世界坐标
                 Vector3 worldPos = sample.Position + sample.Normal * lateralOffset;
 
-                // Pick random variant
+                // 随机选取变体
                 string prefabPath = config.PrefabVariants[rng.Next(config.PrefabVariants.Count)];
                 var obj = _pool.Get(prefabPath);
                 if (obj == null) continue;
 
-                // Random scale and rotation
                 float scale = Mathf.Lerp(config.ScaleRange.x, config.ScaleRange.y, (float)rng.NextDouble());
                 float rotY = Mathf.Lerp(config.RotationRange.x, config.RotationRange.y, (float)rng.NextDouble());
 
-                // Adjust Y so object sits on ground (raise by half its scaled height)
+                // Y 抬高让物体站在地面上
                 var renderer = obj.GetComponent<Renderer>();
                 if (renderer != null)
                 {
-                    float halfHeight = renderer.bounds.extents.y;
-                    worldPos.y += halfHeight;
+                    worldPos.y += renderer.bounds.extents.y;
                 }
 
                 obj.transform.position = worldPos;
