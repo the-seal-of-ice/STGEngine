@@ -13,8 +13,8 @@ namespace STGEngine.Runtime.Scene
     public class HazardCollision : MonoBehaviour
     {
         [Header("Collision Settings")]
-        [SerializeField, Tooltip("玩家碰撞半径（米）")]
-        private float _playerRadius = 0.08f;
+        [SerializeField, Tooltip("玩家碰撞半径（米），直径 1.6m")]
+        private float _playerRadius = 0.8f;
 
         [SerializeField, Tooltip("碰撞后的无敌时间（秒）")]
         private float _invincibilityDuration = 2f;

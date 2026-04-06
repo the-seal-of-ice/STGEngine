@@ -5,30 +5,29 @@ namespace STGEngine.Runtime.Scene
 {
     /// <summary>
     /// 普通障碍物交互。玩家擦过非危险障碍物时触发视觉反馈：
-    /// Sway = 摇晃动画（竹子/树木），Nudge = 轻推玩家。
-    /// 不造成伤害，纯环境互动感。
+    /// Sway = 以地面接触点为轴心的摇晃动画，Nudge = 轻推玩家。
+    /// 碰撞检测考虑玩家球体半径（直径 1.6m，半径 0.8m）。
     /// </summary>
     [AddComponentMenu("STGEngine/Scene/ObstacleInteraction")]
     public class ObstacleInteraction : MonoBehaviour
     {
         [Header("Interaction Settings")]
-        [SerializeField, Tooltip("交互触发距离（米）")]
-        private float _triggerRadius = 2f;
+        [SerializeField, Tooltip("玩家球体半径（米），直径 1.6m")]
+        private float _playerRadius = 0.8f;
+
+        [SerializeField, Tooltip("交互触发额外距离（在碰撞半径之外多远触发）")]
+        private float _triggerMargin = 1f;
 
         [SerializeField, Tooltip("Nudge 推力强度")]
         private float _nudgeForce = 3f;
 
         [SerializeField, Tooltip("Sway 摇晃角度（度）")]
-        private float _swayAngle = 10f;
-
-        [SerializeField, Tooltip("Sway 摇晃恢复速度")]
-        private float _swayRecoverySpeed = 3f;
+        private float _swayAngle = 12f;
 
         private PlayerAnchorController _player;
         private ChunkGenerator _generator;
         private bool _initialized;
 
-        // 正在摇晃的障碍物
         private readonly Dictionary<GameObject, SwayState> _swaying = new();
 
         public void Initialize(PlayerAnchorController player, ChunkGenerator generator)
@@ -60,10 +59,13 @@ namespace STGEngine.Runtime.Scene
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.None) continue;
                     if (obs.GameObject == null || !obs.GameObject.activeSelf) continue;
 
-                    float dist = Vector3.Distance(playerPos, obs.GameObject.transform.position);
-                    if (dist > _triggerRadius) continue;
+                    // 计算障碍物碰撞半径
+                    float obsRadius = GetObstacleRadius(obs.GameObject);
+                    float triggerDist = _playerRadius + obsRadius + _triggerMargin;
 
-                    // 触发交互
+                    float dist = Vector3.Distance(playerPos, obs.GameObject.transform.position);
+                    if (dist > triggerDist) continue;
+
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Sway)
                     {
                         TriggerSway(obs.GameObject, playerPos);
@@ -71,29 +73,44 @@ namespace STGEngine.Runtime.Scene
                     else if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Nudge)
                     {
                         TriggerNudge(obs.GameObject, playerPos);
-                        TriggerSway(obs.GameObject, playerPos); // Nudge 也带摇晃
+                        TriggerSway(obs.GameObject, playerPos);
                     }
                 }
             }
         }
 
+        private float GetObstacleRadius(GameObject obj)
+        {
+            var renderer = obj.GetComponent<Renderer>();
+            if (renderer == null) return 1f;
+            var ext = renderer.bounds.extents;
+            return Mathf.Min(ext.x, ext.z);
+        }
+
         private void TriggerSway(GameObject obj, Vector3 playerPos)
         {
-            if (_swaying.ContainsKey(obj)) return; // 已在摇晃中
+            if (_swaying.ContainsKey(obj)) return;
 
             Vector3 pushDir = (obj.transform.position - playerPos).normalized;
+
+            // 计算地面接触点（物体底部）
+            var renderer = obj.GetComponent<Renderer>();
+            float bottomY = renderer != null ? renderer.bounds.min.y : obj.transform.position.y;
+            Vector3 pivotPoint = new Vector3(obj.transform.position.x, bottomY, obj.transform.position.z);
+
             _swaying[obj] = new SwayState
             {
                 OriginalRotation = obj.transform.rotation,
+                OriginalPosition = obj.transform.position,
+                PivotPoint = pivotPoint,
                 PushDirection = pushDir,
                 Timer = 0f,
-                Duration = 1.5f
+                Duration = 1.8f
             };
         }
 
         private void TriggerNudge(GameObject obj, Vector3 playerPos)
         {
-            // 轻推玩家：远离障碍物方向
             Vector3 pushDir = (playerPos - obj.transform.position).normalized;
             Vector2 push2D = new Vector2(
                 Vector3.Dot(pushDir, _player.CurrentAnchor.Normal),
@@ -122,17 +139,23 @@ namespace STGEngine.Runtime.Scene
 
                 if (t >= 1f)
                 {
+                    // 恢复原始状态
                     obj.transform.rotation = state.OriginalRotation;
+                    obj.transform.position = state.OriginalPosition;
                     toRemove.Add(obj);
                     continue;
                 }
 
-                // 阻尼摇晃：sin 衰减
+                // 阻尼摇晃：sin 衰减，绕地面接触点旋转
                 float swayAmount = Mathf.Sin(t * Mathf.PI * 3f) * (1f - t) * _swayAngle;
                 Vector3 swayAxis = Vector3.Cross(Vector3.up, state.PushDirection).normalized;
                 if (swayAxis.sqrMagnitude < 0.01f) swayAxis = Vector3.right;
 
-                obj.transform.rotation = state.OriginalRotation * Quaternion.AngleAxis(swayAmount, swayAxis);
+                // 绕底部轴心旋转：先平移到轴心，旋转，再平移回来
+                Quaternion swayRot = Quaternion.AngleAxis(swayAmount, swayAxis);
+                Vector3 offset = state.OriginalPosition - state.PivotPoint;
+                obj.transform.position = state.PivotPoint + swayRot * offset;
+                obj.transform.rotation = swayRot * state.OriginalRotation;
             }
 
             foreach (var obj in toRemove)
@@ -142,6 +165,8 @@ namespace STGEngine.Runtime.Scene
         private class SwayState
         {
             public Quaternion OriginalRotation;
+            public Vector3 OriginalPosition;
+            public Vector3 PivotPoint;
             public Vector3 PushDirection;
             public float Timer;
             public float Duration;
