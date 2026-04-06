@@ -1,5 +1,6 @@
 // Assets/STGEngine/Core/Scene/SceneStyle.cs
 using System;
+using System.Collections.Generic;
 
 namespace STGEngine.Core.Scene
 {
@@ -21,5 +22,11 @@ namespace STGEngine.Core.Scene
 
         /// <summary>是否生成可见地面。月面虚空等特殊场景设为 false。</summary>
         public bool HasGround { get; set; } = true;
+
+        /// <summary>障碍物配置列表（可混合多种风格）。</summary>
+        public List<ObstacleConfig> ObstacleConfigs { get; set; } = new();
+
+        /// <summary>道路内危险物出现频率（个/100m）。</summary>
+        public float HazardFrequency { get; set; }
     }
 }
