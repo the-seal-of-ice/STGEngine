@@ -126,6 +126,7 @@ namespace STGEngine.Runtime.Scene
             {
                 chunk = new Chunk();
                 chunk.Root = new GameObject();
+                chunk.IsActive = true;
             }
 
             chunk.Index = index;
