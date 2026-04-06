@@ -22,7 +22,7 @@ namespace STGEngine.Runtime.Scene
 
         [Header("Safety")]
         [SerializeField, Tooltip("边界曲线内缩距离（米），硬限制在曲线内侧这么远")]
-        private float _hardMargin = 1.5f;
+        private float _hardMargin = 1f;
 
         [Header("Vertical Boundary")]
         [SerializeField, Tooltip("地面推力强度")]
