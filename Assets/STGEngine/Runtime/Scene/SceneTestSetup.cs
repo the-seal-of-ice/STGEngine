@@ -61,7 +61,7 @@ namespace STGEngine.Runtime.Scene
                         PrefabVariants = new List<string> { "test_bamboo" },
                         Density = 0.08f,
                         MinSpacing = 2.5f,
-                        ScaleRange = new Vector2(0.7f, 1.3f),
+                        ScaleRange = new Vector2(0.6f, 1.5f), // 更大的随机范围
                         RotationRange = new Vector2(0f, 360f),
                         PlacementZone = PlacementZone.Roadside,
                         ContactResponse = ContactResponse.Sway,
@@ -72,7 +72,7 @@ namespace STGEngine.Runtime.Scene
                         PrefabVariants = new List<string> { "test_rock" },
                         Density = 0.02f,
                         MinSpacing = 5f,
-                        ScaleRange = new Vector2(0.8f, 2.0f),
+                        ScaleRange = new Vector2(0.5f, 2.5f), // 更大的随机范围
                         RotationRange = new Vector2(0f, 360f),
                         PlacementZone = PlacementZone.Roadside,
                         ContactResponse = ContactResponse.Nudge,
@@ -98,24 +98,24 @@ namespace STGEngine.Runtime.Scene
         /// </summary>
         private void CreateAndRegisterTestPrefabs()
         {
-            // Bamboo: tall thin cylinder (green)
+            // Bamboo: tall thin cylinder (green) — 更大更高
             var bamboo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             bamboo.name = "TestBamboo";
-            bamboo.transform.localScale = new Vector3(0.3f, 4f, 0.3f);
+            bamboo.transform.localScale = new Vector3(0.5f, 6f, 0.5f); // 直径 0.5m，高 12m
             var bambooRenderer = bamboo.GetComponent<Renderer>();
             var bambooMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            bambooMat.color = new Color(0.2f, 0.6f, 0.15f);
+            bambooMat.color = new Color(0.15f, 0.55f, 0.1f);
             bambooRenderer.sharedMaterial = bambooMat;
             bamboo.SetActive(false);
             bamboo.transform.SetParent(transform);
 
-            // Rock: scaled cube (gray)
+            // Rock: 不规则比例的方块 (gray) — 更大
             var rock = GameObject.CreatePrimitive(PrimitiveType.Cube);
             rock.name = "TestRock";
-            rock.transform.localScale = new Vector3(2f, 1.5f, 2f);
+            rock.transform.localScale = new Vector3(3f, 2.5f, 3.5f); // 不对称，更自然
             var rockRenderer = rock.GetComponent<Renderer>();
             var rockMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            rockMat.color = new Color(0.5f, 0.5f, 0.45f);
+            rockMat.color = new Color(0.45f, 0.43f, 0.4f);
             rockRenderer.sharedMaterial = rockMat;
             rock.SetActive(false);
             rock.transform.SetParent(transform);

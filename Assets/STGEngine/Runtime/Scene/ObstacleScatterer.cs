@@ -89,16 +89,21 @@ namespace STGEngine.Runtime.Scene
                 float scale = Mathf.Lerp(config.ScaleRange.x, config.ScaleRange.y, (float)rng.NextDouble());
                 float rotY = Mathf.Lerp(config.RotationRange.x, config.RotationRange.y, (float)rng.NextDouble());
 
-                // Y 抬高让物体站在地面上
+                // 先设 scale 和旋转（含随机倾斜），再读 bounds 计算 Y 偏移
+                float tiltX = ((float)rng.NextDouble() - 0.5f) * 15f; // ±7.5° 前后倾斜
+                float tiltZ = ((float)rng.NextDouble() - 0.5f) * 15f; // ±7.5° 左右倾斜
+                obj.transform.localScale = obj.transform.localScale * scale;
+                obj.transform.rotation = Quaternion.Euler(tiltX, rotY, tiltZ);
+
+                // Y 抬高让物体底部贴地（scale 后读 bounds 才准确）
+                obj.transform.position = worldPos;
                 var renderer = obj.GetComponent<Renderer>();
                 if (renderer != null)
                 {
-                    worldPos.y += renderer.bounds.extents.y;
+                    float bottomY = renderer.bounds.min.y;
+                    worldPos.y += (worldPos.y - bottomY);
                 }
-
                 obj.transform.position = worldPos;
-                obj.transform.rotation = Quaternion.Euler(0f, rotY, 0f);
-                obj.transform.localScale = obj.transform.localScale * scale;
 
                 instances.Add(new ObstacleInstance
                 {
@@ -145,17 +150,19 @@ namespace STGEngine.Runtime.Scene
                 float scale = Mathf.Lerp(config.ScaleRange.x, config.ScaleRange.y, (float)rng.NextDouble());
                 float rotY = Mathf.Lerp(config.RotationRange.x, config.RotationRange.y, (float)rng.NextDouble());
 
-                // Adjust Y so object sits on ground
+                float tiltX = ((float)rng.NextDouble() - 0.5f) * 15f;
+                float tiltZ = ((float)rng.NextDouble() - 0.5f) * 15f;
+                obj.transform.localScale = obj.transform.localScale * scale;
+                obj.transform.rotation = Quaternion.Euler(tiltX, rotY, tiltZ);
+
+                obj.transform.position = worldPos;
                 var renderer = obj.GetComponent<Renderer>();
                 if (renderer != null)
                 {
-                    float halfHeight = renderer.bounds.extents.y;
-                    worldPos.y += halfHeight;
+                    float bottomY = renderer.bounds.min.y;
+                    worldPos.y += (worldPos.y - bottomY);
                 }
-
                 obj.transform.position = worldPos;
-                obj.transform.rotation = Quaternion.Euler(0f, rotY, 0f);
-                obj.transform.localScale = obj.transform.localScale * scale;
 
                 instances.Add(new ObstacleInstance
                 {
