@@ -10,11 +10,11 @@ namespace STGEngine.Runtime.Scene
     /// </summary>
     public static class GroundMeshBuilder
     {
-        /// <summary>沿样条线方向的细分段数。</summary>
-        private const int SegmentsAlong = 24;
+        /// <summary>沿样条线方向的细分段数。越多边缘越平滑。</summary>
+        private const int SegmentsAlong = 48;
 
         /// <summary>垂直于样条线方向的细分段数。</summary>
-        private const int SegmentsAcross = 4;
+        private const int SegmentsAcross = 2;
 
         /// <summary>UV 缩放：每多少米重复一次纹理。</summary>
         private const float UvWorldScale = 5f;

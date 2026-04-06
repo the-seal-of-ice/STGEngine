@@ -168,20 +168,28 @@ namespace STGEngine.Runtime.Scene
         }
 
         /// <summary>
-        /// 更新摄像头：沿样条线移动，朝向切线方向。
-        /// Chunk 几何体在世界坐标中是静止的，摄像头在移动。
+        /// 玩家锚点在样条线上的当前采样结果。
+        /// 玩家自动沿通路前进，自由移动是相对于此锚点的偏移。
+        /// 敌人/Boss 的出生位置也基于此锚点的弧长距离。
+        /// </summary>
+        public PathSample PlayerAnchor { get; private set; }
+
+        /// <summary>
+        /// 更新摄像头：跟随玩家锚点沿样条线移动。
+        /// Chunk 几何体在世界坐标中静止，摄像头在移动。
+        /// 玩家自动前进，不需要按前进键。
         /// </summary>
         private void UpdateCamera(float playerDist)
         {
+            // 更新玩家锚点
+            PlayerAnchor = _style.PathProfile.SampleAt(playerDist);
+
             var cam = Camera.main;
             if (cam == null) return;
 
-            PathSample sample = _style.PathProfile.SampleAt(playerDist);
-
-            // 摄像头位置：样条线位置 + 上方偏移 + 后方偏移
-            Vector3 camPos = sample.Position + Vector3.up * 12f - sample.Tangent * 8f;
-            // 看向前方
-            Vector3 lookTarget = sample.Position + sample.Tangent * 30f;
+            // 摄像头位置：锚点上方偏后，沿切线方向看向前方
+            Vector3 camPos = PlayerAnchor.Position + Vector3.up * 12f - PlayerAnchor.Tangent * 8f;
+            Vector3 lookTarget = PlayerAnchor.Position + PlayerAnchor.Tangent * 30f;
 
             cam.transform.position = Vector3.Lerp(cam.transform.position, camPos, Time.deltaTime * 5f);
             Quaternion targetRot = Quaternion.LookRotation(lookTarget - cam.transform.position, Vector3.up);
