@@ -6,19 +6,34 @@ namespace STGEngine.Runtime.Scene
     /// <summary>
     /// 软边界力场。当玩家接近通路边缘时施加渐变推力，
     /// 柔和地约束玩家在通路内活动。不是硬墙，而是阻力渐增。
+    /// 同时将玩家约束在地面附近（Y 方向软边界）。
     /// </summary>
     [AddComponentMenu("STGEngine/Scene/BoundaryForce")]
     public class BoundaryForce : MonoBehaviour
     {
-        [Header("Boundary Settings")]
-        [SerializeField, Tooltip("自由区比例（通路宽度的多少比例内无推力）")]
-        private float _innerRatio = 0.8f;
+        [Header("Lateral Boundary (Left/Right)")]
+        [SerializeField, Tooltip("横向自由区比例（通路宽度的多少比例内无推力）")]
+        private float _innerRatio = 0.95f;
 
-        [SerializeField, Tooltip("最大推力强度（m/s）")]
-        private float _maxForce = 30f;
+        [SerializeField, Tooltip("横向最大推力强度（m/s）")]
+        private float _lateralMaxForce = 15f;
 
-        [SerializeField, Tooltip("推力指数（越大边缘越硬）")]
-        private float _forceExponent = 2f;
+        [SerializeField, Tooltip("横向推力指数")]
+        private float _lateralExponent = 3f;
+
+        [Header("Vertical Boundary (Up/Down)")]
+        [SerializeField, Tooltip("地面以下推力（强，防止穿地）")]
+        private float _groundForce = 50f;
+
+        [SerializeField, Tooltip("上方自由区高度（米）")]
+        private float _ceilingHeight = 15f;
+
+        [SerializeField, Tooltip("上方推力强度")]
+        private float _ceilingForce = 20f;
+
+        [Header("Hard Limits")]
+        [SerializeField, Tooltip("横向硬限制倍率（相对于通路半宽的倍数）")]
+        private float _hardLimitRatio = 1.3f;
 
         private PlayerAnchorController _player;
         private bool _initialized;
@@ -36,41 +51,45 @@ namespace STGEngine.Runtime.Scene
 
             var anchor = _player.CurrentAnchor;
             float halfWidth = anchor.Width * 0.5f;
-            float halfHeight = anchor.Height * 0.5f;
             float freeHalfW = halfWidth * _innerRatio;
-            float freeHalfH = halfHeight * _innerRatio;
 
             Vector2 offset = _player.LocalOffset;
             Vector2 force = Vector2.zero;
 
-            // 横向边界
+            // --- 横向边界（左右）---
             if (Mathf.Abs(offset.x) > freeHalfW)
             {
-                float depth = (Mathf.Abs(offset.x) - freeHalfW) / (halfWidth - freeHalfW);
+                float maxDist = halfWidth * _hardLimitRatio;
+                float depth = (Mathf.Abs(offset.x) - freeHalfW) / (maxDist - freeHalfW);
                 depth = Mathf.Clamp01(depth);
-                float strength = Mathf.Pow(depth, _forceExponent) * _maxForce;
+                float strength = Mathf.Pow(depth, _lateralExponent) * _lateralMaxForce;
                 force.x = -Mathf.Sign(offset.x) * strength;
             }
 
-            // 纵向边界（上下）
-            if (Mathf.Abs(offset.y) > freeHalfH)
+            // --- 地面约束（Y 下边界）---
+            if (offset.y < 0f)
             {
-                float depth = (Mathf.Abs(offset.y) - freeHalfH) / (halfHeight - freeHalfH);
-                depth = Mathf.Clamp01(depth);
-                float strength = Mathf.Pow(depth, _forceExponent) * _maxForce;
-                force.y = -Mathf.Sign(offset.y) * strength;
+                // 地面以下：强推力把玩家推回地面
+                force.y = -offset.y * _groundForce;
+            }
+            else if (offset.y > _ceilingHeight)
+            {
+                // 天花板：柔和推回
+                float depth = (offset.y - _ceilingHeight) / 5f;
+                force.y = -Mathf.Min(depth, 1f) * _ceilingForce;
             }
 
-            // 应用推力到玩家偏移
+            // 应用推力
             if (force.sqrMagnitude > 0f)
             {
                 _player.LocalOffset += force * Time.deltaTime;
             }
 
-            // 硬限制：绝对不能超出通路边界
+            // 硬限制
             Vector2 clamped = _player.LocalOffset;
-            clamped.x = Mathf.Clamp(clamped.x, -halfWidth, halfWidth);
-            clamped.y = Mathf.Clamp(clamped.y, -halfHeight, halfHeight);
+            float hardLimit = halfWidth * _hardLimitRatio;
+            clamped.x = Mathf.Clamp(clamped.x, -hardLimit, hardLimit);
+            clamped.y = Mathf.Clamp(clamped.y, -0.5f, _ceilingHeight + 5f);
             _player.LocalOffset = clamped;
         }
     }
