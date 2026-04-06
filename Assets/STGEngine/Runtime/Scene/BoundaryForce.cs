@@ -15,13 +15,13 @@ namespace STGEngine.Runtime.Scene
     {
         [Header("Obstacle Repulsion")]
         [SerializeField, Tooltip("障碍物推力开始生效的距离（米，从障碍物表面算起）")]
-        private float _repulsionRange = 3f;
+        private float _repulsionRange = 2f;
 
         [SerializeField, Tooltip("障碍物最大推力强度（m/s）")]
-        private float _repulsionForce = 35f;
+        private float _repulsionForce = 18f;
 
         [SerializeField, Tooltip("推力指数（越大越接近硬墙）")]
-        private float _repulsionExponent = 2f;
+        private float _repulsionExponent = 3f;
 
         [Header("Safety Fallback")]
         [SerializeField, Tooltip("安全硬限制倍率（相对于通路半宽）")]
