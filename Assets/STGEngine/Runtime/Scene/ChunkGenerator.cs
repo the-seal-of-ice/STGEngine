@@ -214,8 +214,8 @@ namespace STGEngine.Runtime.Scene
             // 跟随目标：如果有玩家则跟随玩家，否则跟随锚点
             Vector3 followPos = Player != null ? Player.WorldPosition : PlayerAnchor.Position;
 
-            Vector3 camPos = followPos + Vector3.up * 12f - PlayerAnchor.Tangent * 8f;
-            Vector3 lookTarget = followPos + PlayerAnchor.Tangent * 30f;
+            Vector3 camPos = followPos + Vector3.up * 6f - PlayerAnchor.Tangent * 4f;
+            Vector3 lookTarget = followPos + PlayerAnchor.Tangent * 40f + Vector3.up * 1f;
 
             cam.transform.position = Vector3.Lerp(cam.transform.position, camPos, Time.deltaTime * 5f);
             Quaternion targetRot = Quaternion.LookRotation(lookTarget - cam.transform.position, Vector3.up);
