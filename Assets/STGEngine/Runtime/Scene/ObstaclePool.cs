@@ -43,6 +43,7 @@ namespace STGEngine.Runtime.Scene
                 var prefab = GetPrefab(prefabPath);
                 if (prefab == null) return null;
                 obj = Object.Instantiate(prefab);
+                obj.SetActive(true);
             }
 
             return obj;

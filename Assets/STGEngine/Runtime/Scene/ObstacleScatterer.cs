@@ -89,9 +89,17 @@ namespace STGEngine.Runtime.Scene
                 float scale = Mathf.Lerp(config.ScaleRange.x, config.ScaleRange.y, (float)rng.NextDouble());
                 float rotY = Mathf.Lerp(config.RotationRange.x, config.RotationRange.y, (float)rng.NextDouble());
 
+                // Adjust Y so object sits on ground (raise by half its scaled height)
+                var renderer = obj.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    float halfHeight = renderer.bounds.extents.y;
+                    worldPos.y += halfHeight;
+                }
+
                 obj.transform.position = worldPos;
                 obj.transform.rotation = Quaternion.Euler(0f, rotY, 0f);
-                obj.transform.localScale = Vector3.one * scale;
+                obj.transform.localScale = obj.transform.localScale * scale;
 
                 instances.Add(new ObstacleInstance
                 {
@@ -138,9 +146,17 @@ namespace STGEngine.Runtime.Scene
                 float scale = Mathf.Lerp(config.ScaleRange.x, config.ScaleRange.y, (float)rng.NextDouble());
                 float rotY = Mathf.Lerp(config.RotationRange.x, config.RotationRange.y, (float)rng.NextDouble());
 
+                // Adjust Y so object sits on ground
+                var renderer = obj.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    float halfHeight = renderer.bounds.extents.y;
+                    worldPos.y += halfHeight;
+                }
+
                 obj.transform.position = worldPos;
                 obj.transform.rotation = Quaternion.Euler(0f, rotY, 0f);
-                obj.transform.localScale = Vector3.one * scale;
+                obj.transform.localScale = obj.transform.localScale * scale;
 
                 instances.Add(new ObstacleInstance
                 {

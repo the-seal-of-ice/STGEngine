@@ -144,6 +144,9 @@ namespace STGEngine.Runtime.Scene
             GUILayout.Label($"Scrolled: {scroll.TotalScrolled:F1}m");
             GUILayout.Label($"Speed: {scroll.CurrentSpeed:F1} m/s");
             GUILayout.Label($"Active Chunks: {_generator.ActiveChunks.Count}");
+            int totalObstacles = 0;
+            foreach (var c in _generator.ActiveChunks) totalObstacles += c.Obstacles.Count;
+            GUILayout.Label($"Obstacles: {totalObstacles}");
             GUILayout.Label($"Speed Multiplier: {_speedMultiplier:F2}");
             _speedMultiplier = GUILayout.HorizontalSlider(_speedMultiplier, 0f, 3f);
             GUILayout.EndArea();
