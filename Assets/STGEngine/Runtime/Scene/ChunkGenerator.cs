@@ -1,4 +1,3 @@
-// Assets/STGEngine/Runtime/Scene/ChunkGenerator.cs
 using UnityEngine;
 using System.Collections.Generic;
 using STGEngine.Core.Scene;
@@ -6,22 +5,23 @@ using STGEngine.Core.Scene;
 namespace STGEngine.Runtime.Scene
 {
     /// <summary>
-    /// 场景分块生成器。维护 Chunk 滑动窗口：
-    /// 玩家前方保持 N 个活跃 Chunk，身后超出距离的 Chunk 回收进池中。
-    /// 场景流动由 ScrollController 驱动。
+    /// 场景分块生成器（样条线版）。
+    /// Chunk 的几何体沿样条线生成，天然贴合曲线。
+    /// 每帧根据玩家在样条线上的弧长位置，回收身后的 Chunk，在前方生成新 Chunk。
+    /// 所有 Chunk 的顶点是相对于玩家位置的局部坐标，每帧重建 mesh 以跟随滚动。
     /// </summary>
     [AddComponentMenu("STGEngine/Scene/ChunkGenerator")]
     public class ChunkGenerator : MonoBehaviour
     {
         [Header("Chunk Settings")]
-        [SerializeField, Tooltip("每个 Chunk 的长度（米）")]
+        [SerializeField, Tooltip("每个 Chunk 的弧长长度（米）")]
         private float _chunkLength = 40f;
 
-        [SerializeField, Tooltip("玩家前方保持的活跃 Chunk 数量")]
-        private int _forwardChunkCount = 3;
+        [SerializeField, Tooltip("玩家前方保持的弧长距离（米）")]
+        private float _forwardDistance = 120f;
 
-        [SerializeField, Tooltip("玩家后方保留的 Chunk 数量（超出则回收）")]
-        private int _behindChunkCount = 1;
+        [SerializeField, Tooltip("玩家后方保留的弧长距离（米）")]
+        private float _behindDistance = 40f;
 
         [Header("Ground")]
         [SerializeField, Tooltip("地面材质")]
@@ -38,35 +38,29 @@ namespace STGEngine.Runtime.Scene
         private ScrollController _scroll;
         private SceneStyle _style;
         private int _nextChunkIndex;
-        private float _nextChunkDistance;
+        private float _nextChunkStartDist;
         private bool _initialized;
         private Material _defaultMaterial;
 
         /// <summary>
-        /// 初始化生成器。由外部调用（手动 DI 模式，与现有 PlayerCamera 一致）。
+        /// 初始化生成器。
         /// </summary>
         public void Initialize(SceneStyle style, Material groundMaterial = null)
         {
             _style = style;
             if (groundMaterial != null) _groundMaterial = groundMaterial;
 
-            _scroll = new ScrollController(_activeChunks);
+            _scroll = new ScrollController();
             _scroll.SetProfile(style.PathProfile);
-            _scroll.SetSceneRoot(transform);
 
             _nextChunkIndex = 0;
-            _nextChunkDistance = 0f;
+            _nextChunkStartDist = 0f;
 
-            // 生成初始 Chunk 填满前方窗口
-            int totalInitial = _behindChunkCount + _forwardChunkCount;
-            float startOffset = -_behindChunkCount * _chunkLength;
-            for (int i = 0; i < totalInitial; i++)
+            // 生成初始 Chunk：从玩家后方到前方
+            float startDist = 0f;
+            while (startDist < _forwardDistance)
             {
-                var chunk = CreateChunk(_nextChunkIndex, _nextChunkDistance);
-                chunk.Root.transform.position = new Vector3(0f, 0f, startOffset + i * _chunkLength);
-                _activeChunks.Add(chunk);
-                _nextChunkIndex++;
-                _nextChunkDistance += _chunkLength;
+                SpawnChunk();
             }
 
             _initialized = true;
@@ -77,20 +71,13 @@ namespace STGEngine.Runtime.Scene
             if (!_initialized) return;
 
             _scroll.Tick(Time.deltaTime);
-            RecycleAndSpawn();
-        }
+            float playerDist = _scroll.TotalScrolled;
 
-        /// <summary>
-        /// 回收已移过玩家后方的 Chunk，在前方生成新 Chunk。
-        /// </summary>
-        private void RecycleAndSpawn()
-        {
-            float recycleZ = -(_behindChunkCount + 1) * _chunkLength;
+            // 回收身后的 Chunk
             while (_activeChunks.Count > 0)
             {
                 var oldest = _activeChunks[0];
-                float chunkEndZ = oldest.Root.transform.position.z + oldest.Length;
-                if (chunkEndZ < recycleZ)
+                if (oldest.EndDistance < playerDist - _behindDistance)
                 {
                     RecycleChunk(oldest);
                     _activeChunks.RemoveAt(0);
@@ -98,25 +85,28 @@ namespace STGEngine.Runtime.Scene
                 else break;
             }
 
-            float spawnZ = _forwardChunkCount * _chunkLength;
-            while (_activeChunks.Count > 0)
+            // 在前方生成新 Chunk
+            while (_nextChunkStartDist < playerDist + _forwardDistance)
             {
-                var newest = _activeChunks[_activeChunks.Count - 1];
-                float newestEndZ = newest.Root.transform.position.z + newest.Length;
-                if (newestEndZ < spawnZ)
-                {
-                    var chunk = CreateChunk(_nextChunkIndex, _nextChunkDistance);
-                    chunk.Root.transform.position = new Vector3(0f, 0f, newestEndZ);
-                    _activeChunks.Add(chunk);
-                    _nextChunkIndex++;
-                    _nextChunkDistance += _chunkLength;
-                }
-                else break;
+                SpawnChunk();
             }
+
+            // 重建所有活跃 Chunk 的 mesh（顶点是相对于玩家位置的局部坐标）
+            RebuildAllMeshes(playerDist);
+
+            // 更新摄像头朝向
+            UpdateCameraDirection(playerDist);
         }
 
-        private Chunk CreateChunk(int index, float startDistance)
+        /// <summary>生成一个新 Chunk。</summary>
+        private void SpawnChunk()
         {
+            float splineLen = _style.PathProfile.Spline.TotalLength;
+            float startDist = _nextChunkStartDist;
+            float endDist = Mathf.Min(startDist + _chunkLength, splineLen);
+
+            if (startDist >= splineLen) return; // 样条线已到尽头
+
             Chunk chunk;
             if (_chunkPool.Count > 0)
             {
@@ -130,23 +120,25 @@ namespace STGEngine.Runtime.Scene
                 chunk.IsActive = true;
             }
 
-            chunk.Index = index;
-            chunk.StartDistance = startDistance;
-            chunk.Length = _chunkLength;
-            chunk.StartSample = _style.PathProfile.SampleAt(startDistance);
-            chunk.EndSample = _style.PathProfile.SampleAt(startDistance + _chunkLength);
-            chunk.Root.name = $"Chunk_{index}";
+            chunk.Index = _nextChunkIndex;
+            chunk.StartDistance = startDist;
+            chunk.EndDistance = endDist;
+            chunk.Root.name = $"Chunk_{_nextChunkIndex}";
             chunk.Root.transform.SetParent(transform);
+            chunk.Root.transform.localPosition = Vector3.zero;
 
             if (_style.HasGround)
             {
-                BuildGround(chunk);
+                EnsureGroundComponents(chunk);
             }
 
-            return chunk;
+            _activeChunks.Add(chunk);
+            _nextChunkIndex++;
+            _nextChunkStartDist = endDist;
         }
 
-        private void BuildGround(Chunk chunk)
+        /// <summary>确保 Chunk 有地面 mesh 组件。</summary>
+        private void EnsureGroundComponents(Chunk chunk)
         {
             if (chunk.Ground == null)
             {
@@ -156,12 +148,10 @@ namespace STGEngine.Runtime.Scene
                 chunk.Ground.AddComponent<MeshRenderer>();
             }
 
-            var mesh = GroundMeshBuilder.Build(chunk);
-            chunk.Ground.GetComponent<MeshFilter>().sharedMesh = mesh;
-
+            var renderer = chunk.Ground.GetComponent<MeshRenderer>();
             if (_groundMaterial != null)
             {
-                chunk.Ground.GetComponent<MeshRenderer>().sharedMaterial = _groundMaterial;
+                renderer.sharedMaterial = _groundMaterial;
             }
             else
             {
@@ -172,10 +162,48 @@ namespace STGEngine.Runtime.Scene
                     _defaultMaterial.color = Color.white;
                     _defaultMaterial.mainTexture = GenerateCheckerTexture(256, 8);
                 }
-                chunk.Ground.GetComponent<MeshRenderer>().sharedMaterial = _defaultMaterial;
+                renderer.sharedMaterial = _defaultMaterial;
             }
         }
 
+        /// <summary>
+        /// 重建所有活跃 Chunk 的地面 mesh。
+        /// 顶点是相对于玩家当前样条线位置的局部坐标，
+        /// 这样所有几何体都在原点附近，避免浮点精度问题。
+        /// </summary>
+        private void RebuildAllMeshes(float playerDist)
+        {
+            for (int i = 0; i < _activeChunks.Count; i++)
+            {
+                var chunk = _activeChunks[i];
+                if (!chunk.IsActive || chunk.Ground == null) continue;
+
+                var mf = chunk.Ground.GetComponent<MeshFilter>();
+                if (mf.sharedMesh != null)
+                {
+                    Destroy(mf.sharedMesh);
+                }
+                mf.sharedMesh = GroundMeshBuilder.Build(chunk, _style.PathProfile, playerDist);
+            }
+        }
+
+        /// <summary>
+        /// 更新摄像头方向，使其朝向样条线在玩家位置处的切线方向。
+        /// </summary>
+        private void UpdateCameraDirection(float playerDist)
+        {
+            var cam = Camera.main;
+            if (cam == null) return;
+
+            PathSample sample = _style.PathProfile.SampleAt(playerDist);
+
+            // 摄像头位置：在玩家位置上方偏后
+            Vector3 camOffset = -sample.Tangent * 8f + Vector3.up * 12f;
+            cam.transform.position = camOffset;
+            cam.transform.LookAt(sample.Tangent * 20f, Vector3.up);
+        }
+
+        /// <summary>回收 Chunk 到池中。</summary>
         private void RecycleChunk(Chunk chunk)
         {
             chunk.Deactivate();
@@ -216,9 +244,6 @@ namespace STGEngine.Runtime.Scene
             if (_defaultMaterial != null) Destroy(_defaultMaterial);
         }
 
-        /// <summary>
-        /// 生成棋盘格纹理，用于默认地面材质的速度参照。
-        /// </summary>
         private static Texture2D GenerateCheckerTexture(int size, int divisions)
         {
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
