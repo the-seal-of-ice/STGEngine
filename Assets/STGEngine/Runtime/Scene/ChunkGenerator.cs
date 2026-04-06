@@ -56,11 +56,10 @@ namespace STGEngine.Runtime.Scene
             _nextChunkIndex = 0;
             _nextChunkStartDist = 0f;
 
-            // 生成初始 Chunk：从玩家后方到前方
-            float startDist = 0f;
-            while (startDist < _forwardDistance)
+            // 生成初始 Chunk：从起点到前方距离
+            while (_nextChunkStartDist < _forwardDistance)
             {
-                SpawnChunk();
+                if (!SpawnChunk()) break; // 样条线到尽头则停止
             }
 
             _initialized = true;
@@ -88,24 +87,22 @@ namespace STGEngine.Runtime.Scene
             // 在前方生成新 Chunk
             while (_nextChunkStartDist < playerDist + _forwardDistance)
             {
-                SpawnChunk();
+                if (!SpawnChunk()) break;
             }
 
-            // 重建所有活跃 Chunk 的 mesh（顶点是相对于玩家位置的局部坐标）
-            RebuildAllMeshes(playerDist);
-
-            // 更新摄像头朝向
-            UpdateCameraDirection(playerDist);
+            // 更新摄像头：沿样条线移动
+            UpdateCamera(playerDist);
         }
 
-        /// <summary>生成一个新 Chunk。</summary>
-        private void SpawnChunk()
+        /// <summary>生成一个新 Chunk。返回 false 表示样条线已到尽头。</summary>
+        private bool SpawnChunk()
         {
             float splineLen = _style.PathProfile.Spline.TotalLength;
             float startDist = _nextChunkStartDist;
-            float endDist = Mathf.Min(startDist + _chunkLength, splineLen);
 
-            if (startDist >= splineLen) return; // 样条线已到尽头
+            if (startDist >= splineLen) return false; // 样条线已到尽头
+
+            float endDist = Mathf.Min(startDist + _chunkLength, splineLen);
 
             Chunk chunk;
             if (_chunkPool.Count > 0)
@@ -130,11 +127,15 @@ namespace STGEngine.Runtime.Scene
             if (_style.HasGround)
             {
                 EnsureGroundComponents(chunk);
+                // 生成时构建 mesh（世界坐标，一次性）
+                var mf = chunk.Ground.GetComponent<MeshFilter>();
+                mf.sharedMesh = GroundMeshBuilder.Build(chunk, _style.PathProfile);
             }
 
             _activeChunks.Add(chunk);
             _nextChunkIndex++;
             _nextChunkStartDist = endDist;
+            return true;
         }
 
         /// <summary>确保 Chunk 有地面 mesh 组件。</summary>
@@ -167,40 +168,24 @@ namespace STGEngine.Runtime.Scene
         }
 
         /// <summary>
-        /// 重建所有活跃 Chunk 的地面 mesh。
-        /// 顶点是相对于玩家当前样条线位置的局部坐标，
-        /// 这样所有几何体都在原点附近，避免浮点精度问题。
+        /// 更新摄像头：沿样条线移动，朝向切线方向。
+        /// Chunk 几何体在世界坐标中是静止的，摄像头在移动。
         /// </summary>
-        private void RebuildAllMeshes(float playerDist)
-        {
-            for (int i = 0; i < _activeChunks.Count; i++)
-            {
-                var chunk = _activeChunks[i];
-                if (!chunk.IsActive || chunk.Ground == null) continue;
-
-                var mf = chunk.Ground.GetComponent<MeshFilter>();
-                if (mf.sharedMesh != null)
-                {
-                    Destroy(mf.sharedMesh);
-                }
-                mf.sharedMesh = GroundMeshBuilder.Build(chunk, _style.PathProfile, playerDist);
-            }
-        }
-
-        /// <summary>
-        /// 更新摄像头方向，使其朝向样条线在玩家位置处的切线方向。
-        /// </summary>
-        private void UpdateCameraDirection(float playerDist)
+        private void UpdateCamera(float playerDist)
         {
             var cam = Camera.main;
             if (cam == null) return;
 
             PathSample sample = _style.PathProfile.SampleAt(playerDist);
 
-            // 摄像头位置：在玩家位置上方偏后
-            Vector3 camOffset = -sample.Tangent * 8f + Vector3.up * 12f;
-            cam.transform.position = camOffset;
-            cam.transform.LookAt(sample.Tangent * 20f, Vector3.up);
+            // 摄像头位置：样条线位置 + 上方偏移 + 后方偏移
+            Vector3 camPos = sample.Position + Vector3.up * 12f - sample.Tangent * 8f;
+            // 看向前方
+            Vector3 lookTarget = sample.Position + sample.Tangent * 30f;
+
+            cam.transform.position = Vector3.Lerp(cam.transform.position, camPos, Time.deltaTime * 5f);
+            Quaternion targetRot = Quaternion.LookRotation(lookTarget - cam.transform.position, Vector3.up);
+            cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRot, Time.deltaTime * 5f);
         }
 
         /// <summary>回收 Chunk 到池中。</summary>
