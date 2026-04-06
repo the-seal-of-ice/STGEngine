@@ -16,7 +16,7 @@ namespace STGEngine.Runtime.Scene
         private float _playerRadius = 0.8f;
 
         [SerializeField, Tooltip("交互触发额外距离（在碰撞半径之外多远触发）")]
-        private float _triggerMargin = 0.5f;
+        private float _triggerMargin = 2f;
 
         [SerializeField, Tooltip("Nudge 推力强度")]
         private float _nudgeForce = 25f;
