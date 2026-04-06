@@ -14,7 +14,8 @@ DynamicCamera（FOV 响应、速度感等）已废弃，不在本设计范围内
 
 - **触发方式**：纯 ActionEvent 驱动，不提供运行时 API 直接调用
 - **架构**：独立覆盖层，激活时接管相机，不修改现有三套相机控制器代码
-- **位置坐标系**：关键帧位置为相对玩家偏移（运行时加上玩家世界坐标）
+- **位置坐标系**：关键帧位置为玩家局部坐标系偏移 (right, up, forward)，运行时根据环境自动转换为世界坐标
+- **坐标桥接**：通过 `ICameraFrameProvider` 接口统一编辑器和程序化场景的坐标系转换
 - **blend 方式**：每个 CameraScript ActionEvent 自带 blendIn/blendOut 时长参数
 
 ## 数据模型
@@ -46,14 +47,16 @@ Core/Scene/CameraKeyframe.cs（新建）
 public class CameraKeyframe
 {
     public float Time;              // 相对于演出开始的秒数
-    public Vector3 PositionOffset;  // 相对玩家的 XYZ 偏移
-    public Vector3 Rotation;        // 欧拉角 (pitch, yaw, roll)
+    public Vector3 PositionOffset;  // 玩家局部坐标系偏移 (x=right, y=up, z=forward)
+    public Vector3 Rotation;        // 欧拉角 (pitch, yaw, roll)，局部空间
     public float FOV = 60f;         // 视野角度
     public EasingType Easing = EasingType.EaseInOut;
 }
 ```
 
 关键帧按 `Time` 升序排列。第一帧 `Time` 通常为 0。插值在相邻帧之间进行，超出最后一帧后保持最后一帧的值。
+
+`PositionOffset` 语义：`(x=right, y=up, z=forward)` 相对于玩家当前朝向的局部偏移。运行时由 `ICameraFrameProvider` 转换为世界坐标。`Rotation` 同理，是相对于玩家局部标架的旋转。
 
 ### CameraShakePreset
 
@@ -118,6 +121,98 @@ public class CameraShakeParams : IActionParams
 { ActionType.CameraShake,  typeof(CameraShakeParams)  }
 ```
 
+## 坐标桥接：ICameraFrameProvider
+
+### 问题
+
+编辑器和程序化场景的玩家坐标系完全不同：
+
+| 维度 | 编辑器沙盒 | 程序化场景 |
+|------|-----------|-----------|
+| 玩家组件 | `PlayerController` / `SimulatedPlayer` | `PlayerAnchorController` |
+| 坐标系 | 世界坐标，原点为中心 | 样条线弧长 + 局部偏移 |
+| 边界 | 80m AABB 立方体，硬 Clamp | 障碍物拟合曲线，软推力 + 硬限制 |
+| 朝向标架 | 相机视角方向 / 固定 Z-forward | 样条线 Frenet 标架 (Tangent/Normal/Up) |
+
+如果 CameraScript 的偏移直接用世界坐标，同一组关键帧在两个环境中的视觉效果会不一致（尤其在弯道处）。
+
+### 解决方案
+
+引入 `ICameraFrameProvider` 接口，提供"玩家位置 + 局部标架"，CameraScriptPlayer 通过它将关键帧的局部偏移转换为世界坐标。
+
+```
+Core/Scene/ICameraFrameProvider.cs（新建）
+```
+
+```csharp
+/// <summary>
+/// 为 CameraScriptPlayer 提供玩家位置和局部坐标标架。
+/// 关键帧的 PositionOffset (right, up, forward) 通过此标架转换为世界坐标。
+/// </summary>
+public interface ICameraFrameProvider
+{
+    /// <summary>玩家当前世界位置（偏移基准点）。</summary>
+    Vector3 PlayerWorldPosition { get; }
+
+    /// <summary>玩家局部坐标系的 Right 方向（世界空间单位向量）。</summary>
+    Vector3 FrameRight { get; }
+
+    /// <summary>玩家局部坐标系的 Up 方向（世界空间单位向量）。</summary>
+    Vector3 FrameUp { get; }
+
+    /// <summary>玩家局部坐标系的 Forward 方向（世界空间单位向量）。</summary>
+    Vector3 FrameForward { get; }
+}
+```
+
+### 转换公式
+
+CameraScriptPlayer 将关键帧偏移转换为世界坐标：
+
+```csharp
+Vector3 worldPos = provider.PlayerWorldPosition
+    + provider.FrameRight   * offset.x
+    + provider.FrameUp      * offset.y
+    + provider.FrameForward * offset.z;
+```
+
+Rotation 同理：先构造局部旋转四元数，再乘以标架旋转得到世界旋转。
+
+### 两套实现
+
+#### EditorCameraFrame（编辑器环境）
+
+```
+Runtime/Preview/EditorCameraFrame.cs（新建）
+```
+
+- `PlayerWorldPosition`：从 `IPlayerProvider.Position` 获取（Player 模式），或从 `FreeCameraController._pivot` 获取（非 Player 模式）
+- `FrameForward`：相机视角的水平投影方向，或固定 `Vector3.forward`
+- `FrameRight`：`Vector3.Cross(Up, Forward)`
+- `FrameUp`：`Vector3.up`
+
+编辑器中标架基本是固定的世界轴方向，行为与之前的"世界坐标偏移"几乎一致。
+
+#### SplineCameraFrame（程序化场景环境）
+
+```
+Runtime/Scene/SplineCameraFrame.cs（新建）
+```
+
+- `PlayerWorldPosition`：从 `PlayerAnchorController.WorldPosition` 获取
+- `FrameForward`：`PlayerAnchorController.CurrentAnchor.Tangent`（样条线切线方向）
+- `FrameRight`：`PlayerAnchorController.CurrentAnchor.Normal`（样条线法线方向）
+- `FrameUp`：`Vector3.up`
+
+在弯道处，标架随样条线自然旋转，关键帧偏移 `(5, 10, -8)` 始终表示"玩家右方 5m、上方 10m、后方 8m"，无论通路朝哪个方向。
+
+### 注入方式
+
+CameraScriptPlayer 持有 `ICameraFrameProvider` 引用，在初始化时注入：
+
+- `ActionEventPreviewController` 创建 CameraScriptPlayer 时注入 `EditorCameraFrame`
+- `SceneTestSetup` / `ChunkGenerator` 创建时注入 `SplineCameraFrame`
+
 ## 运行时组件
 
 ### CameraScriptPlayer
@@ -126,7 +221,7 @@ public class CameraShakeParams : IActionParams
 Runtime/Scene/CameraScriptPlayer.cs（新建）
 ```
 
-独立 MonoBehaviour，挂载在场景中（由 ActionEventPreviewController 或 SceneTestSetup 创建/获取）。
+独立 MonoBehaviour，挂载在场景中（由 ActionEventPreviewController 或 SceneTestSetup 创建/获取）。持有 `ICameraFrameProvider` 引用，用于将关键帧局部偏移转换为世界坐标。
 
 #### 状态机
 
@@ -142,6 +237,9 @@ Idle → BlendIn → Playing → BlendOut → Idle
 #### 公共接口
 
 ```csharp
+// 初始化，注入坐标系提供者
+void Initialize(ICameraFrameProvider frameProvider);
+
 // 开始播放关键帧序列
 void Play(CameraScriptParams scriptParams);
 
@@ -161,7 +259,7 @@ bool IsActive { get; }
 2. 推进内部时钟 `_elapsed += Time.deltaTime`
 3. 根据状态计算目标相机状态：
    - **BlendIn**：`t = _elapsed / blendIn`，Lerp(进入时快照, 第一帧目标, t)
-   - **Playing**：在关键帧列表中找到当前时间所在的区间，按 Easing 插值
+   - **Playing**：在关键帧列表中找到当前时间所在的区间，按 Easing 插值得到局部偏移，通过 `ICameraFrameProvider` 转换为世界坐标
    - **BlendOut**：`t = (_elapsed - blendOutStart) / blendOut`，Lerp(当前关键帧状态, 原控制器状态, t)
 4. 叠加 shake 偏移（如果有活跃震动）
 5. 写入 `Camera.main.transform.position/rotation` 和 `Camera.main.fieldOfView`
@@ -240,7 +338,7 @@ private readonly HashSet<int> _triggeredCameraIds = new();
 
 - CameraScriptPlayer 接管时禁用 `FreeCameraController`
 - 演出结束后恢复 `FreeCameraController`
-- 编辑器中的"玩家位置"参考点：使用 `FreeCameraController._pivot`（轨道中心）作为偏移基准。如果 Player 模式激活，则使用玩家实际位置
+- 坐标系由 `EditorCameraFrame` 提供：Player 模式用玩家位置，非 Player 模式用 `FreeCameraController._pivot`
 
 ## 文件清单
 
@@ -248,12 +346,15 @@ private readonly HashSet<int> _triggeredCameraIds = new();
 
 | 文件 | 职责 |
 |------|------|
+| `Core/Scene/ICameraFrameProvider.cs` | 坐标标架接口 |
 | `Core/Scene/CameraKeyframe.cs` | 相机关键帧数据 |
 | `Core/Scene/CameraShakePreset.cs` | 震动预设数据 |
 | `Core/Timeline/EasingType.cs` | 缓动类型枚举（如已存在则复用） |
 | `Core/Timeline/ActionParams/CameraScriptParams.cs` | CameraScript 事件参数 |
 | `Core/Timeline/ActionParams/CameraShakeParams.cs` | CameraShake 事件参数 |
 | `Runtime/Scene/CameraScriptPlayer.cs` | 演出镜头播放器 |
+| `Runtime/Scene/SplineCameraFrame.cs` | 程序化场景坐标标架实现 |
+| `Runtime/Preview/EditorCameraFrame.cs` | 编辑器坐标标架实现 |
 
 ### 修改文件
 
