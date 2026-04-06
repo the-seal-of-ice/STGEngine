@@ -122,12 +122,14 @@ namespace STGEngine.Runtime.Scene
 
         private void TriggerNudge(GameObject obj, Vector3 playerPos, float multiplier)
         {
-            Vector3 pushDir = (playerPos - obj.transform.position).normalized;
-            Vector2 push2D = new Vector2(
-                Vector3.Dot(pushDir, _player.CurrentAnchor.Normal),
-                pushDir.y
-            );
-            _player.LocalOffset += push2D * _nudgeForce * multiplier * Time.deltaTime;
+            // XZ 平面上的推离方向，不影响 Y（防止上弹）
+            Vector3 pushDir = playerPos - obj.transform.position;
+            pushDir.y = 0f;
+            if (pushDir.sqrMagnitude < 0.001f) return;
+            pushDir.Normalize();
+
+            float lateralPush = Vector3.Dot(pushDir, _player.CurrentAnchor.Normal);
+            _player.LocalOffset += new Vector2(lateralPush, 0f) * _nudgeForce * multiplier * Time.deltaTime;
         }
 
         private void UpdateSway()
