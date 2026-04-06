@@ -41,17 +41,32 @@ namespace STGEngine.Runtime.Scene
         private float _nextChunkStartDist;
         private bool _initialized;
         private Material _defaultMaterial;
+        private ObstaclePool _obstaclePool;
+        private ObstacleScatterer _scatterer;
 
         /// <summary>
         /// 初始化生成器。
         /// </summary>
-        public void Initialize(SceneStyle style, Material groundMaterial = null)
+        public void Initialize(SceneStyle style, Material groundMaterial = null, Dictionary<string, GameObject> runtimePrefabs = null)
         {
             _style = style;
             if (groundMaterial != null) _groundMaterial = groundMaterial;
 
             _scroll = new ScrollController();
             _scroll.SetProfile(style.PathProfile);
+
+            // Obstacle system
+            var poolRoot = new GameObject("ObstaclePool");
+            poolRoot.transform.SetParent(transform);
+            poolRoot.SetActive(false);
+            _obstaclePool = new ObstaclePool(poolRoot.transform);
+            _scatterer = new ObstacleScatterer(_obstaclePool, style.PathProfile);
+
+            if (runtimePrefabs != null)
+            {
+                foreach (var kvp in runtimePrefabs)
+                    _obstaclePool.RegisterPrefab(kvp.Key, kvp.Value);
+            }
 
             _nextChunkIndex = 0;
             _nextChunkStartDist = 0f;
@@ -130,6 +145,12 @@ namespace STGEngine.Runtime.Scene
                 // 生成时构建 mesh（世界坐标，一次性）
                 var mf = chunk.Ground.GetComponent<MeshFilter>();
                 mf.sharedMesh = GroundMeshBuilder.Build(chunk, _style.PathProfile);
+            }
+
+            // Scatter obstacles
+            if (_style.ObstacleConfigs.Count > 0)
+            {
+                chunk.Obstacles = _scatterer.Scatter(chunk, _style.ObstacleConfigs, _style.HazardFrequency);
             }
 
             _activeChunks.Add(chunk);
@@ -211,6 +232,12 @@ namespace STGEngine.Runtime.Scene
                 }
             }
 
+            // Return obstacles to pool
+            if (chunk.Obstacles.Count > 0)
+            {
+                _scatterer.ReturnAll(chunk.Obstacles);
+            }
+
             _chunkPool.Enqueue(chunk);
         }
 
@@ -233,6 +260,8 @@ namespace STGEngine.Runtime.Scene
                 var chunk = _chunkPool.Dequeue();
                 if (chunk.Root != null) Destroy(chunk.Root);
             }
+
+            _obstaclePool?.Clear();
 
             if (_defaultMaterial != null) Destroy(_defaultMaterial);
         }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using STGEngine.Core.Scene;
 
@@ -29,6 +30,9 @@ namespace STGEngine.Runtime.Scene
 
         /// <summary>Chunk 是否处于活跃状态。</summary>
         public bool IsActive { get; set; }
+
+        /// <summary>该 Chunk 上散布的障碍物实例列表。</summary>
+        public List<ObstacleInstance> Obstacles { get; set; } = new();
 
         /// <summary>停用 Chunk，隐藏 GameObject 并标记为非活跃。</summary>
         public void Deactivate()
