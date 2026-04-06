@@ -137,9 +137,16 @@
 - 场景流动通过整体平移所有活跃 Chunk 实现（而非移动玩家）
 
 **场景流动机制：**
-- 每帧将所有活跃 Chunk 沿 -Z 方向移动 `ScrollSpeed * deltaTime`
-- 当最近的 Chunk 完全移过玩家后方，回收该 Chunk 并在最远端生成新 Chunk
-- 玩家的世界坐标始终在原点附近，避免浮点精度问题
+- 摄像头沿样条线移动（Chunk 几何体在世界坐标中静止），速度由 PathProfile.ScrollSpeed 决定
+- 玩家自动沿通路前进（不需要按前进键），自由移动是相对于样条线锚点的偏移
+- 前方持续生成新 Chunk，身后超出距离的 Chunk 回收进对象池
+
+**条件触发滚动控制（后期实现）：**
+- `ScrollController` 支持 `HoldAtDistance(float dist)` —— 在指定弧长位置暂停滚动，直到外部调用 `Release()`
+- 时间轴中的 `WaitCondition` ActionEvent 可以绑定到弧长位置，条件满足时释放滚动
+- 典型用途：Boss 战场展开不是纯距离触发，而是"清空整版小怪后"才展开
+- 条件类型：所有敌人被消灭、Boss HP 降到阈值、玩家到达某个位置、或任意自定义谓词
+- 未满足条件时滚动减速/停止（通过 `SpeedMultiplier` 渐降到 0），满足后恢复
 
 ### 3.2 ObstacleScatterer（障碍物散布器）
 
