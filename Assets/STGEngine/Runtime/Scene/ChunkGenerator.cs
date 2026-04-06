@@ -40,6 +40,7 @@ namespace STGEngine.Runtime.Scene
         private int _nextChunkIndex;
         private float _nextChunkDistance;
         private bool _initialized;
+        private Material _defaultMaterial;
 
         /// <summary>
         /// 初始化生成器。由外部调用（手动 DI 模式，与现有 PlayerCamera 一致）。
@@ -160,6 +161,16 @@ namespace STGEngine.Runtime.Scene
             {
                 chunk.Ground.GetComponent<MeshRenderer>().sharedMaterial = _groundMaterial;
             }
+            else
+            {
+                if (_defaultMaterial == null)
+                {
+                    _defaultMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                    _defaultMaterial.name = "DefaultGround";
+                    _defaultMaterial.color = new Color(0.4f, 0.5f, 0.3f);
+                }
+                chunk.Ground.GetComponent<MeshRenderer>().sharedMaterial = _defaultMaterial;
+            }
         }
 
         private void RecycleChunk(Chunk chunk)
@@ -198,6 +209,8 @@ namespace STGEngine.Runtime.Scene
                 var chunk = _chunkPool.Dequeue();
                 if (chunk.Root != null) Destroy(chunk.Root);
             }
+
+            if (_defaultMaterial != null) Destroy(_defaultMaterial);
         }
     }
 }
