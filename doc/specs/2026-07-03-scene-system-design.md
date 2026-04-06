@@ -469,9 +469,94 @@ Boss 战结束后不是立刻退场，而是经历一个完整的战后流程：
 
 注意：上述"复用"的现有系统均为早期实现，成熟度不高。实施时需逐一评估，按需完善。
 
-## 9. 编辑器预览
+## 9. 编辑器系统改动
 
-### 9.1 PatternSandbox 扩展（完整预览）
+场景系统对现有编辑器的影响分为六个方面。现有编辑器采用硬编码 switch + 手动注册的扩展模式，无自动发现机制，因此每新增一种事件类型都需要在多个文件中添加分支。
+
+### 9.1 ActionType 枚举与 Params 扩展
+
+现有 `ActionType` 枚举有 11 种类型，每种对应一个 `IActionParams` 实现类，通过 `ActionParamsRegistry` 静态字典注册。
+
+**需要改动的文件：**
+
+| 文件 | 改动 |
+|------|------|
+| `Core/Timeline/ActionType.cs` | 新增 6 个枚举值：SceneStyleSwitch, CameraScriptEvent, ScrollSpeedChange, BossPresenceEvent, DialogueSceneEvent, BossExitEvent |
+| `Core/Timeline/ActionParams/` | 新建 6 个 Params 类，各自实现 `IActionParams` |
+| `Core/Timeline/ActionParams/ActionParamsRegistry.cs` | 在 `_map` 字典中注册 6 个新的 ActionType → Type 映射 |
+| `Editor/UI/Timeline/Layers/ActionBlock.cs` | 在 `GetActionLabel`、`GetActionColor`、`HasMeaningfulDuration` 三个 switch 中各添加 6 个分支 |
+| `Runtime/Preview/ActionEventPreviewController.cs` | 在 `Tick()` 的 switch 中添加 6 个预览处理分支 |
+
+**注意：** 现有扩展模式分散在 4-5 个文件中，容易遗漏。实施时建议逐个事件类型完整走通（枚举 → Params → 注册 → Block 显示 → 预览），而非按文件批量修改。
+
+### 9.2 时间轴 Block 与 Layer
+
+**不需要新建 Layer。** 场景事件作为 ActionEvent，自然放在现有的 `MidStageLayer`（道中阶段）和 `BossFightLayer`（Boss 战阶段）中。两者的右键菜单已有 "Add Action Event" 入口，新增的 ActionType 会自动出现在类型选择列表中。
+
+**ActionBlock 复用：** 所有场景事件复用现有 `ActionBlock`，它已经包装了所有 ActionEvent 类型。只需在 ActionBlock 的三个 switch 方法中添加分支（见 9.1）。
+
+**属性面板：** 每种新 ActionEvent 的参数编辑 UI 需要在对应 Layer 的 `BuildPropertiesPanel()` 中添加。当前属性面板是纯代码 UI Toolkit（无 UXML），需要为每种新 Params 类型手写编辑控件：
+- `SceneStyleSwitchParams` — SceneStyle 选择器（下拉/文件选择）+ 过渡时长 + 过渡曲线
+- `CameraScriptEventParams` — 关键帧列表编辑器（position/lookAt/fov/easing/time）+ blend_in/blend_out
+- `ScrollSpeedChangeParams` — 目标速度 + 过渡时长
+- `BossPresenceEventParams` — 模式选择 + 起始距离 + 接近速率
+- `DialogueSceneEventParams` — 模式选择 + 过渡时长
+- `BossExitEventParams` — 退场模式选择 + 场景联动配置
+
+其中 `CameraScriptEventParams` 的关键帧列表编辑器最复杂，可能需要独立的子面板或内联时间轴。
+
+### 9.3 STGCatalog 资源管理
+
+现有 STGCatalog 管理 5 种资源类型（Patterns, Stages, EnemyTypes, Waves, SpellCards），需要新增第 6 种：
+
+**需要改动的文件：**
+
+| 文件 | 改动 |
+|------|------|
+| `Editor/Data/STGCatalog.cs` | 添加 `List<CatalogEntry> SceneStyles` 字段 |
+| 同上 | 添加 CRUD 方法：FindSceneStyle, AddOrUpdateSceneStyle, RemoveSceneStyle, GetSceneStylePath, EnsureUniqueSceneStyleId/File |
+| 同上 | 在 `SerializeCatalog` / `ParseCatalog` 中添加 `scene_styles:` section |
+| 同上 | 在 `EnsureDirectories()` 中添加 `STGData/SceneStyles/` 目录创建 |
+
+这是机械性的复制粘贴工作，模式与现有 5 种类型完全一致。
+
+### 9.4 PatternSandbox 预览集成
+
+**需要改动的文件：**
+
+| 文件 | 改动 |
+|------|------|
+| `Runtime/Preview/PatternSandboxSetup.cs` | `Awake()` 中初始化场景预览子系统（ChunkGenerator、ObstacleScatterer、SceneLighting 等） |
+| 同上 | `Update()` 中驱动场景子系统的 Tick |
+| `Runtime/Preview/ActionEventPreviewController.cs` | 添加场景事件的预览处理（SceneStyleSwitch 触发风格切换、CameraScriptEvent 驱动镜头运动等） |
+| `Runtime/Preview/TimelinePlaybackController.cs` | 可能需要将场景流动（ScrollSpeed）与时间轴播放时间同步 |
+
+### 9.5 独立场景预览面板
+
+新建 `Editor/Scene/ScenePreviewPanel.cs`，作为独立的编辑器窗口：
+
+- 继承 EditorWindow 或嵌入现有编辑器布局
+- 提供 SceneStyle 选择/加载
+- PathProfile 曲线编辑器（可复用 UI Toolkit 的 CurveField 或自定义）
+- 障碍物密度/类型实时调参滑块
+- 场景流动控制（播放/暂停/速度/倒退）
+- 内嵌 SceneView 或独立 Camera 渲染预览
+- 复用 FreeCameraController 做自由浏览
+
+### 9.6 EditorSettings / EngineSettings 扩展
+
+| 设置 | 层级 | 说明 |
+|------|------|------|
+| `DefaultSceneStyleId` | GameplaySettings | 默认场景风格 ID（影响实际游戏） |
+| `ScenePreviewQuality` | EditorSettings | 场景预览渲染质量（Low/Medium/High） |
+| `ShowSceneBoundaryGizmo` | EditorSettings | 是否显示场景边界 Gizmo |
+| `SceneThumbnailSampleDuration` | EditorSettings | SceneStyle 缩略图采样时长 |
+
+通过现有 `EngineSettingsManager` 管理，遵循已有的 Gameplay/Editor 分类规则。
+
+## 10. 编辑器预览
+
+### 10.1 PatternSandbox 扩展（完整预览）
 
 在现有 PatternSandbox 中集成场景系统，实现弹幕 + 场景的完整预览：
 
@@ -479,7 +564,7 @@ Boss 战结束后不是立刻退场，而是经历一个完整的战后流程：
 - 场景流动与时间轴播放同步
 - 可以在完整的场景环境中测试弹幕模式、敌人出生、Boss 演出
 
-### 9.2 独立场景预览模式（快速调参）
+### 10.2 独立场景预览模式（快速调参）
 
 专门的场景预览窗口，用于快速迭代场景参数：
 
@@ -489,7 +574,7 @@ Boss 战结束后不是立刻退场，而是经历一个完整的战后流程：
 - 不需要弹幕模拟和玩家控制，纯场景环境预览
 - 支持自由相机浏览（复用现有 FreeCameraController）
 
-## 10. 文件结构规划
+## 11. 文件结构规划
 
 ```
 Assets/STGEngine/
@@ -527,4 +612,27 @@ Assets/STGEngine/
 ├── Editor/
 │   └── Scene/
 │       └── ScenePreviewPanel.cs    # 独立场景预览面板（快速调参）
+```
+
+**需要修改的现有文件（编辑器侧）：**
+
+```
+Assets/STGEngine/
+├── Core/Timeline/
+│   ├── ActionType.cs                  # +6 枚举值
+│   └── ActionParams/
+│       ├── ActionParamsRegistry.cs    # +6 注册映射
+│       ├── SceneStyleSwitchParams.cs  # 新建
+│       ├── CameraScriptEventParams.cs # 新建
+│       ├── ScrollSpeedChangeParams.cs # 新建
+│       ├── BossPresenceEventParams.cs # 新建
+│       ├── DialogueSceneEventParams.cs # 新建
+│       └── BossExitEventParams.cs     # 新建
+├── Editor/
+│   ├── Data/STGCatalog.cs             # +SceneStyles 资源类型
+│   └── UI/Timeline/Layers/
+│       └── ActionBlock.cs             # +6 switch 分支（label/color/duration）
+└── Runtime/Preview/
+    ├── ActionEventPreviewController.cs # +6 预览处理分支
+    └── PatternSandboxSetup.cs          # +场景子系统初始化与 Tick
 ```
