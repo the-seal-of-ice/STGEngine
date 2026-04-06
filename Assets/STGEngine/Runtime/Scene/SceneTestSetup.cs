@@ -37,7 +37,8 @@ namespace STGEngine.Runtime.Scene
                         (0, 15f), (180, 15f), (195, 5f), (300, 5f), (320, 15f), (1000, 15f)
                     ),
                     DriftCurve = new Core.Serialization.SerializableCurve(
-                        (0, 0f), (50, 3f), (100, -2f), (150, 1f), (200, 0f), (1000, 0f)
+                        (0, 0f), (80, 6f), (160, -5f), (240, 4f), (320, -3f),
+                        (400, 5f), (500, 0f), (600, -4f), (700, 3f), (800, -2f), (1000, 0f)
                     ),
                     TotalLength = 1000f
                 },

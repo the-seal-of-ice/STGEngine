@@ -168,6 +168,8 @@ namespace STGEngine.Runtime.Scene
                     _defaultMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
                     _defaultMaterial.name = "DefaultGround";
                     _defaultMaterial.color = new Color(0.4f, 0.5f, 0.3f);
+                    _defaultMaterial.mainTexture = GenerateCheckerTexture(256, 8);
+                    _defaultMaterial.mainTextureScale = new Vector2(4f, 4f);
                 }
                 chunk.Ground.GetComponent<MeshRenderer>().sharedMaterial = _defaultMaterial;
             }
@@ -211,6 +213,29 @@ namespace STGEngine.Runtime.Scene
             }
 
             if (_defaultMaterial != null) Destroy(_defaultMaterial);
+        }
+
+        /// <summary>
+        /// 生成棋盘格纹理，用于默认地面材质的速度参照。
+        /// </summary>
+        private static Texture2D GenerateCheckerTexture(int size, int divisions)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Point;
+            int cellSize = size / divisions;
+            var colorA = new Color(0.45f, 0.55f, 0.35f);
+            var colorB = new Color(0.35f, 0.45f, 0.25f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    bool isA = ((x / cellSize) + (y / cellSize)) % 2 == 0;
+                    tex.SetPixel(x, y, isA ? colorA : colorB);
+                }
+            }
+            tex.Apply();
+            return tex;
         }
     }
 }
