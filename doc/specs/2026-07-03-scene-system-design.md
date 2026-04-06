@@ -63,6 +63,8 @@
 | `PlacementZone` | `PlacementZone` | 放置区域枚举：`Roadside`（通路两侧）/ `Interior`（通路内部） |
 | `IsHazard` | `bool` | 是否为危险障碍物（碰撞掉残机） |
 | `MinSpacing` | `float` | 泊松采样最小间距 |
+| `Durability` | `float` | 耐久度（0 = 不可破坏）。危险障碍物默认低耐久度，鼓励玩家清除 |
+| `ContactResponse` | `ContactResponse` | 玩家擦过时的反应枚举：`Sway`（摇晃）/ `Nudge`（轻推）/ `None` |
 
 ### 2.3 SceneStyle（场景风格）
 
@@ -75,6 +77,12 @@
 | `BoundaryFalloff` | `SerializableCurve` | 软边界推力衰减曲线 |
 | `BoundaryInnerRatio` | `float` | 自由区比例，默认 0.8（通路宽度的 80% 内无推力） |
 | `HazardFrequency` | `float` | 道路内危险物出现频率（个/100m） |
+| `HasGround` | `bool` | 是否生成可见地面，默认 true。月面虚空等特殊场景设为 false |
+| `GroundPrefab` | `string` | 地面预制体/材质资源路径 |
+| `SkyboxProfile` | `string` | 天空盒/远景配置资源路径 |
+| `LightingPreset` | `string` | 光照预设资源路径（方向光、环境光、雾效参数） |
+| `AmbientParticles` | `string` | 全局粒子效果资源路径（落叶、尘埃等） |
+| `AmbientAudio` | `string` | 环境音循环资源路径 |
 
 ### 2.4 后期扩展数据模型（仅记录）
 
@@ -301,7 +309,90 @@ Boss 被击败后的退场同样应与场景互动，而非简单消失：
 - 这些通过时间轴中的复合事件序列实现（BossExit + SceneStyleSwitch + ScrollSpeedChange）
 - `CrashIntoScene` 需要场景破坏系统支持——被撞击的障碍物播放碎裂动画并从场景中移除
 
-## 5. 与时间轴系统的集成
+## 5. 场景环境与视觉层次
+
+### 5.1 远景背景层
+
+通路两侧障碍物有间隙，玩家可以透过缝隙看到远处的背景：
+
+- 每种 SceneStyle 配置一套远景层：天空盒/远景几何体/粒子雾
+- 远景层不参与场景流动（或以极慢的视差速率移动），与近处障碍物形成纵深层次
+- 风格切换时远景层同步过渡（交叉淡入淡出）
+
+### 5.2 通路地面
+
+通路有可见的地面，提供速度感知的直接参照：
+
+- 地面类型随 SceneStyle 配置：泥土小路、石板路、水面、草地等
+- 地面由 ChunkGenerator 随 Chunk 一起生成，使用地面预制体或程序化平面 mesh + 材质
+- 地面宽度跟随 `PathProfile.WidthCurve` 变化
+- 少数特殊场景可以没有地面（如月面虚空），通过 SceneStyle 配置 `HasGround = false`
+
+### 5.3 光照与氛围
+
+**全局光照配置：**
+- 每种 SceneStyle 预设一套光照参数：方向光角度/颜色/强度、环境光颜色、雾效颜色/密度/距离
+- 风格切换时所有光照参数平滑插值过渡
+
+**局部光照效果：**
+- 障碍物影响局部光照：竹林中光束穿过缝隙的体积光（URP Light Cookie 或 VolumetricFog）、巨石投射的动态阴影
+- 体积光方向与全局方向光一致，密度受障碍物间距影响
+- 危险障碍物可以有自发光效果（警示色），增强辨识度
+
+### 5.4 场景可破坏性
+
+障碍物可以被玩家射击和 Boss 弹幕破坏：
+
+**破坏机制：**
+- 每个障碍物实例有 `Durability`（耐久度），被射击时减少
+- 耐久度归零时触发碎裂：播放碎裂动画/粒子效果，障碍物从场景中移除
+- 危险障碍物可以被玩家主动清除（耐久度较低），增加玩法策略性
+- 普通路侧障碍物耐久度较高，不容易被清除，但 Boss 高威力弹幕可以打穿
+
+**破坏效果：**
+- 碎裂产生碎片粒子（方向与击中方向相关）
+- 被破坏的障碍物留下残根/碎片（可选，低 LOD 替代物）
+- Boss 的 `CrashIntoScene` 退场触发区域性批量破坏
+
+**配置：**
+- `ObstacleConfig` 扩展 `Durability` 字段（0 = 不可破坏）
+- `IsHazard` 障碍物默认低耐久度（鼓励玩家清除）
+
+### 5.5 玩家与普通障碍物的物理交互
+
+玩家擦过普通障碍物时有反馈但无惩罚：
+
+- 竹子/树木：摇晃动画 + 掉落叶片粒子
+- 巨石：玩家受到轻微推力（比软边界弱），石头表面产生微粒子
+- 所有普通障碍物：擦过时的触觉反馈（手柄震动，如果支持）
+- 不掉残机、不造成伤害，纯粹的环境互动感
+
+### 5.6 场景粒子系统
+
+**全局粒子：**
+- 每种 SceneStyle 配一套全局粒子效果：竹林落叶、巨石区尘埃、月面微光粒子、雪花等
+- 粒子随场景流动方向飘动，增强速度感
+- 风格切换时粒子系统交叉过渡
+
+**局部粒子：**
+- 障碍物自身产生局部粒子：竹子摇晃时掉落叶片、巨石被破坏时碎片飞溅
+- 玩家擦过障碍物时触发的互动粒子
+- 危险障碍物的警示粒子（持续发出微光/烟雾）
+
+### 5.7 场景音效
+
+**环境音：**
+- 每种 SceneStyle 配一套环境音循环（竹林风声、水流声、月面寂静中的低频嗡鸣等）
+- 风格过渡时环境音交叉淡入淡出
+- 场景流动速度影响风切声强度
+
+**空间化音效：**
+- 障碍物有 3D 空间定位音效：经过竹子时听到近处的沙沙声，经过巨石时有低沉的风声
+- 音效强度随距离衰减，使用 Unity 的 AudioSource 3D 空间化
+- 危险障碍物有更强、更显著的音效提示（持续的警示音/嗡鸣），作为玩法警告
+- 障碍物被破坏时的碎裂音效（空间定位）
+
+## 7. 与时间轴系统的集成
 
 新增 ActionEvent 类型（扩展现有 `ActionParams`）：
 
@@ -316,7 +407,7 @@ Boss 被击败后的退场同样应与场景互动，而非简单消失：
 
 这些 ActionEvent 在时间轴编辑器中以 Block 形式呈现，与现有的 `BackgroundSwitch`、`ScreenEffect` 等并列。
 
-## 6. 与现有系统的关系
+## 8. 与现有系统的关系
 
 | 现有系统 | 关系 | 备注 |
 |----------|------|------|
@@ -332,7 +423,27 @@ Boss 被击败后的退场同样应与场景互动，而非简单消失：
 
 注意：上述"复用"的现有系统均为早期实现，成熟度不高。实施时需逐一评估，按需完善。
 
-## 6. 文件结构规划
+## 9. 编辑器预览
+
+### 9.1 PatternSandbox 扩展（完整预览）
+
+在现有 PatternSandbox 中集成场景系统，实现弹幕 + 场景的完整预览：
+
+- 加载 SceneStyle 配置后，沙盒中实时运行 ChunkGenerator + ObstacleScatterer
+- 场景流动与时间轴播放同步
+- 可以在完整的场景环境中测试弹幕模式、敌人出生、Boss 演出
+
+### 9.2 独立场景预览模式（快速调参）
+
+专门的场景预览窗口，用于快速迭代场景参数：
+
+- 实时预览通路生成：拖动 WidthCurve 控制点，立即看到通路宽窄变化
+- 障碍物密度/类型调参：滑块调整密度，下拉切换预制体变体，实时刷新散布
+- 场景流动速度预览：可暂停/加速/倒退场景流动
+- 不需要弹幕模拟和玩家控制，纯场景环境预览
+- 支持自由相机浏览（复用现有 FreeCameraController）
+
+## 10. 文件结构规划
 
 ```
 Assets/STGEngine/
@@ -340,7 +451,7 @@ Assets/STGEngine/
 │   ├── Scene/
 │   │   ├── PathProfile.cs          # 通路轮廓数据
 │   │   ├── ObstacleConfig.cs       # 障碍物配置数据
-│   │   ├── SceneStyle.cs           # 场景风格组合
+│   │   ├── SceneStyle.cs           # 场景风格组合（含地面、远景、光照、粒子、音效配置）
 │   │   ├── CameraKeyframe.cs       # 镜头关键帧数据
 │   │   ├── SceneAnchoredSpawn.cs   # 场景锚定出生点数据
 │   │   ├── BossPresence.cs         # Boss 场景存在模式数据
@@ -351,16 +462,23 @@ Assets/STGEngine/
 │       └── ActionParams.cs         # 扩展新的 ActionEvent 类型（已有文件）
 ├── Runtime/
 │   ├── Scene/
-│   │   ├── ChunkGenerator.cs       # 分块生成与回收
-│   │   ├── ObstacleScatterer.cs    # 障碍物散布
+│   │   ├── ChunkGenerator.cs       # 分块生成与回收（含地面生成）
+│   │   ├── ObstacleScatterer.cs    # 障碍物散布（含空间索引）
 │   │   ├── ObstaclePool.cs         # 障碍物对象池
+│   │   ├── ObstacleInteraction.cs  # 障碍物物理交互（摇晃、推力、破坏）
 │   │   ├── BoundaryForce.cs        # 软边界力场
 │   │   ├── HazardCollision.cs      # 危险障碍物碰撞判定
-│   │   ├── SpawnAnchorResolver.cs  # 出生锚点解析（匹配障碍物与 EnemyInstance）
+│   │   ├── SpawnAnchorResolver.cs  # 出生锚点解析
 │   │   ├── BossPresenceController.cs # Boss 场景存在控制
 │   │   ├── EnemyExitController.cs  # 小怪退场动画控制
-│   │   └── DialogueSceneController.cs # 对话场景模式控制
+│   │   ├── DialogueSceneController.cs # 对话场景模式控制
+│   │   ├── SceneLighting.cs        # 场景光照管理（全局 + 局部体积光）
+│   │   ├── SceneParticles.cs       # 场景粒子管理（全局 + 局部）
+│   │   └── SceneAudio.cs           # 场景音效管理（环境音 + 空间化音效）
 │   └── Camera/
 │       ├── DynamicCamera.cs        # 动态响应镜头
 │       └── CameraScriptPlayer.cs   # 演出镜头播放器
+├── Editor/
+│   └── Scene/
+│       └── ScenePreviewPanel.cs    # 独立场景预览面板（快速调参）
 ```
