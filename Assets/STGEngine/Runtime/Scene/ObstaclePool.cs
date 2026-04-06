@@ -37,6 +37,8 @@ namespace STGEngine.Runtime.Scene
             if (_pools[prefabPath].Count > 0)
             {
                 obj = _pools[prefabPath].Dequeue();
+                // 先脱离 inactive 的 poolRoot，否则 SetActive(true) 无效
+                obj.transform.SetParent(null);
                 obj.SetActive(true);
             }
             else
