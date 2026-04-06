@@ -4,24 +4,31 @@ using STGEngine.Core.Scene;
 namespace STGEngine.Runtime.Scene
 {
     /// <summary>
-    /// 软边界力场。当玩家接近通路边缘时施加渐变推力，
-    /// 柔和地约束玩家在通路内活动。不是硬墙，而是阻力渐增。
+    /// 边界力场。两层机制：
+    /// 1. 障碍物推力：每个路侧障碍物都是推力源，玩家靠近时被推开。
+    ///    边界形状由障碍物的实际分布决定，而非平滑曲线。
+    /// 2. 安全兜底：通路宽度硬限制，防止没有障碍物的区域飞出去。
+    /// 3. 地面约束：Y 方向软边界。
     /// </summary>
     [AddComponentMenu("STGEngine/Scene/BoundaryForce")]
     public class BoundaryForce : MonoBehaviour
     {
-        [Header("Lateral Boundary (Left/Right)")]
-        [SerializeField, Tooltip("横向自由区比例（通路宽度的多少比例内无推力）")]
-        private float _innerRatio = 0.9f;
+        [Header("Obstacle Repulsion")]
+        [SerializeField, Tooltip("障碍物推力开始生效的距离（米，从障碍物表面算起）")]
+        private float _repulsionRange = 3f;
 
-        [SerializeField, Tooltip("横向最大推力强度（m/s）")]
-        private float _lateralMaxForce = 40f;
+        [SerializeField, Tooltip("障碍物最大推力强度（m/s）")]
+        private float _repulsionForce = 35f;
 
-        [SerializeField, Tooltip("横向推力指数（越大边缘越硬）")]
-        private float _lateralExponent = 2f;
+        [SerializeField, Tooltip("推力指数（越大越接近硬墙）")]
+        private float _repulsionExponent = 2f;
 
-        [Header("Vertical Boundary (Up/Down)")]
-        [SerializeField, Tooltip("地面以下推力（强，防止穿地）")]
+        [Header("Safety Fallback")]
+        [SerializeField, Tooltip("安全硬限制倍率（相对于通路半宽）")]
+        private float _safetyLimitRatio = 1.3f;
+
+        [Header("Vertical Boundary")]
+        [SerializeField, Tooltip("地面推力强度")]
         private float _groundForce = 200f;
 
         [SerializeField, Tooltip("上方自由区高度（米）")]
@@ -31,41 +38,75 @@ namespace STGEngine.Runtime.Scene
         private float _ceilingForce = 20f;
 
         private PlayerAnchorController _player;
+        private ChunkGenerator _generator;
         private bool _initialized;
 
-        /// <summary>初始化，绑定到玩家控制器。</summary>
         public void Initialize(PlayerAnchorController player, ChunkGenerator generator)
         {
             _player = player;
+            _generator = generator;
             _initialized = true;
         }
 
         private void Update()
         {
-            if (!_initialized || _player == null) return;
+            if (!_initialized || _player == null || _generator == null) return;
 
-            var anchor = _player.CurrentAnchor;
-            float halfWidth = anchor.Width * 0.5f;
-            float freeHalfW = halfWidth * _innerRatio;
-
-            Vector2 offset = _player.LocalOffset;
             Vector2 force = Vector2.zero;
+            Vector3 playerPos = _player.WorldPosition;
 
-            // --- 横向边界（左右）---
-            float absX = Mathf.Abs(offset.x);
-            if (absX > freeHalfW)
+            // --- 障碍物推力 ---
+            // 每个路侧障碍物都是推力源，玩家靠近时被推开
+            foreach (var chunk in _generator.ActiveChunks)
             {
-                // 从自由区边缘到通路边缘的归一化深度
-                float edgeZone = halfWidth - freeHalfW;
-                if (edgeZone > 0.01f)
+                if (!chunk.IsActive) continue;
+
+                foreach (var obs in chunk.Obstacles)
                 {
-                    float depth = Mathf.Clamp01((absX - freeHalfW) / edgeZone);
-                    float strength = Mathf.Pow(depth, _lateralExponent) * _lateralMaxForce;
-                    force.x = -Mathf.Sign(offset.x) * strength;
+                    if (obs.GameObject == null || !obs.GameObject.activeSelf) continue;
+                    if (obs.Config == null) continue;
+                    // 只有路侧障碍物产生边界推力（道路内的危险障碍物不推）
+                    if (obs.Config.PlacementZone != PlacementZone.Roadside) continue;
+
+                    Vector3 obsPos = obs.GameObject.transform.position;
+
+                    // XZ 平面距离
+                    float dx = playerPos.x - obsPos.x;
+                    float dz = playerPos.z - obsPos.z;
+                    float horizDist = Mathf.Sqrt(dx * dx + dz * dz);
+
+                    // 障碍物 XZ 半径
+                    float obsRadius = 1f;
+                    var renderer = obs.GameObject.GetComponent<Renderer>();
+                    if (renderer != null)
+                    {
+                        var ext = renderer.bounds.extents;
+                        obsRadius = Mathf.Min(ext.x, ext.z);
+                    }
+
+                    // 从障碍物表面算起的距离
+                    float surfaceDist = horizDist - obsRadius - 0.8f; // 减去玩家半径
+
+                    if (surfaceDist >= _repulsionRange) continue;
+                    if (surfaceDist < 0f) surfaceDist = 0f;
+
+                    // 归一化深度：0 = 刚进入范围，1 = 贴着表面
+                    float depth = 1f - (surfaceDist / _repulsionRange);
+                    float strength = Mathf.Pow(depth, _repulsionExponent) * _repulsionForce;
+
+                    // 推力方向：从障碍物指向玩家（XZ 平面）
+                    if (horizDist > 0.01f)
+                    {
+                        Vector3 pushDir = new Vector3(dx / horizDist, 0f, dz / horizDist);
+                        // 投影到玩家的局部坐标系（Normal 方向）
+                        float lateralPush = Vector3.Dot(pushDir, _player.CurrentAnchor.Normal);
+                        force.x += lateralPush * strength;
+                    }
                 }
             }
 
-            // --- 地面约束（Y 下边界）---
+            // --- 地面约束 ---
+            Vector2 offset = _player.LocalOffset;
             float groundLevel = 0.8f;
             if (offset.y < groundLevel)
             {
@@ -83,9 +124,11 @@ namespace STGEngine.Runtime.Scene
                 _player.LocalOffset += force * Time.deltaTime;
             }
 
-            // 硬限制：通路边缘就是硬墙
+            // 安全硬限制（兜底，正常情况下障碍物推力已经阻止了）
+            var anchor = _player.CurrentAnchor;
+            float safeLimit = anchor.Width * 0.5f * _safetyLimitRatio;
             Vector2 clamped = _player.LocalOffset;
-            clamped.x = Mathf.Clamp(clamped.x, -halfWidth, halfWidth);
+            clamped.x = Mathf.Clamp(clamped.x, -safeLimit, safeLimit);
             clamped.y = Mathf.Clamp(clamped.y, groundLevel - 0.1f, _ceilingHeight + 5f);
             _player.LocalOffset = clamped;
         }
