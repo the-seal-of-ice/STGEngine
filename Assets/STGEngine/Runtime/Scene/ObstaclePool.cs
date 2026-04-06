@@ -11,6 +11,7 @@ namespace STGEngine.Runtime.Scene
     {
         private readonly Dictionary<string, Queue<GameObject>> _pools = new();
         private readonly Dictionary<string, GameObject> _prefabCache = new();
+        private readonly Dictionary<string, Vector3> _originalScales = new();
         private readonly Transform _poolRoot;
 
         /// <summary>
@@ -46,6 +47,12 @@ namespace STGEngine.Runtime.Scene
                 obj.SetActive(true);
             }
 
+            // Reset scale to original prefab scale (prevents cumulative scaling)
+            if (_originalScales.TryGetValue(prefabPath, out var origScale))
+            {
+                obj.transform.localScale = origScale;
+            }
+
             return obj;
         }
 
@@ -71,6 +78,7 @@ namespace STGEngine.Runtime.Scene
         public void RegisterPrefab(string key, GameObject prefab)
         {
             _prefabCache[key] = prefab;
+            _originalScales[key] = prefab.transform.localScale;
         }
 
         /// <summary>
@@ -97,7 +105,10 @@ namespace STGEngine.Runtime.Scene
 
             var prefab = Resources.Load<GameObject>(path);
             if (prefab != null)
+            {
                 _prefabCache[path] = prefab;
+                _originalScales[path] = prefab.transform.localScale;
+            }
 
             return prefab;
         }
