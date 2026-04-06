@@ -103,7 +103,7 @@ namespace STGEngine.Runtime.Scene
             // Boundary
             var boundaryGo = new GameObject("BoundaryForce");
             _boundary = boundaryGo.AddComponent<BoundaryForce>();
-            _boundary.Initialize(_player);
+            _boundary.Initialize(_player, _generator);
 
             // Hazard collision
             var hazardGo = new GameObject("HazardCollision");

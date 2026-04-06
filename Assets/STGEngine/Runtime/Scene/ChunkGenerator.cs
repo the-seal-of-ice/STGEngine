@@ -198,6 +198,12 @@ namespace STGEngine.Runtime.Scene
         /// <summary>玩家控制器引用（可选，用于摄像头跟随玩家而非纯锚点）。</summary>
         public PlayerAnchorController Player { get; set; }
 
+        /// <summary>在指定弧长距离处采样 PathProfile。供外部系统（如 BoundaryForce）查询。</summary>
+        public PathSample GetProfileSample(float distance)
+        {
+            return _style.PathProfile.SampleAt(distance);
+        }
+
         /// <summary>
         /// 更新摄像头：跟随玩家锚点沿样条线移动。
         /// Chunk 几何体在世界坐标中静止，摄像头在移动。
