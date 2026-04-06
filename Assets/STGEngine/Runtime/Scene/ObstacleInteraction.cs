@@ -16,7 +16,7 @@ namespace STGEngine.Runtime.Scene
         private float _playerRadius = 0.8f;
 
         [SerializeField, Tooltip("交互触发额外距离（在碰撞半径之外多远触发）")]
-        private float _triggerMargin = 1f;
+        private float _triggerMargin = 0.5f;
 
         [SerializeField, Tooltip("Nudge 推力强度")]
         private float _nudgeForce = 25f;
@@ -59,12 +59,12 @@ namespace STGEngine.Runtime.Scene
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.None) continue;
                     if (obs.GameObject == null || !obs.GameObject.activeSelf) continue;
 
-                    // 计算障碍物碰撞半径
+                    // 计算障碍物 XZ 平面碰撞半径
                     float obsRadius = GetObstacleRadius(obs.GameObject);
                     float triggerDist = _playerRadius + obsRadius + _triggerMargin;
 
-                    // 用到障碍物最近点的距离（XZ 平面 + Y clamp 到 bounds 范围）
-                    float dist = DistanceToObstacle(playerPos, obs.GameObject);
+                    // XZ 平面距离（忽略高度差，竹子等竖直物体在地面也能触发）
+                    float dist = HorizontalDistance(playerPos, obs.GameObject.transform.position);
                     if (dist > triggerDist) continue;
 
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Sway)
@@ -85,29 +85,17 @@ namespace STGEngine.Runtime.Scene
         {
             var renderer = obj.GetComponent<Renderer>();
             if (renderer == null) return 1f;
+            // XZ 平面上的半径（取 X 和 Z extent 的最小值）
             var ext = renderer.bounds.extents;
             return Mathf.Min(ext.x, ext.z);
         }
 
-        /// <summary>
-        /// 计算玩家到障碍物的有效距离。
-        /// 对竖直物体（竹子等），用 XZ 平面距离而非 3D 距离，
-        /// 这样玩家在地面时也能触发高处的竹子。
-        /// </summary>
-        private float DistanceToObstacle(Vector3 playerPos, GameObject obj)
+        /// <summary>XZ 平面上两点的水平距离。</summary>
+        private static float HorizontalDistance(Vector3 a, Vector3 b)
         {
-            var renderer = obj.GetComponent<Renderer>();
-            if (renderer == null)
-            {
-                // 无 renderer，用 XZ 平面距离
-                Vector2 pXZ = new Vector2(playerPos.x, playerPos.z);
-                Vector2 oXZ = new Vector2(obj.transform.position.x, obj.transform.position.z);
-                return Vector2.Distance(pXZ, oXZ);
-            }
-
-            // 找到 bounds 上离玩家最近的点
-            Vector3 closest = renderer.bounds.ClosestPoint(playerPos);
-            return Vector3.Distance(playerPos, closest);
+            float dx = a.x - b.x;
+            float dz = a.z - b.z;
+            return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
         private void TriggerSway(GameObject obj, Vector3 playerPos)

@@ -74,7 +74,7 @@ namespace STGEngine.Runtime.Scene
 
                 // 横向偏移：从路边 + 安全间距开始向外
                 // pt.x 在 [0, bandWidth] 范围内，映射到 [halfWidth + margin, halfWidth + margin + bandWidth]
-                float margin = 5f; // 路边安全间距，防止障碍物侵占路面
+                float margin = 3f; // 路边安全间距
                 float lateralOffset = (localHalfWidth + margin + pt.x) * side;
 
                 // 世界坐标

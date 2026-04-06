@@ -40,7 +40,7 @@ namespace STGEngine.Runtime.Scene
 
         [Header("Hard Limits")]
         [SerializeField, Tooltip("横向硬限制倍率（相对于有效半宽的倍数）")]
-        private float _hardLimitRatio = 1.15f;
+        private float _hardLimitRatio = 1.25f;
 
         private PlayerAnchorController _player;
         private ChunkGenerator _generator;
