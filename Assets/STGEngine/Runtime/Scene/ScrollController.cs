@@ -5,9 +5,9 @@ using System.Collections.Generic;
 namespace STGEngine.Runtime.Scene
 {
     /// <summary>
-    /// 控制场景的卷轴流动。每帧将所有活跃 Chunk 沿通路方向移动，
-    /// 补偿 DriftCurve 的横向变化，使玩家视角始终"沿路前进"。
-    /// 叠加缓慢的随机横向偏移增加生动感。
+    /// 控制场景的卷轴流动。场景整体作为一个 Transform 的子物体，
+    /// 通过移动和旋转该 Transform 实现"沿通路前进"的效果。
+    /// Drift 补偿让视角始终朝向通路方向，Perlin noise 增加生动感。
     /// </summary>
     public class ScrollController
     {
@@ -17,28 +17,37 @@ namespace STGEngine.Runtime.Scene
         /// <summary>当前帧的流动速度（m/s）。</summary>
         public float CurrentSpeed { get; private set; }
 
-        /// <summary>速度倍率覆盖。1.0 = 正常，0.0 = 停止。用于对话减速等。</summary>
+        /// <summary>速度倍率覆盖。1.0 = 正常，0.0 = 停止。</summary>
         public float SpeedMultiplier { get; set; } = 1f;
 
         /// <summary>随机横向偏移的幅度（米）。0 = 无偏移。</summary>
-        public float WanderAmplitude { get; set; } = 2f;
+        public float WanderAmplitude { get; set; } = 1.5f;
 
-        /// <summary>随机横向偏移的变化频率。越大变化越快。</summary>
-        public float WanderFrequency { get; set; } = 0.15f;
+        /// <summary>随机横向偏移的变化频率。</summary>
+        public float WanderFrequency { get; set; } = 0.08f;
 
-        /// <summary>当前的横向偏移量（Drift 补偿 + 随机漫游的合计）。</summary>
-        public float CurrentLateralOffset { get; private set; }
+        /// <summary>当前通路朝向角度（Y 轴旋转，度）。</summary>
+        public float CurrentHeading { get; private set; }
 
         private readonly List<Chunk> _activeChunks;
         private Core.Scene.PathProfile _profile;
         private float _prevDrift;
-        private float _accumulatedDriftCompensation;
         private float _wanderSeed;
+        private float _smoothedLateralOffset;
+
+        /// <summary>场景根 Transform，所有 Chunk 是它的子物体。</summary>
+        private Transform _sceneRoot;
 
         public ScrollController(List<Chunk> activeChunks)
         {
             _activeChunks = activeChunks;
             _wanderSeed = Random.Range(0f, 1000f);
+        }
+
+        /// <summary>设置场景根 Transform（ChunkGenerator 的 transform）。</summary>
+        public void SetSceneRoot(Transform root)
+        {
+            _sceneRoot = root;
         }
 
         /// <summary>设置当前使用的 PathProfile。</summary>
@@ -52,8 +61,8 @@ namespace STGEngine.Runtime.Scene
         }
 
         /// <summary>
-        /// 每帧调用。根据当前滚动距离从 PathProfile 采样速度，
-        /// 沿通路方向移动所有活跃 Chunk（Z 方向 + Drift 补偿 X 方向）。
+        /// 每帧调用。沿通路方向移动场景，补偿 Drift 变化，
+        /// 旋转场景使视角朝向通路前进方向。
         /// </summary>
         public float Tick(float deltaTime)
         {
@@ -63,19 +72,30 @@ namespace STGEngine.Runtime.Scene
             CurrentSpeed = sample.Speed * SpeedMultiplier;
             float scrollDelta = CurrentSpeed * deltaTime;
 
-            // 计算 Drift 变化量：当前 Drift 与上一帧 Drift 的差值
-            // 场景需要反向补偿这个差值，让玩家视角始终沿路前进
-            float driftDelta = sample.Drift - _prevDrift;
-            _accumulatedDriftCompensation += driftDelta;
-            _prevDrift = sample.Drift;
+            // --- Drift 补偿 ---
+            // Drift 变化率 = 通路弯曲方向
+            float currentDrift = sample.Drift;
+            float driftDelta = currentDrift - _prevDrift;
+            _prevDrift = currentDrift;
 
-            // 随机漫游偏移（Perlin noise 驱动，缓慢平滑变化）
-            float wanderOffset = (Mathf.PerlinNoise(_wanderSeed, TotalScrolled * WanderFrequency) - 0.5f) * 2f * WanderAmplitude;
+            // --- 通路朝向角度 ---
+            // 用 Drift 的变化率计算通路的朝向：atan2(driftDelta, scrollDelta)
+            // 这给出通路在 XZ 平面上的前进方向
+            if (scrollDelta > 0.001f)
+            {
+                float targetHeading = Mathf.Atan2(driftDelta, scrollDelta) * Mathf.Rad2Deg;
+                // 平滑插值避免突变
+                CurrentHeading = Mathf.LerpAngle(CurrentHeading, targetHeading, Mathf.Min(deltaTime * 3f, 1f));
+            }
 
-            // 总横向偏移 = Drift 补偿 + 随机漫游
-            float totalLateralDelta = driftDelta + (wanderOffset - CurrentLateralOffset) * Mathf.Min(deltaTime * 2f, 1f);
+            // --- 随机漫游 ---
+            float wanderTarget = (Mathf.PerlinNoise(_wanderSeed, TotalScrolled * WanderFrequency) - 0.5f)
+                                 * 2f * WanderAmplitude;
+            _smoothedLateralOffset = Mathf.Lerp(_smoothedLateralOffset, wanderTarget, Mathf.Min(deltaTime * 1.5f, 1f));
 
-            // 移动所有活跃 Chunk
+            // --- 移动所有 Chunk ---
+            // 主轴移动（-Z）+ Drift 补偿（-X）+ 漫游偏移
+            float lateralDelta = driftDelta;
             for (int i = 0; i < _activeChunks.Count; i++)
             {
                 var chunk = _activeChunks[i];
@@ -83,12 +103,26 @@ namespace STGEngine.Runtime.Scene
                 {
                     var pos = chunk.Root.transform.position;
                     pos.z -= scrollDelta;
-                    pos.x -= totalLateralDelta;
+                    pos.x -= lateralDelta;
                     chunk.Root.transform.position = pos;
                 }
             }
 
-            CurrentLateralOffset = wanderOffset;
+            // --- 旋转场景根 ---
+            // 旋转场景根而非每个 Chunk，让所有 Chunk 一起转
+            // 加上漫游偏移的位移
+            if (_sceneRoot != null)
+            {
+                // 旋转：让前方道路始终朝向摄像头前方
+                _sceneRoot.rotation = Quaternion.Euler(0f, -CurrentHeading, 0f);
+
+                // 漫游偏移：在场景根的局部 X 方向上偏移
+                var rootPos = _sceneRoot.position;
+                float wanderDelta = (_smoothedLateralOffset - rootPos.x);
+                rootPos.x = -_smoothedLateralOffset;
+                _sceneRoot.position = rootPos;
+            }
+
             TotalScrolled += scrollDelta;
             return scrollDelta;
         }
@@ -100,8 +134,13 @@ namespace STGEngine.Runtime.Scene
             CurrentSpeed = 0f;
             SpeedMultiplier = 1f;
             _prevDrift = 0f;
-            _accumulatedDriftCompensation = 0f;
-            CurrentLateralOffset = 0f;
+            CurrentHeading = 0f;
+            _smoothedLateralOffset = 0f;
+            if (_sceneRoot != null)
+            {
+                _sceneRoot.position = Vector3.zero;
+                _sceneRoot.rotation = Quaternion.identity;
+            }
         }
     }
 }

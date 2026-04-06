@@ -52,6 +52,7 @@ namespace STGEngine.Runtime.Scene
 
             _scroll = new ScrollController(_activeChunks);
             _scroll.SetProfile(style.PathProfile);
+            _scroll.SetSceneRoot(transform);
 
             _nextChunkIndex = 0;
             _nextChunkDistance = 0f;
@@ -168,9 +169,8 @@ namespace STGEngine.Runtime.Scene
                 {
                     _defaultMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
                     _defaultMaterial.name = "DefaultGround";
-                    _defaultMaterial.color = new Color(0.4f, 0.5f, 0.3f);
+                    _defaultMaterial.color = Color.white;
                     _defaultMaterial.mainTexture = GenerateCheckerTexture(256, 8);
-                    _defaultMaterial.mainTextureScale = new Vector2(4f, 4f);
                 }
                 chunk.Ground.GetComponent<MeshRenderer>().sharedMaterial = _defaultMaterial;
             }
