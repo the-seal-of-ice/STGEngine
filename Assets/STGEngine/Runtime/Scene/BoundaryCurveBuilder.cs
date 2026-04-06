@@ -24,11 +24,11 @@ namespace STGEngine.Runtime.Scene
         /// <summary>右侧边界采样点（按弧长排序）。</summary>
         public List<BoundarySample> RightBoundary { get; } = new();
 
-        // 平滑窗口大小
-        private const int SmoothWindow = 3;
+        // 平滑窗口大小（越大越平滑）
+        private const int SmoothWindow = 6;
 
         // 弧长分桶大小（米），同一桶内取最靠近道路的障碍物
-        private const float BucketSize = 5f;
+        private const float BucketSize = 8f;
 
         /// <summary>
         /// 从活跃 Chunk 的障碍物中重建边界曲线。
@@ -115,23 +115,32 @@ namespace STGEngine.Runtime.Scene
                 LateralOffset = minOffset
             });
 
-            // 滑动平均平滑
-            for (int i = 0; i < bucketed.Count; i++)
+            // 两轮滑动平均平滑
+            var pass1 = SmoothPass(bucketed);
+            var pass2 = SmoothPass(pass1);
+            output.AddRange(pass2);
+        }
+
+        private List<BoundarySample> SmoothPass(List<BoundarySample> input)
+        {
+            var result = new List<BoundarySample>(input.Count);
+            for (int i = 0; i < input.Count; i++)
             {
                 float sum = 0f;
                 int n = 0;
                 for (int j = i - SmoothWindow; j <= i + SmoothWindow; j++)
                 {
-                    if (j < 0 || j >= bucketed.Count) continue;
-                    sum += bucketed[j].LateralOffset;
+                    if (j < 0 || j >= input.Count) continue;
+                    sum += input[j].LateralOffset;
                     n++;
                 }
-                output.Add(new BoundarySample
+                result.Add(new BoundarySample
                 {
-                    ArcDistance = bucketed[i].ArcDistance,
+                    ArcDistance = input[i].ArcDistance,
                     LateralOffset = sum / n
                 });
             }
+            return result;
         }
 
         /// <summary>
