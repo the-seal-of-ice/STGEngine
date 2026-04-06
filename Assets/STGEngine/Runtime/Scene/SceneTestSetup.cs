@@ -140,13 +140,20 @@ namespace STGEngine.Runtime.Scene
             if (_generator == null || _generator.Scroll == null) return;
 
             var scroll = _generator.Scroll;
-            GUILayout.BeginArea(new Rect(10, 10, 300, 130));
+            GUILayout.BeginArea(new Rect(10, 10, 350, 180));
             GUILayout.Label($"Scrolled: {scroll.TotalScrolled:F1}m");
             GUILayout.Label($"Speed: {scroll.CurrentSpeed:F1} m/s");
             GUILayout.Label($"Active Chunks: {_generator.ActiveChunks.Count}");
             int totalObstacles = 0;
             foreach (var c in _generator.ActiveChunks) totalObstacles += c.Obstacles.Count;
             GUILayout.Label($"Obstacles: {totalObstacles}");
+            if (_generator.ActiveChunks.Count > 0)
+            {
+                var first = _generator.ActiveChunks[0];
+                var last = _generator.ActiveChunks[_generator.ActiveChunks.Count - 1];
+                GUILayout.Label($"Chunks: [{first.StartDistance:F0}-{first.EndDistance:F0}] .. [{last.StartDistance:F0}-{last.EndDistance:F0}]");
+                GUILayout.Label($"First obs: {first.Obstacles.Count}, Last obs: {last.Obstacles.Count}");
+            }
             GUILayout.Label($"Speed Multiplier: {_speedMultiplier:F2}");
             _speedMultiplier = GUILayout.HorizontalSlider(_speedMultiplier, 0f, 3f);
             GUILayout.EndArea();

@@ -209,6 +209,9 @@ namespace STGEngine.Runtime.Scene
             var cam = Camera.main;
             if (cam == null) return;
 
+            // 确保远裁剪面足够大
+            if (cam.farClipPlane < 500f) cam.farClipPlane = 500f;
+
             // 摄像头位置：锚点上方偏后，沿切线方向看向前方
             Vector3 camPos = PlayerAnchor.Position + Vector3.up * 12f - PlayerAnchor.Tangent * 8f;
             Vector3 lookTarget = PlayerAnchor.Position + PlayerAnchor.Tangent * 30f;
