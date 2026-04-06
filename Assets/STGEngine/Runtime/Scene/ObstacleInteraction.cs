@@ -15,13 +15,16 @@ namespace STGEngine.Runtime.Scene
         [SerializeField, Tooltip("玩家球体半径（米），直径 1.6m")]
         private float _playerRadius = 0.8f;
 
-        [SerializeField, Tooltip("交互触发额外距离（在碰撞半径之外多远触发）")]
-        private float _triggerMargin = 2f;
+        [SerializeField, Tooltip("Sway 触发距离（从障碍物表面算起）")]
+        private float _swayRange = 1.5f;
+
+        [SerializeField, Tooltip("Nudge 推力触发距离（从障碍物表面算起，比 sway 更近）")]
+        private float _nudgeRange = 0.5f;
 
         [SerializeField, Tooltip("Nudge 推力强度")]
         private float _nudgeForce = 25f;
 
-        [SerializeField, Tooltip("Sway 摇晃角度（度）")]
+        [SerializeField, Tooltip("Sway 最大摇晃角度（度）")]
         private float _swayAngle = 12f;
 
         private PlayerAnchorController _player;
@@ -59,23 +62,22 @@ namespace STGEngine.Runtime.Scene
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.None) continue;
                     if (obs.GameObject == null || !obs.GameObject.activeSelf) continue;
 
-                    // 计算障碍物 XZ 平面碰撞半径
                     float obsRadius = GetObstacleRadius(obs.GameObject);
-                    float triggerDist = _playerRadius + obsRadius + _triggerMargin;
+                    float horizDist = HorizontalDistance(playerPos, obs.GameObject.transform.position);
+                    float surfaceDist = horizDist - obsRadius - _playerRadius;
 
-                    // XZ 平面距离（忽略高度差，竹子等竖直物体在地面也能触发）
-                    float dist = HorizontalDistance(playerPos, obs.GameObject.transform.position);
-                    if (dist > triggerDist) continue;
-
-                    if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Sway)
+                    // Sway：较远处触发，幅度随接近程度增大
+                    if (surfaceDist < _swayRange && surfaceDist > -obsRadius)
                     {
-                        TriggerSway(obs.GameObject, playerPos);
-                        TriggerNudge(obs.GameObject, playerPos, 0.3f); // 轻微推力
+                        float proximity = 1f - Mathf.Clamp01(surfaceDist / _swayRange);
+                        TriggerSway(obs.GameObject, playerPos, proximity);
                     }
-                    else if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Nudge)
+
+                    // Nudge 推力：更近处才触发，独立于 sway
+                    if (surfaceDist < _nudgeRange && surfaceDist > -obsRadius)
                     {
-                        TriggerNudge(obs.GameObject, playerPos, 1f);
-                        TriggerSway(obs.GameObject, playerPos);
+                        float pushStrength = obs.Config.ContactResponse == Core.Scene.ContactResponse.Nudge ? 1f : 0.3f;
+                        TriggerNudge(obs.GameObject, playerPos, pushStrength);
                     }
                 }
             }
@@ -98,13 +100,19 @@ namespace STGEngine.Runtime.Scene
             return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
-        private void TriggerSway(GameObject obj, Vector3 playerPos)
+        private void TriggerSway(GameObject obj, Vector3 playerPos, float proximity)
         {
-            if (_swaying.ContainsKey(obj)) return;
+            if (_swaying.ContainsKey(obj))
+            {
+                // 已在摇晃中：更新幅度（如果更近了则加大）
+                var existing = _swaying[obj];
+                if (proximity > existing.Intensity)
+                    existing.Intensity = proximity;
+                return;
+            }
 
             Vector3 pushDir = (obj.transform.position - playerPos).normalized;
 
-            // 计算地面接触点（物体底部）
             var renderer = obj.GetComponent<Renderer>();
             float bottomY = renderer != null ? renderer.bounds.min.y : obj.transform.position.y;
             Vector3 pivotPoint = new Vector3(obj.transform.position.x, bottomY, obj.transform.position.z);
@@ -115,6 +123,7 @@ namespace STGEngine.Runtime.Scene
                 OriginalPosition = obj.transform.position,
                 PivotPoint = pivotPoint,
                 PushDirection = pushDir,
+                Intensity = proximity,
                 Timer = 0f,
                 Duration = 1.8f
             };
@@ -159,8 +168,8 @@ namespace STGEngine.Runtime.Scene
                     continue;
                 }
 
-                // 阻尼摇晃：sin 衰减，绕地面接触点旋转
-                float swayAmount = Mathf.Sin(t * Mathf.PI * 3f) * (1f - t) * _swayAngle;
+                // 阻尼摇晃：sin 衰减，幅度由 Intensity（接近程度）决定
+                float swayAmount = Mathf.Sin(t * Mathf.PI * 3f) * (1f - t) * _swayAngle * state.Intensity;
                 Vector3 swayAxis = Vector3.Cross(Vector3.up, state.PushDirection).normalized;
                 if (swayAxis.sqrMagnitude < 0.01f) swayAxis = Vector3.right;
 
@@ -181,6 +190,7 @@ namespace STGEngine.Runtime.Scene
             public Vector3 OriginalPosition;
             public Vector3 PivotPoint;
             public Vector3 PushDirection;
+            public float Intensity; // 0~1，接近程度，控制摇晃幅度
             public float Timer;
             public float Duration;
         }
