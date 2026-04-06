@@ -151,6 +151,7 @@ namespace STGEngine.Runtime.Scene
             if (_style.ObstacleConfigs.Count > 0)
             {
                 chunk.Obstacles = _scatterer.Scatter(chunk, _style.ObstacleConfigs, _style.HazardFrequency);
+                Debug.Log($"Chunk_{_nextChunkIndex} dist={startDist:F0}-{endDist:F0} obstacles={chunk.Obstacles.Count}");
             }
 
             _activeChunks.Add(chunk);

@@ -63,6 +63,8 @@ namespace STGEngine.Runtime.Scene
             int seed = chunk.Index * 31337 + (side > 0 ? 17 : 0);
             var points = PoissonDiskSampler.Sample(bandWidth, chunkLen, config.MinSpacing, seed);
 
+            UnityEngine.Debug.Log($"  Side={side} band={bandWidth:F0} chunkLen={chunkLen:F0} spacing={config.MinSpacing} points={points.Count}");
+
             var rng = new System.Random(seed + 7);
 
             foreach (var pt in points)
