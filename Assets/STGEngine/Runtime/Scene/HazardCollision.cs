@@ -62,14 +62,10 @@ namespace STGEngine.Runtime.Scene
                     if (obs.Config == null || !obs.Config.IsHazard) continue;
                     if (obs.GameObject == null || !obs.GameObject.activeSelf) continue;
 
-                    // XZ 平面距离 + 障碍物水平半径
-                    float obsRadius = 1f;
-                    var renderer = obs.GameObject.GetComponent<Renderer>();
-                    if (renderer != null)
-                    {
-                        var ext = renderer.bounds.extents;
-                        obsRadius = Mathf.Min(ext.x, ext.z);
-                    }
+                    // 用 localScale 计算 XZ 半径，不受旋转影响
+                    float obsRadius;
+                    var scale = obs.GameObject.transform.localScale;
+                    obsRadius = Mathf.Min(Mathf.Abs(scale.x), Mathf.Abs(scale.z)) * 0.5f;
 
                     float dx = playerPos.x - obs.GameObject.transform.position.x;
                     float dz = playerPos.z - obs.GameObject.transform.position.z;

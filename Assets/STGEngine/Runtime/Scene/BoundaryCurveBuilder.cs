@@ -24,11 +24,11 @@ namespace STGEngine.Runtime.Scene
         /// <summary>右侧边界采样点（按弧长排序）。</summary>
         public List<BoundarySample> RightBoundary { get; } = new();
 
-        // 平滑窗口大小（越大越平滑）
-        private const int SmoothWindow = 6;
+        // 平滑窗口大小
+        private const int SmoothWindow = 4;
 
-        // 弧长分桶大小（米），同一桶内取最靠近道路的障碍物
-        private const float BucketSize = 8f;
+        // 弧长分桶大小（米）
+        private const float BucketSize = 6f;
 
         /// <summary>
         /// 从活跃 Chunk 的障碍物中重建边界曲线。
@@ -115,10 +115,9 @@ namespace STGEngine.Runtime.Scene
                 LateralOffset = minOffset
             });
 
-            // 两轮滑动平均平滑
-            var pass1 = SmoothPass(bucketed);
-            var pass2 = SmoothPass(pass1);
-            output.AddRange(pass2);
+            // 单轮滑动平均平滑（保留更多细节，避免宽窄过渡处过度平滑）
+            var smoothed = SmoothPass(bucketed);
+            output.AddRange(smoothed);
         }
 
         private List<BoundarySample> SmoothPass(List<BoundarySample> input)

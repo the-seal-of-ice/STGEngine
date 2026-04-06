@@ -85,11 +85,10 @@ namespace STGEngine.Runtime.Scene
 
         private float GetObstacleRadius(GameObject obj)
         {
-            var renderer = obj.GetComponent<Renderer>();
-            if (renderer == null) return 1f;
-            // XZ 平面上的半径（取 X 和 Z extent 的最小值）
-            var ext = renderer.bounds.extents;
-            return Mathf.Min(ext.x, ext.z);
+            // 用 localScale 的 XZ 分量计算半径，不受旋转影响
+            // Unity 原始 Cylinder 半径 0.5，Cube 半径 0.5
+            var scale = obj.transform.localScale;
+            return Mathf.Min(Mathf.Abs(scale.x), Mathf.Abs(scale.z)) * 0.5f;
         }
 
         /// <summary>XZ 平面上两点的水平距离。</summary>
