@@ -54,7 +54,7 @@ namespace STGEngine.Runtime.Scene
                         (0, 20f), (2000, 20f)
                     ),
                     ScrollSpeed = new Core.Serialization.SerializableCurve(
-                        (0, 15f), (350, 15f), (380, 5f), (500, 5f), (550, 15f), (2000, 15f)
+                        (0, 15f), (2000, 15f)
                     )
                 },
                 HasGround = true,
