@@ -64,6 +64,15 @@ namespace STGEngine.Runtime.Scene
         }
 
         /// <summary>
+        /// Register a runtime-created prefab (not from Resources).
+        /// Useful for testing with primitive GameObjects.
+        /// </summary>
+        public void RegisterPrefab(string key, GameObject prefab)
+        {
+            _prefabCache[key] = prefab;
+        }
+
+        /// <summary>
         /// 销毁池中所有物体。
         /// </summary>
         public void Clear()

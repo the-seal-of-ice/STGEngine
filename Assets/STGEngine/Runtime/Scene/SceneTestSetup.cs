@@ -1,11 +1,11 @@
+using System.Collections.Generic;
 using UnityEngine;
 using STGEngine.Core.Scene;
 
 namespace STGEngine.Runtime.Scene
 {
     /// <summary>
-    /// 场景系统集成测试引导（样条线版）。
-    /// 创建一条蜿蜒的 3D 样条线通路，验证沿曲线生成和滚动效果。
+    /// 场景系统集成测试引导（样条线版 + 障碍物）。
     /// </summary>
     [AddComponentMenu("STGEngine/Scene/SceneTestSetup")]
     public class SceneTestSetup : MonoBehaviour
@@ -17,25 +17,22 @@ namespace STGEngine.Runtime.Scene
         private float _speedMultiplier = 1f;
 
         private ChunkGenerator _generator;
+        private Dictionary<string, GameObject> _testPrefabs;
 
         private void Start()
         {
-            // 创建一条蜿蜒的样条线：在 XZ 平面上左右弯曲
+            // Create spline
             var spline = new PathSpline();
-            float segLen = 80f; // 每个控制点间距
+            float segLen = 80f;
             int pointCount = 15;
             float x = 0f, z = 0f;
-            float angle = 0f; // 当前前进方向角度（弧度）
+            float angle = 0f;
 
             for (int i = 0; i < pointCount; i++)
             {
                 spline.Points.Add(new SplinePoint { Position = new Vector3(x, 0f, z) });
-
-                // 每段随机转向，模拟蜿蜒
                 if (i > 0 && i < pointCount - 1)
-                {
                     angle += Random.Range(-0.5f, 0.5f);
-                }
                 x += Mathf.Sin(angle) * segLen;
                 z += Mathf.Cos(angle) * segLen;
             }
@@ -46,26 +43,88 @@ namespace STGEngine.Runtime.Scene
                 PathProfile = new PathProfile
                 {
                     Spline = spline,
-                    // 通路宽度：正常 20m，在 ~400m 处展开到 60m（Boss 战场），然后收窄
                     WidthCurve = new Core.Serialization.SerializableCurve(
                         (0, 20f), (350, 20f), (400, 60f), (500, 60f), (550, 20f), (2000, 20f)
                     ),
                     HeightCurve = new Core.Serialization.SerializableCurve(
                         (0, 20f), (2000, 20f)
                     ),
-                    // 速度：正常 15m/s，Boss 前减速到 5m/s
                     ScrollSpeed = new Core.Serialization.SerializableCurve(
                         (0, 15f), (350, 15f), (380, 5f), (500, 5f), (550, 15f), (2000, 15f)
                     )
                 },
-                HasGround = true
+                HasGround = true,
+                ObstacleConfigs = new List<ObstacleConfig>
+                {
+                    new ObstacleConfig
+                    {
+                        PrefabVariants = new List<string> { "test_bamboo" },
+                        Density = 0.08f,
+                        MinSpacing = 2.5f,
+                        ScaleRange = new Vector2(0.7f, 1.3f),
+                        RotationRange = new Vector2(0f, 360f),
+                        PlacementZone = PlacementZone.Roadside,
+                        ContactResponse = ContactResponse.Sway,
+                        Tag = "bamboo"
+                    },
+                    new ObstacleConfig
+                    {
+                        PrefabVariants = new List<string> { "test_rock" },
+                        Density = 0.02f,
+                        MinSpacing = 5f,
+                        ScaleRange = new Vector2(0.8f, 2.0f),
+                        RotationRange = new Vector2(0f, 360f),
+                        PlacementZone = PlacementZone.Roadside,
+                        ContactResponse = ContactResponse.Nudge,
+                        Tag = "rock"
+                    }
+                },
+                HazardFrequency = 2f
             };
 
             _generator = GetComponent<ChunkGenerator>();
             if (_generator == null)
                 _generator = gameObject.AddComponent<ChunkGenerator>();
 
-            _generator.Initialize(style, _groundMaterial);
+            // Create test prefabs and register with pool before Initialize
+            CreateAndRegisterTestPrefabs();
+
+            _generator.Initialize(style, _groundMaterial, _testPrefabs);
+        }
+
+        /// <summary>
+        /// Create primitive GameObjects as test obstacle prefabs
+        /// and register them with the obstacle pool.
+        /// </summary>
+        private void CreateAndRegisterTestPrefabs()
+        {
+            // Bamboo: tall thin cylinder (green)
+            var bamboo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            bamboo.name = "TestBamboo";
+            bamboo.transform.localScale = new Vector3(0.3f, 4f, 0.3f);
+            var bambooRenderer = bamboo.GetComponent<Renderer>();
+            var bambooMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            bambooMat.color = new Color(0.2f, 0.6f, 0.15f);
+            bambooRenderer.sharedMaterial = bambooMat;
+            bamboo.SetActive(false);
+            bamboo.transform.SetParent(transform);
+
+            // Rock: scaled cube (gray)
+            var rock = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            rock.name = "TestRock";
+            rock.transform.localScale = new Vector3(2f, 1.5f, 2f);
+            var rockRenderer = rock.GetComponent<Renderer>();
+            var rockMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            rockMat.color = new Color(0.5f, 0.5f, 0.45f);
+            rockRenderer.sharedMaterial = rockMat;
+            rock.SetActive(false);
+            rock.transform.SetParent(transform);
+
+            _testPrefabs = new Dictionary<string, GameObject>
+            {
+                { "test_bamboo", bamboo },
+                { "test_rock", rock }
+            };
         }
 
         private void Update()
