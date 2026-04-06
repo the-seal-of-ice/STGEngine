@@ -74,9 +74,10 @@ namespace STGEngine.Runtime.Scene
                 var sample = _profile.SampleAt(dist);
                 float localHalfWidth = sample.Width * 0.5f;
 
-                // 横向偏移：从路边开始向外
-                // pt.x 在 [0, bandWidth] 范围内，映射到 [halfWidth, halfWidth + bandWidth]
-                float lateralOffset = (localHalfWidth + pt.x) * side;
+                // 横向偏移：从路边 + 安全间距开始向外
+                // pt.x 在 [0, bandWidth] 范围内，映射到 [halfWidth + margin, halfWidth + margin + bandWidth]
+                float margin = 3f; // 路边安全间距，防止障碍物侵占路面
+                float lateralOffset = (localHalfWidth + margin + pt.x) * side;
 
                 // 世界坐标
                 Vector3 worldPos = sample.Position + sample.Normal * lateralOffset;

@@ -72,7 +72,7 @@ namespace STGEngine.Runtime.Scene
                         PrefabVariants = new List<string> { "test_rock" },
                         Density = 0.02f,
                         MinSpacing = 5f,
-                        ScaleRange = new Vector2(0.5f, 2.5f), // 更大的随机范围
+                        ScaleRange = new Vector2(0.6f, 1.8f), // 适中的随机范围
                         RotationRange = new Vector2(0f, 360f),
                         PlacementZone = PlacementZone.Roadside,
                         ContactResponse = ContactResponse.Nudge,
@@ -112,7 +112,7 @@ namespace STGEngine.Runtime.Scene
             // Rock: 不规则比例的方块 (gray) — 更大
             var rock = GameObject.CreatePrimitive(PrimitiveType.Cube);
             rock.name = "TestRock";
-            rock.transform.localScale = new Vector3(3f, 2.5f, 3.5f); // 不对称，更自然
+            rock.transform.localScale = new Vector3(1.5f, 1.2f, 1.8f);
             var rockRenderer = rock.GetComponent<Renderer>();
             var rockMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
             rockMat.color = new Color(0.45f, 0.43f, 0.4f);

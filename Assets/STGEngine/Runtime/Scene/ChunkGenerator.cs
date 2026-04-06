@@ -18,7 +18,7 @@ namespace STGEngine.Runtime.Scene
         private float _chunkLength = 40f;
 
         [SerializeField, Tooltip("玩家前方保持的弧长距离（米）")]
-        private float _forwardDistance = 120f;
+        private float _forwardDistance = 200f;
 
         [SerializeField, Tooltip("玩家后方保留的弧长距离（米）")]
         private float _behindDistance = 40f;
@@ -210,7 +210,7 @@ namespace STGEngine.Runtime.Scene
             if (cam == null) return;
 
             // 确保远裁剪面足够大
-            if (cam.farClipPlane < 500f) cam.farClipPlane = 500f;
+            if (cam.farClipPlane < 1000f) cam.farClipPlane = 1000f;
 
             // 摄像头位置：锚点上方偏后，沿切线方向看向前方
             Vector3 camPos = PlayerAnchor.Position + Vector3.up * 12f - PlayerAnchor.Tangent * 8f;
