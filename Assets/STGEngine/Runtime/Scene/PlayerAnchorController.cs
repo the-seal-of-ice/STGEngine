@@ -36,6 +36,9 @@ namespace STGEngine.Runtime.Scene
             _generator = generator;
             _initialized = true;
 
+            // 初始 Y 偏移 = 球体半径，让球底贴地
+            LocalOffset = new Vector2(0f, 0.8f);
+
             // 创建可视化球体
             var visual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             visual.transform.SetParent(transform);

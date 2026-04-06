@@ -19,7 +19,7 @@ namespace STGEngine.Runtime.Scene
         private float _triggerMargin = 1f;
 
         [SerializeField, Tooltip("Nudge 推力强度")]
-        private float _nudgeForce = 3f;
+        private float _nudgeForce = 25f;
 
         [SerializeField, Tooltip("Sway 摇晃角度（度）")]
         private float _swayAngle = 12f;
@@ -69,10 +69,11 @@ namespace STGEngine.Runtime.Scene
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Sway)
                     {
                         TriggerSway(obs.GameObject, playerPos);
+                        TriggerNudge(obs.GameObject, playerPos, 0.3f); // 轻微推力
                     }
                     else if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Nudge)
                     {
-                        TriggerNudge(obs.GameObject, playerPos);
+                        TriggerNudge(obs.GameObject, playerPos, 1f);
                         TriggerSway(obs.GameObject, playerPos);
                     }
                 }
@@ -109,14 +110,14 @@ namespace STGEngine.Runtime.Scene
             };
         }
 
-        private void TriggerNudge(GameObject obj, Vector3 playerPos)
+        private void TriggerNudge(GameObject obj, Vector3 playerPos, float multiplier)
         {
             Vector3 pushDir = (playerPos - obj.transform.position).normalized;
             Vector2 push2D = new Vector2(
                 Vector3.Dot(pushDir, _player.CurrentAnchor.Normal),
                 pushDir.y
             );
-            _player.LocalOffset += push2D * _nudgeForce * Time.deltaTime;
+            _player.LocalOffset += push2D * _nudgeForce * multiplier * Time.deltaTime;
         }
 
         private void UpdateSway()

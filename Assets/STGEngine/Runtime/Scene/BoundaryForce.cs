@@ -23,7 +23,7 @@ namespace STGEngine.Runtime.Scene
 
         [Header("Vertical Boundary (Up/Down)")]
         [SerializeField, Tooltip("地面以下推力（强，防止穿地）")]
-        private float _groundForce = 50f;
+        private float _groundForce = 200f;
 
         [SerializeField, Tooltip("上方自由区高度（米）")]
         private float _ceilingHeight = 15f;
@@ -67,10 +67,12 @@ namespace STGEngine.Runtime.Scene
             }
 
             // --- 地面约束（Y 下边界）---
-            if (offset.y < 0f)
+            // 玩家球体半径 0.8m，球心在 0.8m 时球底刚好贴地
+            float groundLevel = 0.8f;
+            if (offset.y < groundLevel)
             {
                 // 地面以下：强推力把玩家推回地面
-                force.y = -offset.y * _groundForce;
+                force.y = (groundLevel - offset.y) * _groundForce;
             }
             else if (offset.y > _ceilingHeight)
             {
@@ -89,7 +91,7 @@ namespace STGEngine.Runtime.Scene
             Vector2 clamped = _player.LocalOffset;
             float hardLimit = halfWidth * _hardLimitRatio;
             clamped.x = Mathf.Clamp(clamped.x, -hardLimit, hardLimit);
-            clamped.y = Mathf.Clamp(clamped.y, -0.5f, _ceilingHeight + 5f);
+            clamped.y = Mathf.Clamp(clamped.y, groundLevel - 0.1f, _ceilingHeight + 5f);
             _player.LocalOffset = clamped;
         }
     }
