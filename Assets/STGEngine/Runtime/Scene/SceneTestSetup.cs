@@ -65,9 +65,10 @@ namespace STGEngine.Runtime.Scene
             if (_generator == null || _generator.Scroll == null) return;
 
             var scroll = _generator.Scroll;
-            GUILayout.BeginArea(new Rect(10, 10, 300, 120));
+            GUILayout.BeginArea(new Rect(10, 10, 300, 150));
             GUILayout.Label($"Scrolled: {scroll.TotalScrolled:F1}m");
             GUILayout.Label($"Speed: {scroll.CurrentSpeed:F1} m/s");
+            GUILayout.Label($"Lateral Offset: {scroll.CurrentLateralOffset:F2}m");
             GUILayout.Label($"Active Chunks: {_generator.ActiveChunks.Count}");
             GUILayout.Label($"Speed Multiplier: {_speedMultiplier:F2}");
             _speedMultiplier = GUILayout.HorizontalSlider(_speedMultiplier, 0f, 3f);
