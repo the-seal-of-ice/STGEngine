@@ -195,6 +195,9 @@ namespace STGEngine.Runtime.Scene
         /// </summary>
         public PathSample PlayerAnchor { get; private set; }
 
+        /// <summary>玩家控制器引用（可选，用于摄像头跟随玩家而非纯锚点）。</summary>
+        public PlayerAnchorController Player { get; set; }
+
         /// <summary>
         /// 更新摄像头：跟随玩家锚点沿样条线移动。
         /// Chunk 几何体在世界坐标中静止，摄像头在移动。
@@ -202,18 +205,17 @@ namespace STGEngine.Runtime.Scene
         /// </summary>
         private void UpdateCamera(float playerDist)
         {
-            // 更新玩家锚点
             PlayerAnchor = _style.PathProfile.SampleAt(playerDist);
 
             var cam = Camera.main;
             if (cam == null) return;
-
-            // 确保远裁剪面足够大
             if (cam.farClipPlane < 1000f) cam.farClipPlane = 1000f;
 
-            // 摄像头位置：锚点上方偏后，沿切线方向看向前方
-            Vector3 camPos = PlayerAnchor.Position + Vector3.up * 12f - PlayerAnchor.Tangent * 8f;
-            Vector3 lookTarget = PlayerAnchor.Position + PlayerAnchor.Tangent * 30f;
+            // 跟随目标：如果有玩家则跟随玩家，否则跟随锚点
+            Vector3 followPos = Player != null ? Player.WorldPosition : PlayerAnchor.Position;
+
+            Vector3 camPos = followPos + Vector3.up * 12f - PlayerAnchor.Tangent * 8f;
+            Vector3 lookTarget = followPos + PlayerAnchor.Tangent * 30f;
 
             cam.transform.position = Vector3.Lerp(cam.transform.position, camPos, Time.deltaTime * 5f);
             Quaternion targetRot = Quaternion.LookRotation(lookTarget - cam.transform.position, Vector3.up);
