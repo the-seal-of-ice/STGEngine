@@ -62,15 +62,19 @@ namespace STGEngine.Runtime.Scene
                     if (obs.Config == null || !obs.Config.IsHazard) continue;
                     if (obs.GameObject == null || !obs.GameObject.activeSelf) continue;
 
-                    // 简单距离检测（XZ 平面 + Y）
-                    float dist = Vector3.Distance(playerPos, obs.GameObject.transform.position);
-                    // 障碍物碰撞半径：用 renderer bounds 的最小水平 extent
-                    float obsRadius = 1f;
+                    // 用 bounds.ClosestPoint 计算到障碍物最近点的距离
+                    float dist;
+                    float obsRadius = 0f;
                     var renderer = obs.GameObject.GetComponent<Renderer>();
                     if (renderer != null)
                     {
-                        var ext = renderer.bounds.extents;
-                        obsRadius = Mathf.Min(ext.x, ext.z) * 0.8f; // 略小于视觉，给容错
+                        Vector3 closest = renderer.bounds.ClosestPoint(playerPos);
+                        dist = Vector3.Distance(playerPos, closest);
+                    }
+                    else
+                    {
+                        dist = Vector3.Distance(playerPos, obs.GameObject.transform.position);
+                        obsRadius = 1f;
                     }
 
                     if (dist < _playerRadius + obsRadius)

@@ -63,7 +63,8 @@ namespace STGEngine.Runtime.Scene
                     float obsRadius = GetObstacleRadius(obs.GameObject);
                     float triggerDist = _playerRadius + obsRadius + _triggerMargin;
 
-                    float dist = Vector3.Distance(playerPos, obs.GameObject.transform.position);
+                    // 用到障碍物最近点的距离（XZ 平面 + Y clamp 到 bounds 范围）
+                    float dist = DistanceToObstacle(playerPos, obs.GameObject);
                     if (dist > triggerDist) continue;
 
                     if (obs.Config.ContactResponse == Core.Scene.ContactResponse.Sway)
@@ -86,6 +87,27 @@ namespace STGEngine.Runtime.Scene
             if (renderer == null) return 1f;
             var ext = renderer.bounds.extents;
             return Mathf.Min(ext.x, ext.z);
+        }
+
+        /// <summary>
+        /// 计算玩家到障碍物的有效距离。
+        /// 对竖直物体（竹子等），用 XZ 平面距离而非 3D 距离，
+        /// 这样玩家在地面时也能触发高处的竹子。
+        /// </summary>
+        private float DistanceToObstacle(Vector3 playerPos, GameObject obj)
+        {
+            var renderer = obj.GetComponent<Renderer>();
+            if (renderer == null)
+            {
+                // 无 renderer，用 XZ 平面距离
+                Vector2 pXZ = new Vector2(playerPos.x, playerPos.z);
+                Vector2 oXZ = new Vector2(obj.transform.position.x, obj.transform.position.z);
+                return Vector2.Distance(pXZ, oXZ);
+            }
+
+            // 找到 bounds 上离玩家最近的点
+            Vector3 closest = renderer.bounds.ClosestPoint(playerPos);
+            return Vector3.Distance(playerPos, closest);
         }
 
         private void TriggerSway(GameObject obj, Vector3 playerPos)
