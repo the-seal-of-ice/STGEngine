@@ -29,6 +29,9 @@ namespace STGEngine.Runtime.Preview
         /// </summary>
         public Vector3 ShakeOffset { get; set; }
 
+        /// <summary>轨道中心点（世界坐标）。</summary>
+        public Vector3 Pivot => _pivot;
+
         /// <summary>
         /// Tracks whether the mouse-down that started a drag was over UI.
         /// Prevents camera from responding when user drags from UI into 3D area.
