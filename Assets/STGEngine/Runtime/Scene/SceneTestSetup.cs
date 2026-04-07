@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using STGEngine.Core.Scene;
+using STGEngine.Core.Timeline;
 
 namespace STGEngine.Runtime.Scene
 {
@@ -21,6 +22,7 @@ namespace STGEngine.Runtime.Scene
         private BoundaryForce _boundary;
         private HazardCollision _hazard;
         private ObstacleInteraction _interaction;
+        private CameraScriptPlayer _cameraScriptPlayer;
         private Dictionary<string, GameObject> _testPrefabs;
 
         private void Start()
@@ -118,6 +120,14 @@ namespace STGEngine.Runtime.Scene
             var interactionGo = new GameObject("ObstacleInteraction");
             _interaction = interactionGo.AddComponent<ObstacleInteraction>();
             _interaction.Initialize(_player, _generator);
+
+            // Camera script player (for scene mode)
+            if (Camera.main != null)
+            {
+                _cameraScriptPlayer = Camera.main.gameObject.AddComponent<CameraScriptPlayer>();
+                var splineFrame = new SplineCameraFrame(_player);
+                _cameraScriptPlayer.Initialize(splineFrame);
+            }
         }
 
         private void CreateAndRegisterTestPrefabs()
@@ -154,6 +164,36 @@ namespace STGEngine.Runtime.Scene
             if (_generator != null && _generator.Scroll != null)
             {
                 _generator.Scroll.SpeedMultiplier = _speedMultiplier;
+            }
+
+            // 临时测试：按 C 触发镜头演出
+            if (Input.GetKeyDown(KeyCode.C) && _cameraScriptPlayer != null && !_cameraScriptPlayer.IsActive)
+            {
+                var testParams = new CameraScriptParams
+                {
+                    BlendIn = 0.5f,
+                    BlendOut = 0.5f,
+                    Keyframes = new System.Collections.Generic.List<CameraKeyframe>
+                    {
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 10, -8), Rotation = new Vector3(30, 0, 0), FOV = 60f },
+                        new CameraKeyframe { Time = 1f, PositionOffset = new Vector3(5, 12, -5), Rotation = new Vector3(20, -15, 0), FOV = 50f },
+                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(-3, 8, -10), Rotation = new Vector3(35, 10, 5), FOV = 65f },
+                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 10, -8), Rotation = new Vector3(30, 0, 0), FOV = 60f },
+                    }
+                };
+                _cameraScriptPlayer.Play(testParams);
+            }
+
+            // 临时测试：按 V 触发镜头震动
+            if (Input.GetKeyDown(KeyCode.V) && _cameraScriptPlayer != null)
+            {
+                _cameraScriptPlayer.Shake(new CameraShakePreset
+                {
+                    Duration = 0.5f,
+                    Amplitude = 0.5f,
+                    Frequency = 30f,
+                    DecayRate = 1.5f
+                });
             }
         }
 
