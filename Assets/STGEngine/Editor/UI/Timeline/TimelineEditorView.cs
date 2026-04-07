@@ -5692,6 +5692,9 @@ namespace STGEngine.Editor.UI.Timeline
                 var decayF = new FloatField("Decay Rate") { value = preset.DecayRate, isDelayed = true };
                 decayF.RegisterValueChangedCallback(e => { preset.DecayRate = e.newValue; OnStageDataChanged(); });
                 container.Add(decayF);
+
+                // Apply theme to dynamically created shake fields
+                ApplyThemeToTree(container);
             }
 
             // ── CameraScript: keyframe list editor ──
@@ -5722,14 +5725,14 @@ namespace STGEngine.Editor.UI.Timeline
                         var kf = kfs[i];
 
                         var kfBox = new VisualElement();
-                        kfBox.style.backgroundColor = new Color(0.18f, 0.18f, 0.22f);
+                        kfBox.style.backgroundColor = new Color(0.16f, 0.16f, 0.18f);
                         kfBox.style.borderBottomWidth = 1;
-                        kfBox.style.borderBottomColor = new Color(0.25f, 0.25f, 0.3f);
-                        kfBox.style.paddingLeft = 4;
+                        kfBox.style.borderBottomColor = new Color(0.22f, 0.22f, 0.25f);
+                        kfBox.style.paddingLeft = 6;
                         kfBox.style.paddingRight = 4;
-                        kfBox.style.paddingTop = 3;
-                        kfBox.style.paddingBottom = 3;
-                        kfBox.style.marginBottom = 2;
+                        kfBox.style.paddingTop = 4;
+                        kfBox.style.paddingBottom = 4;
+                        kfBox.style.marginBottom = 1;
 
                         // Header row: index + time + remove button
                         var headerRow = new VisualElement();
@@ -5814,6 +5817,9 @@ namespace STGEngine.Editor.UI.Timeline
                     addBtn.style.marginTop = 4;
                     addBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
                     kfContainer.Add(addBtn);
+
+                    // Apply theme to dynamically created elements
+                    ApplyThemeToTree(kfContainer);
                 };
 
                 rebuildKfList();
