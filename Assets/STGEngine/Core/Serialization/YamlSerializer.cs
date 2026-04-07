@@ -798,7 +798,7 @@ namespace STGEngine.Core.Serialization
                 return s;
             }
 
-            // Nested mapping → Vector2, Vector3, Color, or SerializableCurve
+            // Nested mapping → Vector2, Vector3, Color, SerializableCurve, or custom object
             if (value is Dictionary<string, object> dict || value is Dictionary<object, object>)
             {
                 var d = value is Dictionary<string, object> sd ? sd : ToStringDict(value);
@@ -833,6 +833,27 @@ namespace STGEngine.Core.Serialization
                 {
                     return ConvertToCurve(d);
                 }
+
+                // Generic nested object: instantiate and apply properties
+                if (targetType.IsClass && targetType != typeof(string))
+                {
+                    var nested = Activator.CreateInstance(targetType);
+                    ApplyProperties(nested, targetType, d);
+                    return nested;
+                }
+            }
+
+            // List<T> from YAML sequence
+            if (value is List<object> list && targetType.IsGenericType
+                && targetType.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                var elemType = targetType.GetGenericArguments()[0];
+                var typedList = (System.Collections.IList)Activator.CreateInstance(targetType);
+                foreach (var item in list)
+                {
+                    typedList.Add(ConvertToType(item, elemType));
+                }
+                return typedList;
             }
 
             return value;
@@ -929,6 +950,37 @@ namespace STGEngine.Core.Serialization
                     break;
 
                 default:
+                    // List<T> → YAML sequence
+                    if (val is System.Collections.IList valList && val.GetType().IsGenericType)
+                    {
+                        emitter.Emit(new SequenceStart(default, default, false, SequenceStyle.Block));
+                        foreach (var item in valList)
+                        {
+                            if (item == null) continue;
+                            var itemType = item.GetType();
+                            if (itemType.IsPrimitive || itemType == typeof(string) || itemType.IsEnum)
+                            {
+                                EmitScalar(emitter, FmtValue(item));
+                            }
+                            else
+                            {
+                                emitter.Emit(new MappingStart(default, default, false, MappingStyle.Block));
+                                EmitObjectProperties(emitter, item, itemType);
+                                emitter.Emit(new MappingEnd());
+                            }
+                        }
+                        emitter.Emit(new SequenceEnd());
+                        break;
+                    }
+                    // Nested custom object → YAML mapping
+                    if (val.GetType().IsClass && val.GetType() != typeof(string)
+                        && !val.GetType().IsPrimitive)
+                    {
+                        emitter.Emit(new MappingStart(default, default, false, MappingStyle.Block));
+                        EmitObjectProperties(emitter, val, val.GetType());
+                        emitter.Emit(new MappingEnd());
+                        break;
+                    }
                     EmitScalar(emitter, FmtValue(val));
                     break;
             }
