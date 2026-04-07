@@ -12,18 +12,18 @@ namespace STGEngine.Core.Scene
     public class CameraKeyframe
     {
         /// <summary>相对于演出开始的时间（秒）。</summary>
-        public float Time;
+        public float Time { get; set; }
 
         /// <summary>玩家局部坐标系偏移 (x=right, y=up, z=forward)。</summary>
-        public Vector3 PositionOffset;
+        public Vector3 PositionOffset { get; set; }
 
         /// <summary>局部空间欧拉角 (pitch, yaw, roll)。</summary>
-        public Vector3 Rotation;
+        public Vector3 Rotation { get; set; }
 
         /// <summary>视野角度。</summary>
-        public float FOV = 60f;
+        public float FOV { get; set; } = 60f;
 
         /// <summary>到下一帧的缓动类型。</summary>
-        public EasingType Easing = EasingType.EaseInOut;
+        public EasingType Easing { get; set; } = EasingType.EaseInOut;
     }
 }

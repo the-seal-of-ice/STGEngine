@@ -952,6 +952,7 @@ namespace STGEngine.Editor.Scene
                 };
                 _simulatedPlayer.Initialize(brain, _playerProfile, bulletProvider);
                 _activePlayer = _simulatedPlayer;
+                _actionPreview?.SetCameraPlayer(_activePlayer);
             }
             else
             {
@@ -980,6 +981,7 @@ namespace STGEngine.Editor.Scene
                 _playerController.Initialize(_playerProfile, _playerCamera, bulletProvider);
                 _playerCamera.SetCursorLock(true);
                 _activePlayer = _playerController;
+                _actionPreview?.SetCameraPlayer(_activePlayer);
 
                 // Wire hit targets
                 _playerController.SetHitTargetProvider(GetHitTargets);
@@ -1041,6 +1043,7 @@ namespace STGEngine.Editor.Scene
         {
             _playerModeActive = false;
             _activePlayer = null;
+            _actionPreview?.SetCameraPlayer(null);
 
             // Clear homing target from previewers
             if (_previewer != null) _previewer.HomingTargetProvider = null;

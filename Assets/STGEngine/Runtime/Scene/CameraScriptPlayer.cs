@@ -351,6 +351,13 @@ namespace STGEngine.Runtime.Scene
             if (_disabledController != null)
             {
                 _disabledController.enabled = true;
+
+                // PlayerCamera 被禁用时 OnDisable 会解锁鼠标，恢复后需要重新锁定
+                if (_disabledController is STGEngine.Runtime.Player.PlayerCamera playerCam)
+                {
+                    playerCam.SetCursorLock(true);
+                }
+
                 _disabledController = null;
             }
         }

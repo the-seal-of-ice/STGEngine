@@ -75,6 +75,7 @@ namespace STGEngine.Runtime.Preview
 
         // ── Camera Script ──
         private CameraScriptPlayer _cameraScriptPlayer;
+        private EditorCameraFrame _editorCameraFrame;
         private readonly HashSet<string> _triggeredCameraIds = new();
 
         // Cached segment for event lookup
@@ -92,8 +93,8 @@ namespace STGEngine.Runtime.Preview
                 _cameraScriptPlayer = camera.GetComponent<CameraScriptPlayer>();
                 if (_cameraScriptPlayer == null)
                     _cameraScriptPlayer = camera.gameObject.AddComponent<CameraScriptPlayer>();
-                var editorFrame = new EditorCameraFrame(_freeCam);
-                _cameraScriptPlayer.Initialize(editorFrame);
+                _editorCameraFrame = new EditorCameraFrame(_freeCam);
+                _cameraScriptPlayer.Initialize(_editorCameraFrame);
             }
 
             BuildTitleOverlay();
@@ -113,6 +114,10 @@ namespace STGEngine.Runtime.Preview
 
         /// <summary>Set the item preview system for ItemDrop/AutoCollect events.</summary>
         public void SetItemSystem(ItemPreviewSystem system) => _itemSystem = system;
+
+        /// <summary>Set the active player for camera script offset calculations.</summary>
+        public void SetCameraPlayer(STGEngine.Runtime.Player.IPlayerProvider player)
+            => _editorCameraFrame?.SetPlayer(player);
 
         /// <summary>Set the current segment for event lookup. Only fully resets when segment ID changes.</summary>
         public void SetSegment(TimelineSegment segment)
