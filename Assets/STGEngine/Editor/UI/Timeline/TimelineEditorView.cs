@@ -5927,6 +5927,7 @@ namespace STGEngine.Editor.UI.Timeline
             // Structural change: force the current layer to rebuild its block list from data
             InvalidateCurrentLayerBlocks();
             _trackArea.RebuildBlocks();
+            AutoSaveStage();
         }
 
         /// <summary>
