@@ -5729,6 +5729,144 @@ namespace STGEngine.Editor.UI.Timeline
                 sep3.style.marginTop = 6;
                 sep3.style.marginBottom = 4;
                 container.Add(sep3);
+
+                // ── Preset selector ──
+                var presetLabel = new Label("Preset");
+                presetLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                presetLabel.style.marginBottom = 2;
+                container.Add(presetLabel);
+
+                var presetNames = new List<string> { "(None)" };
+                foreach (var p in Core.Scene.CameraPresets.BuiltIn)
+                    presetNames.Add(p.Name);
+
+                var presetDropdown = new PopupField<string>("Apply Preset", presetNames, 0);
+                presetDropdown.RegisterValueChangedCallback(e =>
+                {
+                    int idx = presetNames.IndexOf(e.newValue);
+                    if (idx > 0)
+                    {
+                        Core.Scene.CameraPresets.ApplyPreset(
+                            Core.Scene.CameraPresets.BuiltIn[idx - 1], cspParams);
+                        UpdateCameraScriptDuration(cspParams, ae, durField);
+                        OnStageDataChanged();
+                        // Rebuild the entire detail panel to reflect new values
+                        BuildActionEventProperties(ae);
+                    }
+                    presetDropdown.SetValueWithoutNotify("(None)");
+                });
+                container.Add(presetDropdown);
+
+                // ── Reference Target configuration ──
+                var refSep = new VisualElement();
+                refSep.style.height = 1;
+                refSep.style.backgroundColor = new Color(0.25f, 0.25f, 0.28f);
+                refSep.style.marginTop = 6;
+                refSep.style.marginBottom = 4;
+                container.Add(refSep);
+
+                var refTitle = new Label("Reference Target");
+                refTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+                refTitle.style.marginBottom = 2;
+                container.Add(refTitle);
+
+                var refTargetField = new EnumField("Target", cspParams.ReferenceTarget);
+                refTargetField.RegisterValueChangedCallback(e =>
+                {
+                    cspParams.ReferenceTarget = (Core.Scene.CameraReferenceTarget)e.newValue;
+                    OnStageDataChanged();
+                    BuildActionEventProperties(ae); // Rebuild to show/hide conditional fields
+                });
+                container.Add(refTargetField);
+
+                var frameModeField = new EnumField("Frame Mode", cspParams.FrameMode);
+                frameModeField.RegisterValueChangedCallback(e =>
+                {
+                    cspParams.FrameMode = (Core.Scene.CameraFrameMode)e.newValue;
+                    OnStageDataChanged();
+                });
+                container.Add(frameModeField);
+
+                // Conditional fields based on ReferenceTarget
+                if (cspParams.ReferenceTarget == Core.Scene.CameraReferenceTarget.Boss
+                    || cspParams.ReferenceTarget == Core.Scene.CameraReferenceTarget.Enemy)
+                {
+                    var targetIdField = new TextField("Target ID") { value = cspParams.TargetId ?? "", isDelayed = true };
+                    targetIdField.RegisterValueChangedCallback(e =>
+                    {
+                        cspParams.TargetId = e.newValue;
+                        OnStageDataChanged();
+                    });
+                    container.Add(targetIdField);
+                }
+
+                if (cspParams.ReferenceTarget == Core.Scene.CameraReferenceTarget.WorldFixed)
+                {
+                    var fixedPosField = new Vector3Field("World Position") { value = cspParams.FixedWorldPosition };
+                    fixedPosField.RegisterValueChangedCallback(e =>
+                    {
+                        cspParams.FixedWorldPosition = e.newValue;
+                        OnStageDataChanged();
+                    });
+                    container.Add(fixedPosField);
+                }
+
+                if (cspParams.ReferenceTarget == Core.Scene.CameraReferenceTarget.BoundaryCenter)
+                {
+                    var heightField = new FloatField("Center Height") { value = cspParams.BoundaryCenterHeight, isDelayed = true };
+                    heightField.RegisterValueChangedCallback(e =>
+                    {
+                        cspParams.BoundaryCenterHeight = e.newValue;
+                        OnStageDataChanged();
+                    });
+                    container.Add(heightField);
+                }
+
+                // ── Transition configuration ──
+                var transSep = new VisualElement();
+                transSep.style.height = 1;
+                transSep.style.backgroundColor = new Color(0.25f, 0.25f, 0.28f);
+                transSep.style.marginTop = 6;
+                transSep.style.marginBottom = 4;
+                container.Add(transSep);
+
+                var transTitle = new Label("Transition");
+                transTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+                transTitle.style.marginBottom = 2;
+                container.Add(transTitle);
+
+                var screenTransField = new EnumField("Screen Effect", cspParams.ScreenTransition);
+                screenTransField.RegisterValueChangedCallback(e =>
+                {
+                    cspParams.ScreenTransition = (Core.Scene.ScreenTransitionType)e.newValue;
+                    OnStageDataChanged();
+                });
+                container.Add(screenTransField);
+
+                var motionTransField = new EnumField("Motion Type", cspParams.MotionTransition);
+                motionTransField.RegisterValueChangedCallback(e =>
+                {
+                    cspParams.MotionTransition = (Core.Scene.MotionTransitionType)e.newValue;
+                    OnStageDataChanged();
+                });
+                container.Add(motionTransField);
+
+                var transDurField = new FloatField("Transition Duration") { value = cspParams.TransitionDuration, isDelayed = true };
+                transDurField.RegisterValueChangedCallback(e =>
+                {
+                    cspParams.TransitionDuration = e.newValue;
+                    OnStageDataChanged();
+                });
+                container.Add(transDurField);
+
+                // ── Keyframes section header ──
+                var kfSep = new VisualElement();
+                kfSep.style.height = 1;
+                kfSep.style.backgroundColor = new Color(0.25f, 0.25f, 0.28f);
+                kfSep.style.marginTop = 6;
+                kfSep.style.marginBottom = 4;
+                container.Add(kfSep);
+
                 var kfTitle = new Label("Keyframes");
                 kfTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
                 kfTitle.style.marginBottom = 2;
@@ -5860,6 +5998,35 @@ namespace STGEngine.Editor.UI.Timeline
                 };
 
                 rebuildKfList();
+
+                // ── Curve Editor (collapsible) ──
+                var curveSep = new VisualElement();
+                curveSep.style.height = 1;
+                curveSep.style.backgroundColor = new Color(0.25f, 0.25f, 0.28f);
+                curveSep.style.marginTop = 6;
+                curveSep.style.marginBottom = 4;
+                container.Add(curveSep);
+
+                var curveFoldout = new Foldout { text = "Curve View", value = false };
+                curveFoldout.style.marginTop = 4;
+                container.Add(curveFoldout);
+
+                var curveEditor = new STGEngine.Editor.UI.Controls.MultiCurveEditor();
+                curveFoldout.Add(curveEditor);
+
+                // Build curves from keyframes and bind
+                var propertyCurves = Core.Scene.CameraPropertyCurves.FromKeyframes(cspParams.Keyframes);
+                curveEditor.SetCurves(propertyCurves.GetAllCurves());
+
+                curveEditor.OnCurvesChanged += () =>
+                {
+                    propertyCurves.ApplyToKeyframes(cspParams.Keyframes);
+                    UpdateCameraScriptDuration(cspParams, ae, durField);
+                    OnStageDataChanged();
+                    rebuildKfList();
+                };
+
+                ApplyThemeToTree(container);
             }
         }
 

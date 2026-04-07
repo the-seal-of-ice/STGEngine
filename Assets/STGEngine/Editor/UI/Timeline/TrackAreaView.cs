@@ -1437,6 +1437,9 @@ namespace STGEngine.Editor.UI.Timeline
             var allBlocks = _layer.GetAllBlocks();
             for (int i = 0; i < allBlocks.Count; i++)
             {
+                // ActionBlock 不参与顺序布局——它们按自身 StartTime 自由定位
+                if (allBlocks[i] is ActionBlock) continue;
+
                 allBlocks[i].StartTime = timeOffset;
                 timeOffset += allBlocks[i].Duration;
             }

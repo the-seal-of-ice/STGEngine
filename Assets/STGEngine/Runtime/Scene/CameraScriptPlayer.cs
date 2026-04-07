@@ -66,6 +66,14 @@ namespace STGEngine.Runtime.Scene
             _state = scriptParams.BlendIn > 0f ? State.BlendIn : State.Playing;
         }
 
+        /// <summary>开始播放关键帧序列，使用指定的 frame provider。</summary>
+        public void Play(CameraScriptParams scriptParams, ICameraFrameProvider overrideProvider)
+        {
+            if (overrideProvider != null)
+                _frameProvider = overrideProvider;
+            Play(scriptParams);
+        }
+
         /// <summary>触发镜头震动（可与关键帧演出叠加，也可独立使用）。</summary>
         public void Shake(CameraShakePreset preset)
         {
@@ -116,9 +124,10 @@ namespace STGEngine.Runtime.Scene
                     float t = Mathf.Clamp01(_elapsed / _params.BlendIn);
                     var firstFrame = EvaluateKeyframes(0f);
                     var worldTarget = LocalToWorld(firstFrame.pos, firstFrame.rot);
-                    targetPos = Vector3.Lerp(_snapshotPos, worldTarget.pos, SmoothStep(t));
-                    targetRot = Quaternion.Slerp(_snapshotRot, worldTarget.rot, SmoothStep(t));
-                    targetFov = Mathf.Lerp(_snapshotFov, firstFrame.fov, SmoothStep(t));
+                    float easedT = ApplyMotionTransition(t, _params.MotionTransition);
+                    targetPos = Vector3.Lerp(_snapshotPos, worldTarget.pos, easedT);
+                    targetRot = Quaternion.Slerp(_snapshotRot, worldTarget.rot, easedT);
+                    targetFov = Mathf.Lerp(_snapshotFov, firstFrame.fov, easedT);
 
                     if (_elapsed >= _params.BlendIn)
                     {
@@ -276,6 +285,23 @@ namespace STGEngine.Runtime.Scene
         private static float SmoothStep(float t)
         {
             return t * t * (3f - 2f * t);
+        }
+
+        private static float ApplyMotionTransition(float t, MotionTransitionType motionType)
+        {
+            switch (motionType)
+            {
+                case MotionTransitionType.Cut:
+                    return 1f;
+                case MotionTransitionType.SpeedRamp:
+                    float t3 = t * t * t;
+                    float t4 = t3 * t;
+                    float t5 = t4 * t;
+                    return 6f * t5 - 15f * t4 + 10f * t3;
+                case MotionTransitionType.SmoothBlend:
+                default:
+                    return SmoothStep(t);
+            }
         }
 
         // ── 震动 ──

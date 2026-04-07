@@ -218,6 +218,9 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             float timeOffset = 0f;
             foreach (var blk in _blocks)
             {
+                // ActionBlock 不参与顺序布局——按自身 StartTime 自由定位
+                if (blk is ActionBlock) continue;
+
                 blk.StartTime = timeOffset;
                 timeOffset += blk.Duration;
             }
@@ -270,13 +273,25 @@ namespace STGEngine.Editor.UI.Timeline.Layers
                 }
             }
 
-            // ActionEvents in BossFight — insert by StartTime
+            // ActionEvents in BossFight — insert by StartTime (free-positioned, not sequential)
             if (_segment.Events != null)
             {
                 foreach (var evt in _segment.Events)
                 {
                     if (evt is ActionEvent ae)
-                        _blocks.Add(new ActionBlock(ae));
+                    {
+                        // 按 StartTime 插入到正确位置，使 AssignRows 能正确分配行
+                        int insertIdx = _blocks.Count;
+                        for (int j = 0; j < _blocks.Count; j++)
+                        {
+                            if (ae.StartTime < _blocks[j].StartTime)
+                            {
+                                insertIdx = j;
+                                break;
+                            }
+                        }
+                        _blocks.Insert(insertIdx, new ActionBlock(ae));
+                    }
                 }
             }
         }

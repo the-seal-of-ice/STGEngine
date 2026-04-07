@@ -76,7 +76,11 @@ namespace STGEngine.Runtime.Preview
         // ── Camera Script ──
         private CameraScriptPlayer _cameraScriptPlayer;
         private EditorCameraFrame _editorCameraFrame;
+        private ScreenTransitionController _screenTransition;
         private readonly HashSet<string> _triggeredCameraIds = new();
+
+        // Dependencies for frame resolution
+        private Runtime.Preview.BossPlaceholder _bossPlaceholder;
 
         // Cached segment for event lookup
         private TimelineSegment _segment;
@@ -95,6 +99,9 @@ namespace STGEngine.Runtime.Preview
                     _cameraScriptPlayer = camera.gameObject.AddComponent<CameraScriptPlayer>();
                 _editorCameraFrame = new EditorCameraFrame(_freeCam);
                 _cameraScriptPlayer.Initialize(_editorCameraFrame);
+
+                // Screen transition controller
+                _screenTransition = new ScreenTransitionController(overlayRoot);
             }
 
             BuildTitleOverlay();
@@ -118,6 +125,9 @@ namespace STGEngine.Runtime.Preview
         /// <summary>Set the active player for camera script offset calculations.</summary>
         public void SetCameraPlayer(STGEngine.Runtime.Player.IPlayerProvider player)
             => _editorCameraFrame?.SetPlayer(player);
+
+        /// <summary>Set the boss placeholder for camera target resolution.</summary>
+        public void SetBossPlaceholder(Runtime.Preview.BossPlaceholder boss) => _bossPlaceholder = boss;
 
         /// <summary>Set the current segment for event lookup. Only fully resets when segment ID changes.</summary>
         public void SetSegment(TimelineSegment segment)
@@ -328,7 +338,14 @@ namespace STGEngine.Runtime.Preview
                         {
                             _triggeredCameraIds.Add(ae.Id);
                             if (ae.Params is CameraScriptParams csp && _cameraScriptPlayer != null)
-                                _cameraScriptPlayer.Play(csp);
+                            {
+                                var frameProvider = ResolveEditorFrameProvider(csp);
+                                _cameraScriptPlayer.Play(csp, frameProvider);
+
+                                // Trigger screen transition if configured
+                                if (csp.ScreenTransition != Core.Scene.ScreenTransitionType.Cut && _screenTransition != null)
+                                    _screenTransition.StartTransition(csp.ScreenTransition, csp.TransitionDuration);
+                            }
                         }
                         break;
                     }
@@ -420,6 +437,7 @@ namespace STGEngine.Runtime.Preview
             // Tick subsystems
             _backgroundLayer?.Tick(deltaTime);
             _itemSystem?.Tick(deltaTime);
+            _screenTransition?.Tick(deltaTime);
         }
 
         /// <summary>Draw BulletClear range gizmos + item gizmos. Call from OnDrawGizmos.</summary>
@@ -513,6 +531,7 @@ namespace STGEngine.Runtime.Preview
             _triggeredCameraIds.Clear();
             if (_cameraScriptPlayer != null && _cameraScriptPlayer.IsActive)
                 _cameraScriptPlayer.Stop();
+            _screenTransition?.Stop();
             _loopingSeHandles.Clear();
             _lastTickTime = -1f;
             _audio?.StopBgm(0.1f);
@@ -791,6 +810,46 @@ namespace STGEngine.Runtime.Preview
         }
 
         // ── BulletClear expanding wave ──
+
+        /// <summary>
+        /// Resolve the appropriate ICameraFrameProvider for editor preview
+        /// based on CameraScriptParams configuration.
+        /// </summary>
+        private ICameraFrameProvider ResolveEditorFrameProvider(CameraScriptParams csp)
+        {
+            switch (csp.ReferenceTarget)
+            {
+                case Core.Scene.CameraReferenceTarget.BoundaryCenter:
+                {
+                    // In editor preview, use SandboxBoundary center + height offset
+                    var boundary = Object.FindAnyObjectByType<SandboxBoundary>();
+                    if (boundary != null)
+                    {
+                        Vector3 center = boundary.transform.position + Vector3.up * csp.BoundaryCenterHeight;
+                        return new Runtime.Scene.FixedWorldFrame(center);
+                    }
+                    return _editorCameraFrame;
+                }
+
+                case Core.Scene.CameraReferenceTarget.Boss:
+                {
+                    if (_bossPlaceholder != null && _bossPlaceholder.IsVisible)
+                    {
+                        return new Runtime.Scene.TargetTransformFrame(
+                            _bossPlaceholder.transform,
+                            csp.FrameMode);
+                    }
+                    return _editorCameraFrame;
+                }
+
+                case Core.Scene.CameraReferenceTarget.WorldFixed:
+                    return new Runtime.Scene.FixedWorldFrame(csp.FixedWorldPosition);
+
+                case Core.Scene.CameraReferenceTarget.Player:
+                default:
+                    return _editorCameraFrame;
+            }
+        }
 
         private void StartClearWave(ActionEvent ae, float currentTime)
         {
