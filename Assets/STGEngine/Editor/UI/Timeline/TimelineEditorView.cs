@@ -5288,6 +5288,26 @@ namespace STGEngine.Editor.UI.Timeline
                     evt.Duration = clearDur;
             }
 
+            // CameraScript: seed first keyframe from current camera position
+            if (actionType == ActionType.CameraScript && evt.Params is CameraScriptParams cspDef)
+            {
+                var cam = Camera.main;
+                if (cam != null)
+                {
+                    var pos = cam.transform.position;
+                    var rot = cam.transform.rotation.eulerAngles;
+                    var fov = cam.fieldOfView;
+                    cspDef.Keyframes.Add(new CameraKeyframe
+                    {
+                        Time = 0f,
+                        PositionOffset = pos, // editor frame uses world axes, so pos ≈ offset from origin
+                        Rotation = rot,
+                        FOV = fov,
+                        Easing = EasingType.EaseInOut
+                    });
+                }
+            }
+
             // MidStageLayer uses TrackAreaView.AddEvent; BossFightLayer needs direct insertion
             if (_currentLayer is BossFightLayer bfLayer3)
             {
@@ -5802,12 +5822,13 @@ namespace STGEngine.Editor.UI.Timeline
                     {
                         float nextTime = kfs.Count > 0 ? kfs[kfs.Count - 1].Time + 1f : 0f;
                         var lastKf = kfs.Count > 0 ? kfs[kfs.Count - 1] : null;
+                        var cam = Camera.main;
                         cspParams.Keyframes.Add(new Core.Scene.CameraKeyframe
                         {
                             Time = nextTime,
-                            PositionOffset = lastKf?.PositionOffset ?? new Vector3(0, 10, -8),
-                            Rotation = lastKf?.Rotation ?? new Vector3(30, 0, 0),
-                            FOV = lastKf?.FOV ?? 60f,
+                            PositionOffset = cam != null ? cam.transform.position : (lastKf?.PositionOffset ?? new Vector3(0, 10, -8)),
+                            Rotation = cam != null ? cam.transform.rotation.eulerAngles : (lastKf?.Rotation ?? new Vector3(30, 0, 0)),
+                            FOV = cam != null ? cam.fieldOfView : (lastKf?.FOV ?? 60f),
                             Easing = Core.Timeline.EasingType.EaseInOut
                         });
                         UpdateCameraScriptDuration(cspParams, ae, durField);
