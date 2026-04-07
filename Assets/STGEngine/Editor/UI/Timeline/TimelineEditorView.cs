@@ -5288,21 +5288,24 @@ namespace STGEngine.Editor.UI.Timeline
                     evt.Duration = clearDur;
             }
 
-            // CameraScript: seed first keyframe from current camera position
+            // CameraScript: seed first keyframe from current camera state relative to player
             if (actionType == ActionType.CameraScript && evt.Params is CameraScriptParams cspDef)
             {
                 var cam = Camera.main;
                 if (cam != null)
                 {
-                    var pos = cam.transform.position;
-                    var rot = cam.transform.rotation.eulerAngles;
-                    var fov = cam.fieldOfView;
+                    // EditorCameraFrame uses world axes, so offset = cam.pos - playerPos
+                    var playerPos = Vector3.zero;
+                    var freeCam = cam.GetComponent<FreeCameraController>();
+                    if (freeCam != null) playerPos = freeCam.Pivot;
+                    var offset = cam.transform.position - playerPos;
+
                     cspDef.Keyframes.Add(new CameraKeyframe
                     {
                         Time = 0f,
-                        PositionOffset = pos, // editor frame uses world axes, so pos ≈ offset from origin
-                        Rotation = rot,
-                        FOV = fov,
+                        PositionOffset = offset,
+                        Rotation = cam.transform.rotation.eulerAngles,
+                        FOV = cam.fieldOfView,
                         Easing = EasingType.EaseInOut
                     });
                 }
@@ -5823,12 +5826,25 @@ namespace STGEngine.Editor.UI.Timeline
                         float nextTime = kfs.Count > 0 ? kfs[kfs.Count - 1].Time + 1f : 0f;
                         var lastKf = kfs.Count > 0 ? kfs[kfs.Count - 1] : null;
                         var cam = Camera.main;
+                        // Compute offset relative to player position
+                        Vector3 defaultOffset = lastKf?.PositionOffset ?? new Vector3(0, 10, -8);
+                        Vector3 defaultRot = lastKf?.Rotation ?? new Vector3(30, 0, 0);
+                        float defaultFov = lastKf?.FOV ?? 60f;
+                        if (cam != null)
+                        {
+                            var playerPos = Vector3.zero;
+                            var fc = cam.GetComponent<Runtime.Preview.FreeCameraController>();
+                            if (fc != null) playerPos = fc.Pivot;
+                            defaultOffset = cam.transform.position - playerPos;
+                            defaultRot = cam.transform.rotation.eulerAngles;
+                            defaultFov = cam.fieldOfView;
+                        }
                         cspParams.Keyframes.Add(new Core.Scene.CameraKeyframe
                         {
                             Time = nextTime,
-                            PositionOffset = cam != null ? cam.transform.position : (lastKf?.PositionOffset ?? new Vector3(0, 10, -8)),
-                            Rotation = cam != null ? cam.transform.rotation.eulerAngles : (lastKf?.Rotation ?? new Vector3(30, 0, 0)),
-                            FOV = cam != null ? cam.fieldOfView : (lastKf?.FOV ?? 60f),
+                            PositionOffset = defaultOffset,
+                            Rotation = defaultRot,
+                            FOV = defaultFov,
                             Easing = Core.Timeline.EasingType.EaseInOut
                         });
                         UpdateCameraScriptDuration(cspParams, ae, durField);
