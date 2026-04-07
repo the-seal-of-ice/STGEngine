@@ -31,6 +31,12 @@ namespace STGEngine.Runtime.Scene
         // 被接管的相机控制器
         private MonoBehaviour _disabledController;
 
+        // Play() 时快照的标架（偏移基于触发时的玩家位置，不实时跟随）
+        private Vector3 _frameOrigin;
+        private Vector3 _frameRight;
+        private Vector3 _frameUp;
+        private Vector3 _frameForward;
+
         // 震动状态（可独立于关键帧演出）
         private readonly List<ActiveShake> _activeShakes = new();
 
@@ -59,6 +65,22 @@ namespace STGEngine.Runtime.Scene
             _snapshotPos = _camera.transform.position;
             _snapshotRot = _camera.transform.rotation;
             _snapshotFov = _camera.fieldOfView;
+
+            // 快照标架（偏移基于触发时的玩家位置和朝向）
+            if (_frameProvider != null)
+            {
+                _frameOrigin = _frameProvider.PlayerWorldPosition;
+                _frameRight = _frameProvider.FrameRight;
+                _frameUp = _frameProvider.FrameUp;
+                _frameForward = _frameProvider.FrameForward;
+            }
+            else
+            {
+                _frameOrigin = Vector3.zero;
+                _frameRight = Vector3.right;
+                _frameUp = Vector3.up;
+                _frameForward = Vector3.forward;
+            }
 
             // 禁用当前活跃的相机控制器
             DisableActiveController();
@@ -240,18 +262,13 @@ namespace STGEngine.Runtime.Scene
 
         private (Vector3 pos, Quaternion rot) LocalToWorld(Vector3 localOffset, Vector3 localEuler)
         {
-            Vector3 origin = _frameProvider.PlayerWorldPosition;
-            Vector3 right = _frameProvider.FrameRight;
-            Vector3 up = _frameProvider.FrameUp;
-            Vector3 forward = _frameProvider.FrameForward;
+            // 使用 Play() 时快照的标架，不实时跟随玩家
+            Vector3 worldPos = _frameOrigin
+                + _frameRight   * localOffset.x
+                + _frameUp      * localOffset.y
+                + _frameForward * localOffset.z;
 
-            Vector3 worldPos = origin
-                + right   * localOffset.x
-                + up      * localOffset.y
-                + forward * localOffset.z;
-
-            // 构建标架旋转矩阵，再叠加局部旋转
-            Quaternion frameRot = Quaternion.LookRotation(forward, up);
+            Quaternion frameRot = Quaternion.LookRotation(_frameForward, _frameUp);
             Quaternion localRot = Quaternion.Euler(localEuler);
             Quaternion worldRot = frameRot * localRot;
 

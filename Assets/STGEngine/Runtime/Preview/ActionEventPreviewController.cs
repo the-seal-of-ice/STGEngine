@@ -309,14 +309,23 @@ namespace STGEngine.Runtime.Preview
                             }
                             break;
 
-                        case ActionType.CameraShake:
-                            if (!_triggeredCameraIds.Contains(ae.Id))
-                            {
-                                _triggeredCameraIds.Add(ae.Id);
-                                if (ae.Params is CameraShakeParams cshk && _cameraScriptPlayer != null)
-                                    _cameraScriptPlayer.Shake(cshk.Preset);
-                            }
-                            break;
+                    case ActionType.CameraShake:
+                        if (!_triggeredCameraIds.Contains(ae.Id))
+                        {
+                            _triggeredCameraIds.Add(ae.Id);
+                            if (ae.Params is CameraShakeParams cshk && _cameraScriptPlayer != null)
+                                _cameraScriptPlayer.Shake(cshk.Preset);
+                        }
+                        break;
+
+                    case ActionType.CameraScript:
+                        if (!_triggeredCameraIds.Contains(ae.Id))
+                        {
+                            _triggeredCameraIds.Add(ae.Id);
+                            if (ae.Params is CameraScriptParams csp && _cameraScriptPlayer != null)
+                                _cameraScriptPlayer.Play(csp);
+                        }
+                        break;
                     }
                 }
 
@@ -363,15 +372,6 @@ namespace STGEngine.Runtime.Preview
                     case ActionType.ScoreTally:
                         foundTally = true;
                         UpdateTallyOverlay(ae, currentTime);
-                        break;
-
-                    case ActionType.CameraScript:
-                        if (ae.Params is CameraScriptParams csp
-                            && _cameraScriptPlayer != null
-                            && !_cameraScriptPlayer.IsActive)
-                        {
-                            _cameraScriptPlayer.Play(csp);
-                        }
                         break;
                 }
             }
