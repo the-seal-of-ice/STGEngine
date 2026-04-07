@@ -105,8 +105,6 @@ namespace STGEngine.Runtime.Scene
 
             if (_camera == null || _frameProvider == null) return;
 
-            _elapsed += Time.deltaTime;
-
             Vector3 targetPos;
             Quaternion targetRot;
             float targetFov;
@@ -138,7 +136,7 @@ namespace STGEngine.Runtime.Scene
                     targetRot = world.rot;
                     targetFov = frame.fov;
 
-                    if (_elapsed >= _scriptDuration)
+                    if (_elapsed > _scriptDuration)
                     {
                         if (_params.BlendOut > 0f)
                         {
@@ -192,6 +190,9 @@ namespace STGEngine.Runtime.Scene
             _camera.transform.position = targetPos;
             _camera.transform.rotation = targetRot;
             _camera.fieldOfView = targetFov;
+
+            // 时钟推进放在写入之后，确保当前帧的关键帧值被应用
+            _elapsed += Time.deltaTime;
         }
 
         // ── 关键帧插值 ──
