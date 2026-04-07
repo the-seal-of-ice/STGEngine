@@ -333,7 +333,10 @@ namespace STGEngine.Runtime.Scene
             var playerCam = _camera.GetComponent<STGEngine.Runtime.Player.PlayerCamera>();
             if (playerCam != null && playerCam.enabled)
             {
+                // PlayerCamera.OnDisable 会解锁鼠标，禁用后立即重新锁定
                 playerCam.enabled = false;
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
                 _disabledController = playerCam;
                 return;
             }
