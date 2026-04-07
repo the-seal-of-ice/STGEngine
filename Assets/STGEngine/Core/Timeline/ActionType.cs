@@ -11,6 +11,8 @@ namespace STGEngine.Core.Timeline
         BgmControl,
         SePlay,
         BackgroundSwitch,
+        CameraScript,
+        CameraShake,
 
         // ── Game Logic ──
         BulletClear,

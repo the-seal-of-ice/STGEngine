@@ -22,6 +22,8 @@ namespace STGEngine.Core.Timeline
             { ActionType.ScoreTally,       typeof(ScoreTallyParams) },
             { ActionType.WaitCondition,    typeof(WaitConditionParams) },
             { ActionType.BranchJump,       typeof(BranchJumpParams) },
+            { ActionType.CameraScript,    typeof(CameraScriptParams) },
+            { ActionType.CameraShake,     typeof(CameraShakeParams) },
         };
 
         public static Type Resolve(ActionType type) =>
