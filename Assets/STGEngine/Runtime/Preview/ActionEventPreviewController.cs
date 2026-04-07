@@ -3,6 +3,8 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.Timeline;
 using STGEngine.Runtime.Audio;
+using STGEngine.Runtime.Scene;
+using STGEngine.Core.Scene;
 
 namespace STGEngine.Runtime.Preview
 {
@@ -71,6 +73,10 @@ namespace STGEngine.Runtime.Preview
         private readonly Dictionary<string, int> _loopingSeHandles = new();
         private float _lastTickTime = -1f;
 
+        // ── Camera Script ──
+        private CameraScriptPlayer _cameraScriptPlayer;
+        private readonly HashSet<string> _triggeredCameraIds = new();
+
         // Cached segment for event lookup
         private TimelineSegment _segment;
 
@@ -79,6 +85,17 @@ namespace STGEngine.Runtime.Preview
             _overlayRoot = overlayRoot;
             if (camera != null)
                 _freeCam = camera.GetComponent<FreeCameraController>();
+
+            // Camera script player
+            if (camera != null)
+            {
+                _cameraScriptPlayer = camera.GetComponent<CameraScriptPlayer>();
+                if (_cameraScriptPlayer == null)
+                    _cameraScriptPlayer = camera.gameObject.AddComponent<CameraScriptPlayer>();
+                var editorFrame = new EditorCameraFrame(_freeCam);
+                _cameraScriptPlayer.Initialize(editorFrame);
+            }
+
             BuildTitleOverlay();
             BuildFlashOverlay();
             BuildTallyOverlay();
@@ -159,6 +176,18 @@ namespace STGEngine.Runtime.Preview
                     }
                     return false;
                 });
+                // Camera script seek reset
+                _triggeredCameraIds.RemoveWhere(id =>
+                {
+                    foreach (var evt in _segment.Events)
+                    {
+                        if (evt is ActionEvent ae && ae.Id == id && ae.StartTime >= currentTime)
+                            return true;
+                    }
+                    return false;
+                });
+                if (_cameraScriptPlayer != null && _cameraScriptPlayer.IsActive)
+                    _cameraScriptPlayer.Stop();
                 // Stop all looping SE handles that were cleared
                 foreach (var kvp in new Dictionary<string, int>(_loopingSeHandles))
                 {
@@ -279,6 +308,15 @@ namespace STGEngine.Runtime.Preview
                                 _itemSystem?.TriggerAutoCollect();
                             }
                             break;
+
+                        case ActionType.CameraShake:
+                            if (!_triggeredCameraIds.Contains(ae.Id))
+                            {
+                                _triggeredCameraIds.Add(ae.Id);
+                                if (ae.Params is CameraShakeParams cshk && _cameraScriptPlayer != null)
+                                    _cameraScriptPlayer.Shake(cshk.Preset);
+                            }
+                            break;
                     }
                 }
 
@@ -325,6 +363,15 @@ namespace STGEngine.Runtime.Preview
                     case ActionType.ScoreTally:
                         foundTally = true;
                         UpdateTallyOverlay(ae, currentTime);
+                        break;
+
+                    case ActionType.CameraScript:
+                        if (ae.Params is CameraScriptParams csp
+                            && _cameraScriptPlayer != null
+                            && !_cameraScriptPlayer.IsActive)
+                        {
+                            _cameraScriptPlayer.Play(csp);
+                        }
                         break;
                 }
             }
@@ -458,6 +505,9 @@ namespace STGEngine.Runtime.Preview
             _triggeredClearIds.Clear();
             _triggeredBgIds.Clear();
             _triggeredItemIds.Clear();
+            _triggeredCameraIds.Clear();
+            if (_cameraScriptPlayer != null && _cameraScriptPlayer.IsActive)
+                _cameraScriptPlayer.Stop();
             _loopingSeHandles.Clear();
             _lastTickTime = -1f;
             _audio?.StopBgm(0.1f);
