@@ -84,6 +84,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             ActionType.BulletClear  => true,
             ActionType.SePlay       => true,
             ActionType.BgmControl   => true,
+            ActionType.CameraScript => true,
+            ActionType.CameraShake  => true,
             _ => false // BackgroundSwitch, ItemDrop, AutoCollect, BranchJump
         };
 
@@ -116,6 +118,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             ActionType.ScoreTally       => "TALLY",
             ActionType.WaitCondition    => "WAIT",
             ActionType.BranchJump       => "BRANCH",
+            ActionType.CameraScript     => "CAM",
+            ActionType.CameraShake      => "SHAKE",
             _ => "ACTION"
         };
 
@@ -127,6 +131,8 @@ namespace STGEngine.Editor.UI.Timeline.Layers
             ActionType.BgmControl       => HexColor(0x2980B9),
             ActionType.SePlay           => HexColor(0x3498DB),
             ActionType.BackgroundSwitch => HexColor(0x1ABC9C),
+            ActionType.CameraScript     => HexColor(0x6C5CE7),
+            ActionType.CameraShake      => HexColor(0xA55EEA),
             // Game logic — orange/yellow
             ActionType.BulletClear      => HexColor(0xE67E22),
             ActionType.ItemDrop         => HexColor(0xF39C12),

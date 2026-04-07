@@ -5,6 +5,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using STGEngine.Core.DataModel;
+using STGEngine.Core.Scene;
 using STGEngine.Core.Timeline;
 using STGEngine.Core.Serialization;
 using STGEngine.Editor.Commands;
@@ -14,6 +15,7 @@ using STGEngine.Editor.UI.FileManager;
 using STGEngine.Editor.UI.Timeline.Layers;
 using STGEngine.Runtime;
 using STGEngine.Runtime.Preview;
+using STGEngine.Runtime.Scene;
 
 namespace STGEngine.Editor.UI.Timeline
 {
@@ -5262,6 +5264,8 @@ namespace STGEngine.Editor.UI.Timeline
                 ActionType.ScreenEffect => 1f,
                 ActionType.ScoreTally => 3f,
                 ActionType.WaitCondition => 30f,
+                ActionType.CameraScript => 3f,
+                ActionType.CameraShake => 0.5f,
                 _ => 0f
             };
 
@@ -5655,6 +5659,165 @@ namespace STGEngine.Editor.UI.Timeline
                     container.Add(field);
                 }
             }
+
+            // ── CameraShake: flatten CameraShakePreset fields ──
+            if (ae.Params is CameraShakeParams cshkParams)
+            {
+                var preset = cshkParams.Preset;
+                if (preset == null) { preset = new Core.Scene.CameraShakePreset(); cshkParams.Preset = preset; }
+
+                var sep2 = new VisualElement();
+                sep2.style.height = 1;
+                sep2.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                sep2.style.marginTop = 6;
+                sep2.style.marginBottom = 4;
+                container.Add(sep2);
+                var shakeTitle = new Label("Shake Preset");
+                shakeTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+                shakeTitle.style.marginBottom = 2;
+                container.Add(shakeTitle);
+
+                var durF = new FloatField("Duration (s)") { value = preset.Duration, isDelayed = true };
+                durF.RegisterValueChangedCallback(e => { preset.Duration = e.newValue; ae.Duration = e.newValue; durField.SetValueWithoutNotify(e.newValue); _trackArea.RebuildBlocks(); OnStageDataChanged(); });
+                container.Add(durF);
+
+                var ampF = new FloatField("Amplitude (m)") { value = preset.Amplitude, isDelayed = true };
+                ampF.RegisterValueChangedCallback(e => { preset.Amplitude = e.newValue; OnStageDataChanged(); });
+                container.Add(ampF);
+
+                var freqF = new FloatField("Frequency (Hz)") { value = preset.Frequency, isDelayed = true };
+                freqF.RegisterValueChangedCallback(e => { preset.Frequency = e.newValue; OnStageDataChanged(); });
+                container.Add(freqF);
+
+                var decayF = new FloatField("Decay Rate") { value = preset.DecayRate, isDelayed = true };
+                decayF.RegisterValueChangedCallback(e => { preset.DecayRate = e.newValue; OnStageDataChanged(); });
+                container.Add(decayF);
+            }
+
+            // ── CameraScript: keyframe list editor ──
+            if (ae.Params is CameraScriptParams cspParams)
+            {
+                var sep3 = new VisualElement();
+                sep3.style.height = 1;
+                sep3.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                sep3.style.marginTop = 6;
+                sep3.style.marginBottom = 4;
+                container.Add(sep3);
+                var kfTitle = new Label("Keyframes");
+                kfTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+                kfTitle.style.marginBottom = 2;
+                container.Add(kfTitle);
+
+                var kfContainer = new VisualElement();
+                container.Add(kfContainer);
+
+                System.Action rebuildKfList = null;
+                rebuildKfList = () =>
+                {
+                    kfContainer.Clear();
+                    var kfs = cspParams.Keyframes;
+                    for (int idx = 0; idx < kfs.Count; idx++)
+                    {
+                        int i = idx; // capture
+                        var kf = kfs[i];
+
+                        var kfBox = new VisualElement();
+                        kfBox.style.backgroundColor = new Color(0.18f, 0.18f, 0.22f);
+                        kfBox.style.borderBottomWidth = 1;
+                        kfBox.style.borderBottomColor = new Color(0.25f, 0.25f, 0.3f);
+                        kfBox.style.paddingLeft = 4;
+                        kfBox.style.paddingRight = 4;
+                        kfBox.style.paddingTop = 3;
+                        kfBox.style.paddingBottom = 3;
+                        kfBox.style.marginBottom = 2;
+
+                        // Header row: index + time + remove button
+                        var headerRow = new VisualElement();
+                        headerRow.style.flexDirection = FlexDirection.Row;
+                        headerRow.style.alignItems = Align.Center;
+
+                        var idxLabel = new Label($"[{i}]");
+                        idxLabel.style.color = new Color(0.5f, 0.7f, 1f);
+                        idxLabel.style.minWidth = 24;
+                        idxLabel.style.fontSize = 11;
+                        headerRow.Add(idxLabel);
+
+                        var timeF = new FloatField("Time") { value = kf.Time, isDelayed = true };
+                        timeF.style.flexGrow = 1;
+                        timeF.RegisterValueChangedCallback(e =>
+                        {
+                            kf.Time = e.newValue;
+                            UpdateCameraScriptDuration(cspParams, ae, durField);
+                            OnStageDataChanged();
+                        });
+                        headerRow.Add(timeF);
+
+                        var removeBtn = new Button(() =>
+                        {
+                            cspParams.Keyframes.RemoveAt(i);
+                            UpdateCameraScriptDuration(cspParams, ae, durField);
+                            OnStageDataChanged();
+                            rebuildKfList();
+                        }) { text = "✕" };
+                        removeBtn.style.width = 22;
+                        removeBtn.style.color = new Color(1f, 0.4f, 0.4f);
+                        removeBtn.style.backgroundColor = Color.clear;
+                        headerRow.Add(removeBtn);
+
+                        kfBox.Add(headerRow);
+
+                        // Position
+                        var posF = new Vector3Field("Offset") { value = kf.PositionOffset };
+                        posF.RegisterValueChangedCallback(e => { kf.PositionOffset = e.newValue; OnStageDataChanged(); });
+                        kfBox.Add(posF);
+
+                        // Rotation
+                        var rotF = new Vector3Field("Rotation") { value = kf.Rotation };
+                        rotF.RegisterValueChangedCallback(e => { kf.Rotation = e.newValue; OnStageDataChanged(); });
+                        kfBox.Add(rotF);
+
+                        // FOV + Easing on same row
+                        var fovRow = new VisualElement();
+                        fovRow.style.flexDirection = FlexDirection.Row;
+
+                        var fovF = new FloatField("FOV") { value = kf.FOV, isDelayed = true };
+                        fovF.style.flexGrow = 1;
+                        fovF.RegisterValueChangedCallback(e => { kf.FOV = e.newValue; OnStageDataChanged(); });
+                        fovRow.Add(fovF);
+
+                        var easingF = new EnumField("Easing", kf.Easing);
+                        easingF.style.flexGrow = 1;
+                        easingF.RegisterValueChangedCallback(e => { kf.Easing = (Core.Timeline.EasingType)e.newValue; OnStageDataChanged(); });
+                        fovRow.Add(easingF);
+
+                        kfBox.Add(fovRow);
+                        kfContainer.Add(kfBox);
+                    }
+
+                    // Add keyframe button
+                    var addBtn = new Button(() =>
+                    {
+                        float nextTime = kfs.Count > 0 ? kfs[kfs.Count - 1].Time + 1f : 0f;
+                        var lastKf = kfs.Count > 0 ? kfs[kfs.Count - 1] : null;
+                        cspParams.Keyframes.Add(new Core.Scene.CameraKeyframe
+                        {
+                            Time = nextTime,
+                            PositionOffset = lastKf?.PositionOffset ?? new Vector3(0, 10, -8),
+                            Rotation = lastKf?.Rotation ?? new Vector3(30, 0, 0),
+                            FOV = lastKf?.FOV ?? 60f,
+                            Easing = Core.Timeline.EasingType.EaseInOut
+                        });
+                        UpdateCameraScriptDuration(cspParams, ae, durField);
+                        OnStageDataChanged();
+                        rebuildKfList();
+                    }) { text = "+ Add Keyframe" };
+                    addBtn.style.marginTop = 4;
+                    addBtn.style.backgroundColor = new Color(0.2f, 0.3f, 0.2f);
+                    kfContainer.Add(addBtn);
+                };
+
+                rebuildKfList();
+            }
         }
 
         /// <summary>
@@ -5673,6 +5836,20 @@ namespace STGEngine.Editor.UI.Timeline
                 durField?.SetValueWithoutNotify(dur);
                 _trackArea.RebuildBlocks();
             }
+        }
+
+        /// <summary>
+        /// Update CameraScript event duration = last keyframe time + blendOut.
+        /// </summary>
+        private void UpdateCameraScriptDuration(CameraScriptParams csp, ActionEvent ae, FloatField durField)
+        {
+            float lastTime = 0f;
+            if (csp.Keyframes.Count > 0)
+                lastTime = csp.Keyframes[csp.Keyframes.Count - 1].Time;
+            float dur = lastTime + csp.BlendIn + csp.BlendOut;
+            ae.Duration = dur;
+            durField?.SetValueWithoutNotify(dur);
+            _trackArea.RebuildBlocks();
         }
 
         /// <summary>
@@ -7206,6 +7383,6 @@ namespace STGEngine.Editor.UI.Timeline
             ApplyThemeToTree(root);
             root.schedule.Execute(() => ApplyThemeToTree(root)).ExecuteLater(50);
             root.schedule.Execute(() => ApplyThemeToTree(root)).ExecuteLater(200);
-        }
+            }
     }
 }
