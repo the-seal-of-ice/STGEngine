@@ -5298,7 +5298,7 @@ namespace STGEngine.Editor.UI.Timeline
                 {
                     Time = 0f,
                     PositionOffset = Vector3.zero,
-                    Rotation = Vector3.zero,
+                    Rotation = Quaternion.identity,
                     FOV = 60f,
                     Easing = EasingType.EaseInOut
                 });
@@ -5917,8 +5917,8 @@ namespace STGEngine.Editor.UI.Timeline
                         kfBox.Add(posF);
 
                         // Rotation
-                        var rotF = new Vector3Field("Rotation") { value = kf.Rotation };
-                        rotF.RegisterValueChangedCallback(e => { kf.Rotation = e.newValue; OnStageDataChanged(); });
+                        var rotF = new Vector3Field("Rotation") { value = kf.RotationEuler };
+                        rotF.RegisterValueChangedCallback(e => { kf.RotationEuler = e.newValue; OnStageDataChanged(); });
                         kfBox.Add(rotF);
 
                         // FOV + Easing on same row
@@ -5977,7 +5977,7 @@ namespace STGEngine.Editor.UI.Timeline
                         var cam = Camera.main;
                         // Compute offset relative to player position
                         Vector3 defaultOffset = lastKf?.PositionOffset ?? Vector3.zero;
-                        Vector3 defaultRot = lastKf?.Rotation ?? Vector3.zero;
+                        Quaternion defaultRot = lastKf?.Rotation ?? Quaternion.identity;
                         float defaultFov = lastKf?.FOV ?? 60f;
                         cspParams.Keyframes.Add(new Core.Scene.CameraKeyframe
                         {

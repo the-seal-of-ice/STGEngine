@@ -249,7 +249,7 @@ namespace STGEngine.Runtime.Scene
 
         // ── 关键帧插值 ──
 
-        private (Vector3 pos, Vector3 rot, float fov) EvaluateKeyframes(float time)
+        private (Vector3 pos, Quaternion rot, float fov) EvaluateKeyframes(float time)
         {
             var kfs = _params.Keyframes;
             if (kfs.Count == 1 || time <= kfs[0].Time)
@@ -271,7 +271,7 @@ namespace STGEngine.Runtime.Scene
                     float easedT = ApplyEasing(localT, kfs[i].Easing);
 
                     Vector3 pos = Vector3.Lerp(kfs[i].PositionOffset, kfs[i + 1].PositionOffset, easedT);
-                    Vector3 rot = LerpEuler(kfs[i].Rotation, kfs[i + 1].Rotation, easedT);
+                    Quaternion rot = Quaternion.Slerp(kfs[i].Rotation, kfs[i + 1].Rotation, easedT);
                     float fov = Mathf.Lerp(kfs[i].FOV, kfs[i + 1].FOV, easedT);
                     return (pos, rot, fov);
                 }
@@ -281,17 +281,9 @@ namespace STGEngine.Runtime.Scene
             return (fallback.PositionOffset, fallback.Rotation, fallback.FOV);
         }
 
-        private static Vector3 LerpEuler(Vector3 a, Vector3 b, float t)
-        {
-            // 通过四元数插值避免万向锁
-            Quaternion qa = Quaternion.Euler(a);
-            Quaternion qb = Quaternion.Euler(b);
-            return Quaternion.Slerp(qa, qb, t).eulerAngles;
-        }
-
         // ── 局部 → 世界坐标转换 ──
 
-        private (Vector3 pos, Quaternion rot) LocalToWorld(Vector3 localOffset, Vector3 localEuler)
+        private (Vector3 pos, Quaternion rot) LocalToWorld(Vector3 localOffset, Quaternion localRot)
         {
             // 每帧实时从 ICameraFrameProvider 取玩家位置和标架
             Vector3 origin = _frameProvider.PlayerWorldPosition;
@@ -305,7 +297,6 @@ namespace STGEngine.Runtime.Scene
                 + forward * localOffset.z;
 
             Quaternion frameRot = Quaternion.LookRotation(forward, up);
-            Quaternion localRot = Quaternion.Euler(localEuler);
             Quaternion worldRot = frameRot * localRot;
 
             return (worldPos, worldRot);
@@ -493,8 +484,8 @@ namespace STGEngine.Runtime.Scene
                 _persistEndDistance = _persistStartDistance + lastKf.PositionOffset.z;
                 _persistEndHeight = _persistStartHeight + lastKf.PositionOffset.y;
                 _persistEndFov = lastKf.FOV > 0f ? lastKf.FOV : _persistStartFov;
-                _persistEndPitchOff = _persistStartPitchOff + lastKf.Rotation.x;
-                _persistEndYawOff = _persistStartYawOff + lastKf.Rotation.y;
+                _persistEndPitchOff = _persistStartPitchOff + lastKf.RotationEuler.x;
+                _persistEndYawOff = _persistStartYawOff + lastKf.RotationEuler.y;
             }
 
             // blend 时长 = BlendIn + BlendOut（两段合并为一次平滑过渡）

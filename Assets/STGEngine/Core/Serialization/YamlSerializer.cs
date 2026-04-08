@@ -51,6 +51,7 @@ namespace STGEngine.Core.Serialization
             {
                 new EmitterTypeConverter(),
                 new ModifierTypeConverter(),
+                new QuaternionTypeConverter(),
                 new Vector3TypeConverter(),
                 new ColorTypeConverter(),
                 new SerializableCurveTypeConverter(),
@@ -225,6 +226,47 @@ namespace STGEngine.Core.Serialization
                 EmitScalar(emitter, "type");
                 EmitScalar(emitter, tag);
                 EmitObjectProperties(emitter, value, concreteType);
+                emitter.Emit(new MappingEnd());
+            }
+        }
+
+        // ─── Quaternion TypeConverter (backward-compatible with Vector3 euler) ───
+
+        private class QuaternionTypeConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type) => type == typeof(Quaternion);
+
+            public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+            {
+                parser.Consume<MappingStart>();
+                float x = 0, y = 0, z = 0, w = 1;
+                bool hasW = false;
+                while (!parser.TryConsume<MappingEnd>(out _))
+                {
+                    var key = parser.Consume<Scalar>().Value;
+                    var val = ParseFloat(parser.Consume<Scalar>().Value);
+                    switch (key)
+                    {
+                        case "x": x = val; break;
+                        case "y": y = val; break;
+                        case "z": z = val; break;
+                        case "w": w = val; hasW = true; break;
+                    }
+                }
+                // 向后兼容：旧数据只有 x/y/z（欧拉角），没有 w
+                if (!hasW)
+                    return Quaternion.Euler(x, y, z);
+                return new Quaternion(x, y, z, w);
+            }
+
+            public void WriteYaml(YamlEmitter emitter, object value, Type type, ObjectSerializer rootSerializer)
+            {
+                var q = (Quaternion)value;
+                emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(q.x));
+                EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(q.y));
+                EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(q.z));
+                EmitScalar(emitter, "w"); EmitScalar(emitter, Fmt(q.w));
                 emitter.Emit(new MappingEnd());
             }
         }
@@ -811,6 +853,17 @@ namespace STGEngine.Core.Serialization
                     );
                 }
 
+                if (targetType == typeof(Quaternion))
+                {
+                    float qx = d.TryGetValue("x", out var qxv) ? ParseFloat(qxv) : 0f;
+                    float qy = d.TryGetValue("y", out var qyv) ? ParseFloat(qyv) : 0f;
+                    float qz = d.TryGetValue("z", out var qzv) ? ParseFloat(qzv) : 0f;
+                    // 向后兼容：旧数据只有 x/y/z（欧拉角），没有 w
+                    if (d.TryGetValue("w", out var qwv))
+                        return new Quaternion(qx, qy, qz, ParseFloat(qwv));
+                    return Quaternion.Euler(qx, qy, qz);
+                }
+
                 if (targetType == typeof(Vector2))
                 {
                     return new Vector2(
@@ -902,6 +955,15 @@ namespace STGEngine.Core.Serialization
         {
             switch (val)
             {
+                case Quaternion q:
+                    emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
+                    EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(q.x));
+                    EmitScalar(emitter, "y"); EmitScalar(emitter, Fmt(q.y));
+                    EmitScalar(emitter, "z"); EmitScalar(emitter, Fmt(q.z));
+                    EmitScalar(emitter, "w"); EmitScalar(emitter, Fmt(q.w));
+                    emitter.Emit(new MappingEnd());
+                    break;
+
                 case Vector3 v3:
                     emitter.Emit(new MappingStart(default, default, false, MappingStyle.Flow));
                     EmitScalar(emitter, "x"); EmitScalar(emitter, Fmt(v3.x));

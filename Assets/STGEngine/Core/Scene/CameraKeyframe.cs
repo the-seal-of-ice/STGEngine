@@ -30,8 +30,18 @@ namespace STGEngine.Core.Scene
         /// <summary>玩家局部坐标系偏移 (x=right, y=up, z=forward)。</summary>
         public Vector3 PositionOffset { get; set; }
 
-        /// <summary>局部空间欧拉角 (pitch, yaw, roll)。</summary>
-        public Vector3 Rotation { get; set; }
+        /// <summary>局部空间旋转（四元数）。无万向锁。</summary>
+        public Quaternion Rotation { get; set; } = Quaternion.identity;
+
+        /// <summary>
+        /// 欧拉角便捷访问器（编辑器 UI 用）。
+        /// 读取时从四元数转换，写入时转回四元数。
+        /// </summary>
+        public Vector3 RotationEuler
+        {
+            get => Rotation.eulerAngles;
+            set => Rotation = Quaternion.Euler(value);
+        }
 
         /// <summary>视野角度。</summary>
         public float FOV { get; set; } = 60f;

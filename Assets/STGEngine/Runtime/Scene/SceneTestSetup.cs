@@ -175,10 +175,10 @@ namespace STGEngine.Runtime.Scene
                     BlendOut = 0.5f,
                     Keyframes = new System.Collections.Generic.List<CameraKeyframe>
                     {
-                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 10, -8), Rotation = new Vector3(30, 0, 0), FOV = 60f },
-                        new CameraKeyframe { Time = 1f, PositionOffset = new Vector3(5, 12, -5), Rotation = new Vector3(20, -15, 0), FOV = 50f },
-                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(-3, 8, -10), Rotation = new Vector3(35, 10, 5), FOV = 65f },
-                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 10, -8), Rotation = new Vector3(30, 0, 0), FOV = 60f },
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 10, -8), Rotation = Quaternion.Euler(30, 0, 0), FOV = 60f },
+                        new CameraKeyframe { Time = 1f, PositionOffset = new Vector3(5, 12, -5), Rotation = Quaternion.Euler(20, -15, 0), FOV = 50f },
+                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(-3, 8, -10), Rotation = Quaternion.Euler(35, 10, 5), FOV = 65f },
+                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 10, -8), Rotation = Quaternion.Euler(30, 0, 0), FOV = 60f },
                     }
                 };
                 _cameraScriptPlayer.Play(testParams);

@@ -41,8 +41,8 @@ namespace STGEngine.Core.Scene
                     ScreenTransition = ScreenTransitionType.Cut,
                     Keyframes = new List<CameraKeyframe>
                     {
-                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 15, -25), Rotation = new Vector3(25, 0, 0), FOV = 50f },
-                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(0, 8, -12), Rotation = new Vector3(20, 0, 0), FOV = 60f }
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 15, -25), Rotation = Quaternion.Euler(25, 0, 0), FOV = 50f },
+                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(0, 8, -12), Rotation = Quaternion.Euler(20, 0, 0), FOV = 60f }
                     }
                 }
             },
@@ -60,9 +60,9 @@ namespace STGEngine.Core.Scene
                     ScreenTransition = ScreenTransitionType.Cut,
                     Keyframes = new List<CameraKeyframe>
                     {
-                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(5, 3, -8), Rotation = new Vector3(15, -20, 0), FOV = 55f },
-                        new CameraKeyframe { Time = 1.5f, PositionOffset = new Vector3(-5, 3, -8), Rotation = new Vector3(15, 20, 0), FOV = 55f },
-                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 5, -10), Rotation = new Vector3(20, 0, 0), FOV = 60f }
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(5, 3, -8), Rotation = Quaternion.Euler(15, -20, 0), FOV = 55f },
+                        new CameraKeyframe { Time = 1.5f, PositionOffset = new Vector3(-5, 3, -8), Rotation = Quaternion.Euler(15, 20, 0), FOV = 55f },
+                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 5, -10), Rotation = Quaternion.Euler(20, 0, 0), FOV = 60f }
                     }
                 }
             },
@@ -80,7 +80,7 @@ namespace STGEngine.Core.Scene
                     ScreenTransition = ScreenTransitionType.Cut,
                     Keyframes = new List<CameraKeyframe>
                     {
-                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 10, -8), Rotation = new Vector3(30, 0, 0), FOV = 60f }
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 10, -8), Rotation = Quaternion.Euler(30, 0, 0), FOV = 60f }
                     }
                 }
             },
@@ -99,8 +99,8 @@ namespace STGEngine.Core.Scene
                     TransitionDuration = 1f,
                     Keyframes = new List<CameraKeyframe>
                     {
-                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 4, -10), Rotation = new Vector3(15, 0, 0), FOV = 55f },
-                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(0, 4, -10), Rotation = new Vector3(15, 0, 0), FOV = 55f }
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 4, -10), Rotation = Quaternion.Euler(15, 0, 0), FOV = 55f },
+                        new CameraKeyframe { Time = 2f, PositionOffset = new Vector3(0, 4, -10), Rotation = Quaternion.Euler(15, 0, 0), FOV = 55f }
                     }
                 }
             },
@@ -120,8 +120,8 @@ namespace STGEngine.Core.Scene
                     TransitionDuration = 0.8f,
                     Keyframes = new List<CameraKeyframe>
                     {
-                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 25, -5), Rotation = new Vector3(70, 0, 0), FOV = 50f },
-                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 25, -5), Rotation = new Vector3(70, 0, 0), FOV = 50f }
+                        new CameraKeyframe { Time = 0f, PositionOffset = new Vector3(0, 25, -5), Rotation = Quaternion.Euler(70, 0, 0), FOV = 50f },
+                        new CameraKeyframe { Time = 3f, PositionOffset = new Vector3(0, 25, -5), Rotation = Quaternion.Euler(70, 0, 0), FOV = 50f }
                     }
                 }
             }

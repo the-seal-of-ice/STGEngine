@@ -30,9 +30,9 @@ namespace STGEngine.Core.Scene
                 curves.OffsetX.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.PositionOffset.x });
                 curves.OffsetY.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.PositionOffset.y });
                 curves.OffsetZ.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.PositionOffset.z });
-                curves.RotationX.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.Rotation.x });
-                curves.RotationY.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.Rotation.y });
-                curves.RotationZ.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.Rotation.z });
+                curves.RotationX.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.RotationEuler.x });
+                curves.RotationY.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.RotationEuler.y });
+                curves.RotationZ.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.RotationEuler.z });
                 curves.FOVCurve.Keyframes.Add(new CurveKeyframe { Time = kf.Time, Value = kf.FOV });
             }
 
@@ -66,7 +66,7 @@ namespace STGEngine.Core.Scene
                         OffsetX.Evaluate(t),
                         OffsetY.Evaluate(t),
                         OffsetZ.Evaluate(t)),
-                    Rotation = new Vector3(
+                    RotationEuler = new Vector3(
                         RotationX.Evaluate(t),
                         RotationY.Evaluate(t),
                         RotationZ.Evaluate(t)),
