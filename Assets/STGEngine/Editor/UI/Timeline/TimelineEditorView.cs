@@ -30,6 +30,8 @@ namespace STGEngine.Editor.UI.Timeline
         public float TimeOffset;
         /// <summary>World-space offset applied to all enemy positions.</summary>
         public Vector3 SpawnOffset;
+        /// <summary>Override context ID for resolving EnemyType overrides (e.g. "segmentId/eventId").</summary>
+        public string ContextId;
         }
 
     /// <summary>
@@ -3057,7 +3059,7 @@ namespace STGEngine.Editor.UI.Timeline
             {
                 var list = new List<WavePlaceholderData>
                 {
-                    new() { Wave = wl.Wave, TimeOffset = 0f, SpawnOffset = Vector3.zero }
+                    new() { Wave = wl.Wave, TimeOffset = 0f, SpawnOffset = Vector3.zero, ContextId = wl.ContextId }
                 };
                 OnWaveEditingChanged.Invoke(list);
             }
@@ -3120,7 +3122,8 @@ namespace STGEngine.Editor.UI.Timeline
                         {
                             Wave = wave,
                             TimeOffset = segmentOffset + sw.StartTime,
-                            SpawnOffset = sw.SpawnOffset
+                            SpawnOffset = sw.SpawnOffset,
+                            ContextId = eventContextId
                         });
                     }
                     catch (Exception e)
@@ -5288,27 +5291,17 @@ namespace STGEngine.Editor.UI.Timeline
                     evt.Duration = clearDur;
             }
 
-            // CameraScript: seed first keyframe from current camera state relative to player
+            // CameraScript: seed first keyframe with zeroed offset
             if (actionType == ActionType.CameraScript && evt.Params is CameraScriptParams cspDef)
             {
-                var cam = Camera.main;
-                if (cam != null)
+                cspDef.Keyframes.Add(new CameraKeyframe
                 {
-                    // EditorCameraFrame uses world axes, so offset = cam.pos - playerPos
-                    var playerPos = Vector3.zero;
-                    var freeCam = cam.GetComponent<FreeCameraController>();
-                    if (freeCam != null) playerPos = freeCam.Pivot;
-                    var offset = cam.transform.position - playerPos;
-
-                    cspDef.Keyframes.Add(new CameraKeyframe
-                    {
-                        Time = 0f,
-                        PositionOffset = offset,
-                        Rotation = cam.transform.rotation.eulerAngles,
-                        FOV = cam.fieldOfView,
-                        Easing = EasingType.EaseInOut
-                    });
-                }
+                    Time = 0f,
+                    PositionOffset = Vector3.zero,
+                    Rotation = Vector3.zero,
+                    FOV = 60f,
+                    Easing = EasingType.EaseInOut
+                });
             }
 
             // MidStageLayer uses TrackAreaView.AddEvent; BossFightLayer needs direct insertion
@@ -5895,7 +5888,7 @@ namespace STGEngine.Editor.UI.Timeline
                         kfBox.style.paddingBottom = 4;
                         kfBox.style.marginBottom = 1;
 
-                        // Header row: index + time + remove button
+                        // Header row: index + time
                         var headerRow = new VisualElement();
                         headerRow.style.flexDirection = FlexDirection.Row;
                         headerRow.style.alignItems = Align.Center;
@@ -5916,18 +5909,6 @@ namespace STGEngine.Editor.UI.Timeline
                         });
                         headerRow.Add(timeF);
 
-                        var removeBtn = new Button(() =>
-                        {
-                            cspParams.Keyframes.RemoveAt(i);
-                            UpdateCameraScriptDuration(cspParams, ae, durField);
-                            OnStageDataChanged();
-                            rebuildKfList();
-                        }) { text = "✕" };
-                        removeBtn.style.width = 22;
-                        removeBtn.style.color = new Color(1f, 0.4f, 0.4f);
-                        removeBtn.style.backgroundColor = Color.clear;
-                        headerRow.Add(removeBtn);
-
                         kfBox.Add(headerRow);
 
                         // Position
@@ -5943,18 +5924,48 @@ namespace STGEngine.Editor.UI.Timeline
                         // FOV + Easing on same row
                         var fovRow = new VisualElement();
                         fovRow.style.flexDirection = FlexDirection.Row;
+                        fovRow.style.overflow = Overflow.Hidden;
 
                         var fovF = new FloatField("FOV") { value = kf.FOV, isDelayed = true };
                         fovF.style.flexGrow = 1;
+                        fovF.style.flexBasis = 0;
+                        fovF.style.minWidth = 0;
                         fovF.RegisterValueChangedCallback(e => { kf.FOV = e.newValue; OnStageDataChanged(); });
                         fovRow.Add(fovF);
 
                         var easingF = new EnumField("Easing", kf.Easing);
                         easingF.style.flexGrow = 1;
+                        easingF.style.flexBasis = 0;
+                        easingF.style.minWidth = 0;
                         easingF.RegisterValueChangedCallback(e => { kf.Easing = (Core.Timeline.EasingType)e.newValue; OnStageDataChanged(); });
                         fovRow.Add(easingF);
 
                         kfBox.Add(fovRow);
+
+                        // Persist mode selector
+                        var persistF = new EnumField("Mode", kf.PersistMode);
+                        persistF.RegisterValueChangedCallback(e =>
+                        {
+                            kf.PersistMode = (Core.Scene.KeyframePersistMode)e.newValue;
+                            OnStageDataChanged();
+                        });
+                        kfBox.Add(persistF);
+
+                        // Delete keyframe button at bottom of each kfBox
+                        var removeBtn = new Button(() =>
+                        {
+                            cspParams.Keyframes.RemoveAt(i);
+                            UpdateCameraScriptDuration(cspParams, ae, durField);
+                            OnStageDataChanged();
+                            rebuildKfList();
+                        }) { text = "Delete Keyframe" };
+                        removeBtn.style.marginTop = 4;
+                        removeBtn.style.height = 20;
+                        removeBtn.style.fontSize = 11;
+                        removeBtn.style.color = new Color(1f, 0.6f, 0.6f);
+                        removeBtn.style.backgroundColor = new Color(0.35f, 0.15f, 0.15f);
+                        kfBox.Add(removeBtn);
+
                         kfContainer.Add(kfBox);
                     }
 
@@ -5965,18 +5976,9 @@ namespace STGEngine.Editor.UI.Timeline
                         var lastKf = kfs.Count > 0 ? kfs[kfs.Count - 1] : null;
                         var cam = Camera.main;
                         // Compute offset relative to player position
-                        Vector3 defaultOffset = lastKf?.PositionOffset ?? new Vector3(0, 10, -8);
-                        Vector3 defaultRot = lastKf?.Rotation ?? new Vector3(30, 0, 0);
+                        Vector3 defaultOffset = lastKf?.PositionOffset ?? Vector3.zero;
+                        Vector3 defaultRot = lastKf?.Rotation ?? Vector3.zero;
                         float defaultFov = lastKf?.FOV ?? 60f;
-                        if (cam != null)
-                        {
-                            var playerPos = Vector3.zero;
-                            var fc = cam.GetComponent<Runtime.Preview.FreeCameraController>();
-                            if (fc != null) playerPos = fc.Pivot;
-                            defaultOffset = cam.transform.position - playerPos;
-                            defaultRot = cam.transform.rotation.eulerAngles;
-                            defaultFov = cam.fieldOfView;
-                        }
                         cspParams.Keyframes.Add(new Core.Scene.CameraKeyframe
                         {
                             Time = nextTime,

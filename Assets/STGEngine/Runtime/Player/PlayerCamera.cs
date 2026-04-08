@@ -30,6 +30,41 @@ namespace STGEngine.Runtime.Player
         private Transform _target;
         private bool _cursorLocked;
 
+        // ── 默认属性快照（用于"回归"） ──
+        private float _defaultDistance;
+        private float _defaultHeightOffset;
+        private float _defaultFov;
+        private bool _defaultsCaptured;
+
+        // ── 外部可写属性 ──
+
+        /// <summary>摄像头距离球体的距离。</summary>
+        public float Distance
+        {
+            get => _distance;
+            set => _distance = value;
+        }
+
+        /// <summary>摄像头相对球体的垂直偏移。</summary>
+        public float HeightOffset
+        {
+            get => _heightOffset;
+            set => _heightOffset = value;
+        }
+
+        /// <summary>视野角度（直接读写主相机 FOV）。</summary>
+        public float FOV
+        {
+            get => Camera.main != null ? Camera.main.fieldOfView : 60f;
+            set { if (Camera.main != null) Camera.main.fieldOfView = value; }
+        }
+
+        /// <summary>Pitch 偏移（由保持型镜头叠加）。</summary>
+        public float PitchOffset { get; set; }
+
+        /// <summary>Yaw 偏移（由保持型镜头叠加）。</summary>
+        public float YawOffset { get; set; }
+
         /// <summary>视角方向的前方（水平投影，Y=0 归一化）。用于玩家相对移动。</summary>
         public Vector3 ViewForward => Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward;
         /// <summary>视角方向的右方。</summary>
@@ -57,6 +92,7 @@ namespace STGEngine.Runtime.Player
                 _yaw = euler.y;
                 _pitch = euler.x;
                 if (_pitch > 180f) _pitch -= 360f;
+                CaptureDefaults();
                 ApplyTransform();
             }
         }
@@ -66,6 +102,26 @@ namespace STGEngine.Runtime.Player
             _cursorLocked = locked;
             Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !locked;
+        }
+
+        /// <summary>捕获当前属性作为默认值（首次 SetTarget 时自动调用）。</summary>
+        public void CaptureDefaults()
+        {
+            _defaultDistance = _distance;
+            _defaultHeightOffset = _heightOffset;
+            _defaultFov = Camera.main != null ? Camera.main.fieldOfView : 60f;
+            _defaultsCaptured = true;
+        }
+
+        /// <summary>将 distance/heightOffset/FOV/偏移 重置回默认值。</summary>
+        public void RevertToDefaults()
+        {
+            if (!_defaultsCaptured) return;
+            _distance = _defaultDistance;
+            _heightOffset = _defaultHeightOffset;
+            if (Camera.main != null) Camera.main.fieldOfView = _defaultFov;
+            PitchOffset = 0f;
+            YawOffset = 0f;
         }
 
         private void LateUpdate()
@@ -90,8 +146,12 @@ namespace STGEngine.Runtime.Player
         {
             if (_target == null) return;
 
+            // 叠加保持型镜头的偏移
+            float effectivePitch = _pitch + PitchOffset;
+            float effectiveYaw = _yaw + YawOffset;
+
             // 从玩家出发，沿 pitch/yaw 反方向退 _distance
-            var backDir = Quaternion.Euler(_pitch, _yaw, 0f) * Vector3.back;
+            var backDir = Quaternion.Euler(effectivePitch, effectiveYaw, 0f) * Vector3.back;
             var camPos = _target.position + backDir * _distance;
 
             // 垂直偏移：相机在玩家上方

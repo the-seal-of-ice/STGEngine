@@ -12,7 +12,7 @@ namespace STGEngine.Runtime.Scene
     [AddComponentMenu("STGEngine/Scene/CameraScriptPlayer")]
     public class CameraScriptPlayer : MonoBehaviour
     {
-        private enum State { Idle, BlendIn, Playing, BlendOut }
+        private enum State { Idle, BlendIn, Playing, BlendOut, PersistBlend }
 
         private State _state = State.Idle;
         private ICameraFrameProvider _frameProvider;
@@ -30,6 +30,23 @@ namespace STGEngine.Runtime.Scene
 
         // 被接管的相机控制器
         private MonoBehaviour _disabledController;
+
+        // ── 保持型镜头 blend 状态 ──
+        private STGEngine.Runtime.Player.PlayerCamera _persistTarget;
+        private float _persistBlendDuration;
+        private float _persistBlendElapsed;
+        // blend 起点
+        private float _persistStartDistance;
+        private float _persistStartHeight;
+        private float _persistStartFov;
+        private float _persistStartPitchOff;
+        private float _persistStartYawOff;
+        // blend 终点
+        private float _persistEndDistance;
+        private float _persistEndHeight;
+        private float _persistEndFov;
+        private float _persistEndPitchOff;
+        private float _persistEndYawOff;
 
         // 震动状态（可独立于关键帧演出）
         private readonly List<ActiveShake> _activeShakes = new();
@@ -50,6 +67,13 @@ namespace STGEngine.Runtime.Scene
             if (scriptParams == null || scriptParams.Keyframes.Count == 0) return;
             if (_camera == null) _camera = Camera.main;
             if (_camera == null) return;
+
+            // 检查是否为纯保持型脚本（所有关键帧都是 Persist 或 Revert）
+            if (IsPersistOnly(scriptParams))
+            {
+                ApplyPersistScript(scriptParams);
+                return;
+            }
 
             _params = scriptParams;
             _elapsed = 0f;
@@ -89,6 +113,14 @@ namespace STGEngine.Runtime.Scene
         /// <summary>立即停止演出，跳到 Idle。</summary>
         public void Stop()
         {
+            if (_state == State.PersistBlend)
+            {
+                // 中断 persist blend 时，直接跳到终点值
+                ApplyPersistValues(1f);
+                _state = State.Idle;
+                _params = null;
+                return;
+            }
             if (_state != State.Idle)
             {
                 RestoreController();
@@ -108,6 +140,17 @@ namespace STGEngine.Runtime.Scene
                 {
                     _camera.transform.position += ComputeShakeOffset();
                 }
+                return;
+            }
+
+            // 保持型 blend：不接管相机，只插值 PlayerCamera 属性
+            if (_state == State.PersistBlend)
+            {
+                _persistBlendElapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(_persistBlendElapsed / _persistBlendDuration);
+                ApplyPersistValues(t);
+                if (t >= 1f)
+                    _state = State.Idle;
                 return;
             }
 
@@ -389,6 +432,95 @@ namespace STGEngine.Runtime.Scene
 
                 _disabledController = null;
             }
+        }
+
+        // ── 保持型镜头 ──
+
+        /// <summary>检查脚本是否为纯保持型（所有关键帧都是 Persist 或 Revert）。</summary>
+        private static bool IsPersistOnly(CameraScriptParams scriptParams)
+        {
+            foreach (var kf in scriptParams.Keyframes)
+            {
+                if (kf.PersistMode == KeyframePersistMode.Normal)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 启动保持型脚本的渐变过渡：不接管相机，在 BlendIn 时间内
+        /// 平滑插值 PlayerCamera 属性到目标值。PlayerCamera 继续运行。
+        /// </summary>
+        private void ApplyPersistScript(CameraScriptParams scriptParams)
+        {
+            if (_camera == null) _camera = Camera.main;
+            var playerCam = _camera != null
+                ? _camera.GetComponent<STGEngine.Runtime.Player.PlayerCamera>()
+                : null;
+            if (playerCam == null) return;
+
+            var lastKf = scriptParams.Keyframes[scriptParams.Keyframes.Count - 1];
+
+            // 记录起点（当前 PlayerCamera 状态）
+            _persistTarget = playerCam;
+            _persistStartDistance = playerCam.Distance;
+            _persistStartHeight = playerCam.HeightOffset;
+            _persistStartFov = playerCam.FOV;
+            _persistStartPitchOff = playerCam.PitchOffset;
+            _persistStartYawOff = playerCam.YawOffset;
+
+            if (lastKf.PersistMode == KeyframePersistMode.Revert)
+            {
+                // 回归：终点 = 默认值
+                // RevertToDefaults 会重置，先偷看默认值再恢复
+                // 用一个临时 revert 来获取目标值
+                playerCam.RevertToDefaults();
+                _persistEndDistance = playerCam.Distance;
+                _persistEndHeight = playerCam.HeightOffset;
+                _persistEndFov = playerCam.FOV;
+                _persistEndPitchOff = 0f;
+                _persistEndYawOff = 0f;
+                // 恢复回起点，让 blend 从当前状态开始
+                playerCam.Distance = _persistStartDistance;
+                playerCam.HeightOffset = _persistStartHeight;
+                playerCam.FOV = _persistStartFov;
+                playerCam.PitchOffset = _persistStartPitchOff;
+                playerCam.YawOffset = _persistStartYawOff;
+            }
+            else
+            {
+                // Persist：终点 = 当前值 + 关键帧偏移
+                _persistEndDistance = _persistStartDistance + lastKf.PositionOffset.z;
+                _persistEndHeight = _persistStartHeight + lastKf.PositionOffset.y;
+                _persistEndFov = lastKf.FOV > 0f ? lastKf.FOV : _persistStartFov;
+                _persistEndPitchOff = _persistStartPitchOff + lastKf.Rotation.x;
+                _persistEndYawOff = _persistStartYawOff + lastKf.Rotation.y;
+            }
+
+            // blend 时长 = BlendIn + BlendOut（两段合并为一次平滑过渡）
+            _persistBlendDuration = scriptParams.BlendIn + scriptParams.BlendOut;
+            _persistBlendElapsed = 0f;
+
+            if (_persistBlendDuration <= 0f)
+            {
+                // 无 blend，瞬间应用
+                ApplyPersistValues(1f);
+                return;
+            }
+
+            _state = State.PersistBlend;
+        }
+
+        /// <summary>按 t (0~1) 插值 PlayerCamera 属性。</summary>
+        private void ApplyPersistValues(float t)
+        {
+            if (_persistTarget == null) return;
+            float s = SmoothStep(t);
+            _persistTarget.Distance = Mathf.Lerp(_persistStartDistance, _persistEndDistance, s);
+            _persistTarget.HeightOffset = Mathf.Lerp(_persistStartHeight, _persistEndHeight, s);
+            _persistTarget.FOV = Mathf.Lerp(_persistStartFov, _persistEndFov, s);
+            _persistTarget.PitchOffset = Mathf.Lerp(_persistStartPitchOff, _persistEndPitchOff, s);
+            _persistTarget.YawOffset = Mathf.Lerp(_persistStartYawOff, _persistEndYawOff, s);
         }
 
         // ── 内部数据 ──
