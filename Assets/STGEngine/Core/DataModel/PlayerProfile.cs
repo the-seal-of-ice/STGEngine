@@ -94,7 +94,7 @@ namespace STGEngine.Core.DataModel
         };
 
         // ── 射击（普通模式）──
-        public float ShotInterval { get; set; } = 0.5f;
+        public float ShotInterval { get; set; } = 0.08f;
         public float ShotSpeed { get; set; } = 140f;
         public float ShotDamage { get; set; } = 10f;
         public float ShotRadius { get; set; } = 0.15f;
@@ -103,7 +103,7 @@ namespace STGEngine.Core.DataModel
         public float ShotHomingStrength { get; set; } = 2f;
 
         // ── 射击（低速模式）──
-        public float FocusShotInterval { get; set; } = 0.35f;
+        public float FocusShotInterval { get; set; } = 0.06f;
         public float FocusShotSpeed { get; set; } = 200f;
         public float FocusShotDamage { get; set; } = 15f;
         public int FocusShotsPerOption { get; set; } = 1;

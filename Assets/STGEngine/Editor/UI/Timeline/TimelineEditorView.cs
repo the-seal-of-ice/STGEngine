@@ -5442,6 +5442,7 @@ namespace STGEngine.Editor.UI.Timeline
                 BuildActionParamsUI(props, ae, durField, clipInfoLabel);
             }
 
+            _propertyContent.Clear();
             _propertyContent.Add(props);
             ApplyLightTextTheme(_propertyContent);
         }
@@ -5456,6 +5457,27 @@ namespace STGEngine.Editor.UI.Timeline
             foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
             {
                 if (!prop.CanRead || !prop.CanWrite) continue;
+
+                // Skip CameraScriptParams fields that have dedicated UI sections below
+                if (paramsObj is CameraScriptParams)
+                {
+                    switch (prop.Name)
+                    {
+                        case "Keyframes":
+                        case "BlendIn":
+                        case "BlendOut":
+                        case "ReferenceTarget":
+                        case "FrameMode":
+                        case "TargetId":
+                        case "FixedWorldPosition":
+                        case "BoundaryCenterHeight":
+                        case "ScreenTransition":
+                        case "MotionTransition":
+                        case "TransitionDuration":
+                            continue;
+                    }
+                }
+
                 var val = prop.GetValue(paramsObj);
 
                 if (prop.PropertyType == typeof(string))
@@ -5763,7 +5785,7 @@ namespace STGEngine.Editor.UI.Timeline
                 refTitle.style.marginBottom = 2;
                 container.Add(refTitle);
 
-                var refTargetField = new EnumField("Target", cspParams.ReferenceTarget);
+                var refTargetField = new EnumField("Reference", cspParams.ReferenceTarget);
                 refTargetField.RegisterValueChangedCallback(e =>
                 {
                     cspParams.ReferenceTarget = (Core.Scene.CameraReferenceTarget)e.newValue;
@@ -5970,6 +5992,39 @@ namespace STGEngine.Editor.UI.Timeline
                             OnStageDataChanged();
                         });
                         kfBox.Add(refOverrideField);
+
+                        // Player aim mode (Persist keyframes)
+                        var aimModeField = new EnumField("Aim Mode", kf.AimMode);
+                        aimModeField.RegisterValueChangedCallback(e =>
+                        {
+                            kf.AimMode = (Core.Scene.PlayerAimMode)e.newValue;
+                            OnStageDataChanged();
+                            rebuildKfList(); // show/hide conditional fields
+                        });
+                        kfBox.Add(aimModeField);
+
+                        if (kf.AimMode == Core.Scene.PlayerAimMode.LockPoint)
+                        {
+                            var aimPosField = new Vector3Field("Aim Position") { value = kf.AimTargetPosition };
+                            aimPosField.RegisterValueChangedCallback(e =>
+                            {
+                                kf.AimTargetPosition = e.newValue;
+                                OnStageDataChanged();
+                            });
+                            kfBox.Add(aimPosField);
+                        }
+
+                        if (kf.AimMode == Core.Scene.PlayerAimMode.LockBoss
+                            || kf.AimMode == Core.Scene.PlayerAimMode.LockEnemy)
+                        {
+                            var aimIdField = new TextField("Aim Target ID") { value = kf.AimTargetId ?? "", isDelayed = true };
+                            aimIdField.RegisterValueChangedCallback(e =>
+                            {
+                                kf.AimTargetId = e.newValue;
+                                OnStageDataChanged();
+                            });
+                            kfBox.Add(aimIdField);
+                        }
 
                         // Delete keyframe button at bottom of each kfBox
                         var removeBtn = new Button(() =>

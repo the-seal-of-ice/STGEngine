@@ -22,6 +22,15 @@ namespace STGEngine.Runtime.Scene
         // 可选：per-keyframe frame provider 解析回调
         private System.Func<CameraKeyframe, ICameraFrameProvider> _perKeyframeResolver;
 
+        // 可选：通过 ID 查找目标 Transform（用于 AimMode 的 LockBoss/LockEnemy）
+        private System.Func<string, Transform> _aimTargetLookup;
+
+        // 可选：查找最近的有效目标（ID 为空时使用）
+        private System.Func<PlayerAimMode, Vector3, Transform> _aimNearestLookup;
+
+        // 当前 persist 的 AimMode（用于目标丢失时重新查找）
+        private PlayerAimMode _currentAimMode = PlayerAimMode.Default;
+
         // 当前演出数据
         private CameraScriptParams _params;
         private float _elapsed;
@@ -72,6 +81,24 @@ namespace STGEngine.Runtime.Scene
         public void SetPerKeyframeResolver(System.Func<CameraKeyframe, ICameraFrameProvider> resolver)
         {
             _perKeyframeResolver = resolver;
+        }
+
+        /// <summary>
+        /// 设置目标查找回调（通过 ID 查找 Transform）。
+        /// 用于 AimMode 的 LockBoss/LockEnemy。
+        /// </summary>
+        public void SetAimTargetLookup(System.Func<string, Transform> lookup)
+        {
+            _aimTargetLookup = lookup;
+        }
+
+        /// <summary>
+        /// 设置最近目标查找回调。参数：(AimMode, 玩家世界位置) → 最近的有效 Transform。
+        /// ID 为空时或目标丢失时自动调用。
+        /// </summary>
+        public void SetAimNearestLookup(System.Func<PlayerAimMode, Vector3, Transform> lookup)
+        {
+            _aimNearestLookup = lookup;
         }
 
         /// <summary>开始播放关键帧序列。</summary>
@@ -160,6 +187,17 @@ namespace STGEngine.Runtime.Scene
                 {
                     _camera.transform.position += ComputeShakeOffset();
                 }
+
+                // Idle 状态下也检查锁定目标丢失（persist 结束后仍在锁定）
+                if (_persistTarget != null && _persistTarget.AimLockTargetLost)
+                {
+                    _persistTarget.AimLockTargetLost = false;
+                    if (_currentAimMode == PlayerAimMode.LockBoss || _currentAimMode == PlayerAimMode.LockEnemy)
+                    {
+                        _persistTarget.AimLockTarget = FindAimTarget(_currentAimMode, "", _persistTarget);
+                    }
+                }
+
                 return;
             }
 
@@ -169,6 +207,17 @@ namespace STGEngine.Runtime.Scene
                 _persistBlendElapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(_persistBlendElapsed / _persistBlendDuration);
                 ApplyPersistValues(t);
+
+                // 检查锁定目标是否丢失，自动重新查找
+                if (_persistTarget != null && _persistTarget.AimLockTargetLost)
+                {
+                    _persistTarget.AimLockTargetLost = false;
+                    if (_currentAimMode == PlayerAimMode.LockBoss || _currentAimMode == PlayerAimMode.LockEnemy)
+                    {
+                        _persistTarget.AimLockTarget = FindAimTarget(_currentAimMode, "", _persistTarget);
+                    }
+                }
+
                 if (t >= 1f)
                     _state = State.Idle;
                 return;
@@ -543,6 +592,9 @@ namespace STGEngine.Runtime.Scene
                 // 回归时关闭偏移移动模式和直接鼠标控制
                 playerCam.UseOffsetForMovement = false;
                 playerCam.DirectMouseControl = false;
+                playerCam.AimLockTarget = null;
+                playerCam.AimLockPoint = null;
+                playerCam.AimScreenCenter = false;
             }
             else if (effectiveTarget == CameraReferenceTarget.Player)
             {
@@ -563,6 +615,9 @@ namespace STGEngine.Runtime.Scene
                 // 启用鼠标直接控制玩家朝向（与相机解耦）
                 playerCam.DirectMouseControl = true;
             }
+
+            // 应用玩家朝向模式
+            ApplyAimMode(playerCam, lastKf);
 
             // blend 时长 = BlendIn + BlendOut
             _persistBlendDuration = scriptParams.BlendIn + scriptParams.BlendOut;
@@ -644,6 +699,61 @@ namespace STGEngine.Runtime.Scene
             _persistTarget.FOV = Mathf.Lerp(_persistStartFov, _persistEndFov, s);
             _persistTarget.PitchOffset = Mathf.Lerp(_persistStartPitchOff, _persistEndPitchOff, s);
             _persistTarget.YawOffset = Mathf.Lerp(_persistStartYawOff, _persistEndYawOff, s);
+        }
+
+        /// <summary>根据关键帧的 AimMode 设置 PlayerCamera 的朝向锁定。</summary>
+        private void ApplyAimMode(STGEngine.Runtime.Player.PlayerCamera playerCam, CameraKeyframe kf)
+        {
+            // 先清除
+            playerCam.AimLockTarget = null;
+            playerCam.AimLockPoint = null;
+            playerCam.AimScreenCenter = false;
+            playerCam.AimLockTargetLost = false;
+            _currentAimMode = kf.AimMode;
+
+            switch (kf.AimMode)
+            {
+                case PlayerAimMode.Default:
+                case PlayerAimMode.FreeMouse:
+                    break;
+
+                case PlayerAimMode.ScreenCenter:
+                    playerCam.AimScreenCenter = true;
+                    break;
+
+                case PlayerAimMode.LockPoint:
+                    playerCam.AimLockPoint = kf.AimTargetPosition;
+                    break;
+
+                case PlayerAimMode.LockBoss:
+                case PlayerAimMode.LockEnemy:
+                    playerCam.AimLockTarget = FindAimTarget(kf.AimMode, kf.AimTargetId, playerCam);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 查找 aim 锁定目标。有 ID 时按 ID 查找，无 ID 时查找最近的有效目标。
+        /// </summary>
+        private Transform FindAimTarget(PlayerAimMode mode, string targetId,
+            STGEngine.Runtime.Player.PlayerCamera playerCam)
+        {
+            // 有 ID 时按 ID 查找
+            if (!string.IsNullOrEmpty(targetId) && _aimTargetLookup != null)
+            {
+                var t = _aimTargetLookup(targetId);
+                if (t != null) return t;
+            }
+
+            // 无 ID 或 ID 查找失败：查找最近的有效目标
+            if (_aimNearestLookup != null)
+            {
+                Vector3 playerPos = playerCam.Target != null
+                    ? playerCam.Target.position : playerCam.transform.position;
+                return _aimNearestLookup(mode, playerPos);
+            }
+
+            return null;
         }
 
         // ── 内部数据 ──

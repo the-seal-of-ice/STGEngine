@@ -98,9 +98,9 @@ namespace STGEngine.Runtime.Player
         /// <summary>
         /// Try to fire bullets from all options.
         /// </summary>
-        public void TryShoot(bool isShooting, bool isFocused, Vector3 forward)
+        public void TryShoot(bool isShooting, bool isFocused, Vector3 forward, float dt)
         {
-            _cooldown -= Time.fixedDeltaTime;
+            _cooldown -= dt;
             if (!isShooting || _cooldown > 0f || _currentOptionCount == 0) return;
 
             float interval = isFocused ? _profile.FocusShotInterval : _profile.ShotInterval;

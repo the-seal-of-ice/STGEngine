@@ -118,6 +118,53 @@ namespace STGEngine.Runtime.Preview
 
                 // Screen transition controller
                 _screenTransition = new ScreenTransitionController(overlayRoot);
+
+                // Aim target lookup for LockBoss/LockEnemy (by ID)
+                _cameraScriptPlayer.SetAimTargetLookup(id =>
+                {
+                    if (_bossPlaceholder != null && _bossPlaceholder.IsVisible)
+                        return _bossPlaceholder.transform;
+                    return null;
+                });
+
+                // Nearest aim target lookup (ID empty or target lost)
+                _cameraScriptPlayer.SetAimNearestLookup((mode, playerPos) =>
+                {
+                    if (mode == Core.Scene.PlayerAimMode.LockBoss)
+                    {
+                        if (_bossPlaceholder != null && _bossPlaceholder.IsVisible)
+                            return _bossPlaceholder.transform;
+                        return null;
+                    }
+
+                    if (mode == Core.Scene.PlayerAimMode.LockEnemy)
+                    {
+                        // 查找最近的可见 EnemyPlaceholder
+                        Transform nearest = null;
+                        float nearestDist = float.MaxValue;
+
+                        var enemies = Object.FindObjectsByType<EnemyPlaceholder>(
+                            FindObjectsSortMode.None);
+                        foreach (var ep in enemies)
+                        {
+                            if (ep == null || !ep.IsVisible) continue;
+                            float dist = Vector3.Distance(playerPos, ep.transform.position);
+                            if (dist < nearestDist)
+                            {
+                                nearestDist = dist;
+                                nearest = ep.transform;
+                            }
+                        }
+
+                        // 没有小怪时 fallback 到 Boss
+                        if (nearest == null && _bossPlaceholder != null && _bossPlaceholder.IsVisible)
+                            nearest = _bossPlaceholder.transform;
+
+                        return nearest;
+                    }
+
+                    return null;
+                });
             }
 
             BuildTitleOverlay();

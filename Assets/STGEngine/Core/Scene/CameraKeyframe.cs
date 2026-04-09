@@ -5,6 +5,25 @@ using STGEngine.Core.Timeline;
 namespace STGEngine.Core.Scene
 {
     /// <summary>
+    /// 玩家朝向/瞄准模式（Persist 关键帧用）。
+    /// </summary>
+    public enum PlayerAimMode
+    {
+        /// <summary>默认：不改变玩家朝向逻辑。</summary>
+        Default,
+        /// <summary>自由鼠标控制：鼠标直接驱动玩家朝向（与相机解耦）。</summary>
+        FreeMouse,
+        /// <summary>锁定屏幕中心：玩家始终朝向相机前方（射击方向=相机朝向）。</summary>
+        ScreenCenter,
+        /// <summary>锁定固定世界坐标点。</summary>
+        LockPoint,
+        /// <summary>锁定 Boss 位置。</summary>
+        LockBoss,
+        /// <summary>锁定指定敌人位置。</summary>
+        LockEnemy
+    }
+
+    /// <summary>
     /// 关键帧持久化模式。
     /// </summary>
     public enum KeyframePersistMode
@@ -69,5 +88,16 @@ namespace STGEngine.Core.Scene
 
         /// <summary>每关键帧边界中心高度覆盖。</summary>
         public float? BoundaryCenterHeightOverride { get; set; }
+
+        // ── 玩家朝向控制（Persist 关键帧用） ──
+
+        /// <summary>玩家朝向/瞄准模式。默认 Default（不改变）。</summary>
+        public PlayerAimMode AimMode { get; set; } = PlayerAimMode.Default;
+
+        /// <summary>LockPoint 模式的目标世界坐标。</summary>
+        public Vector3 AimTargetPosition { get; set; }
+
+        /// <summary>LockBoss/LockEnemy 模式的目标 ID。</summary>
+        public string AimTargetId { get; set; } = "";
     }
 }

@@ -83,16 +83,41 @@ namespace STGEngine.Runtime.Player
         private float _playerPitch;
 
         /// <summary>
+        /// 朝向锁定目标（世界坐标）。设为非 null 时，ViewForward 指向该点。
+        /// 优先级最高，覆盖 DirectMouseControl 和 UseOffsetForMovement。
+        /// </summary>
+        public Transform AimLockTarget { get; set; }
+
+        /// <summary>
+        /// 朝向锁定固定点（世界坐标）。AimLockTarget 为 null 时使用。
+        /// 设为非 null 时，ViewForward 指向该点。
+        /// </summary>
+        public Vector3? AimLockPoint { get; set; }
+
+        /// <summary>
+        /// 为 true 时，ViewForward/ViewRight 使用相机的实际朝向（屏幕中心射击）。
+        /// </summary>
+        public bool AimScreenCenter { get; set; }
+
+        /// <summary>
         /// 为 true 时，ViewForward/ViewRight 使用 effectiveYaw（含 YawOffset），
         /// 使玩家移动方向与相机画面朝向一致。非 Player 参考的 persist 镜头时启用。
         /// </summary>
         public bool UseOffsetForMovement { get; set; }
 
-        /// <summary>视角方向的前方（水平投影，Y=0 归一化）。用于玩家相对移动。</summary>
+        /// <summary>视角方向的前方（水平投影，Y=0 归一化）。用于玩家相对移动和射击方向。</summary>
         public Vector3 ViewForward
         {
             get
             {
+                // 优先级：锁定目标 > 锁定固定点 > 屏幕中心 > 直接鼠标 > 偏移模式 > 默认
+                Vector3? lockDir = GetAimLockDirection();
+                if (lockDir.HasValue)
+                {
+                    var flat = new Vector3(lockDir.Value.x, 0f, lockDir.Value.z);
+                    return flat.sqrMagnitude > 0.001f ? flat.normalized : Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward;
+                }
+                if (AimScreenCenter) return transform.forward;
                 float yaw = DirectMouseControl ? _playerYaw
                           : UseOffsetForMovement ? _yaw + YawOffset
                           : _yaw;
@@ -105,21 +130,108 @@ namespace STGEngine.Runtime.Player
         {
             get
             {
+                Vector3? lockDir = GetAimLockDirection();
+                if (lockDir.HasValue)
+                {
+                    var flat = new Vector3(lockDir.Value.x, 0f, lockDir.Value.z);
+                    if (flat.sqrMagnitude > 0.001f)
+                        return Vector3.Cross(Vector3.up, flat.normalized).normalized;
+                }
+                if (AimScreenCenter) return transform.right;
                 float yaw = DirectMouseControl ? _playerYaw
                           : UseOffsetForMovement ? _yaw + YawOffset
                           : _yaw;
                 return Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
             }
         }
+
+        /// <summary>获取朝向锁定方向（从玩家到目标），无锁定或目标失效时返回 null。</summary>
+        private Vector3? GetAimLockDirection()
+        {
+            Vector3 playerPos = _target != null ? _target.position : transform.position;
+
+            // 检查动态目标是否仍然有效
+            if (AimLockTarget != null)
+            {
+                // Unity 的 == null 检查包含 destroyed 对象
+                if (AimLockTarget == null)
+                {
+                    AimLockTarget = null; // 清除已销毁的引用
+                }
+                else
+                {
+                    // 检查是否是 BossPlaceholder 或 EnemyPlaceholder，验证可见性
+                    bool valid = true;
+                    var boss = AimLockTarget.GetComponent<STGEngine.Runtime.Preview.BossPlaceholder>();
+                    if (boss != null) valid = boss.IsVisible;
+                    else
+                    {
+                        var enemy = AimLockTarget.GetComponent<STGEngine.Runtime.Preview.EnemyPlaceholder>();
+                        if (enemy != null) valid = enemy.IsVisible;
+                    }
+
+                    if (valid)
+                    {
+                        var dir = AimLockTarget.position - playerPos;
+                        return dir.sqrMagnitude > 0.001f ? dir.normalized : (Vector3?)null;
+                    }
+                    else
+                    {
+                        // 目标不再有效，清除并触发重新查找
+                        AimLockTarget = null;
+                        AimLockTargetLost = true;
+                    }
+                }
+            }
+
+            if (AimLockPoint.HasValue)
+            {
+                var dir = AimLockPoint.Value - playerPos;
+                return dir.sqrMagnitude > 0.001f ? dir.normalized : (Vector3?)null;
+            }
+            return null;
+        }
+
+        /// <summary>当锁定目标丢失时设为 true，由 CameraScriptPlayer 检测并重新查找。</summary>
+        public bool AimLockTargetLost { get; set; }
         /// <summary>视角方向的上方（世界 Up）。</summary>
         public Vector3 ViewUp => Vector3.up;
 
-        /// <summary>相机实际朝向（LookAt 玩家后的 forward）。用于射击方向。</summary>
-        public Vector3 AimForward => transform.forward;
-        /// <summary>相机实际右方向。用于浮游炮定位。</summary>
-        public Vector3 AimRight => transform.right;
-        /// <summary>相机实际上方向。用于浮游炮定位。</summary>
-        public Vector3 AimUp => transform.up;
+        /// <summary>
+        /// 射击/瞄准方向。有锁定目标时指向目标，否则使用相机朝向。
+        /// </summary>
+        public Vector3 AimForward
+        {
+            get
+            {
+                Vector3? lockDir = GetAimLockDirection();
+                return lockDir ?? transform.forward;
+            }
+        }
+
+        /// <summary>射击右方向（基于 AimForward）。</summary>
+        public Vector3 AimRight
+        {
+            get
+            {
+                Vector3? lockDir = GetAimLockDirection();
+                if (lockDir.HasValue)
+                    return Vector3.Cross(Vector3.up, lockDir.Value).normalized;
+                return transform.right;
+            }
+        }
+
+        /// <summary>射击上方向（基于 AimForward）。</summary>
+        public Vector3 AimUp
+        {
+            get
+            {
+                Vector3? lockDir = GetAimLockDirection();
+                if (lockDir.HasValue)
+                    return Vector3.Cross(lockDir.Value, AimRight).normalized;
+                return transform.up;
+            }
+        }
 
         public float Yaw => _yaw;
         public float Pitch => _pitch;
@@ -166,6 +278,10 @@ namespace STGEngine.Runtime.Player
             YawOffset = 0f;
             UseOffsetForMovement = false;
             DirectMouseControl = false;
+            AimLockTarget = null;
+            AimLockPoint = null;
+            AimScreenCenter = false;
+            AimLockTargetLost = false;
             _playerYaw = _yaw;
             _playerPitch = _pitch;
         }
