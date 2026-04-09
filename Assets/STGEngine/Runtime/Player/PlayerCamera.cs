@@ -7,9 +7,12 @@ namespace STGEngine.Runtime.Player
     /// 
     /// 相机位置 = 玩家后方 _distance 处 + 世界 Y 轴上移 _heightOffset。
     /// 相机朝向 = LookAt 玩家位置。
-    /// 玩家自然出现在屏幕中心偏下（因为相机在上方看下来）。
     /// 
     /// 鼠标控制视角（yaw/pitch），相机围绕玩家旋转但距离固定。
+    /// 
+    /// Suppressed 模式：CameraScriptPlayer 普通演出期间设为 true，
+    /// PlayerCamera 继续处理鼠标输入（保持 yaw/pitch 更新），
+    /// 但跳过写入 transform——由 CameraScriptPlayer 覆盖。
     /// </summary>
     [AddComponentMenu("STGEngine/Player Camera")]
     public class PlayerCamera : MonoBehaviour
@@ -36,21 +39,22 @@ namespace STGEngine.Runtime.Player
         private float _defaultFov;
         private bool _defaultsCaptured;
 
-        // ── 外部可写属性 ──
+        /// <summary>当前跟随目标。</summary>
+        public Transform Target => _target;
+
+        /// <summary>
+        /// 为 true 时 PlayerCamera 继续处理鼠标输入，但不写入 camera transform。
+        /// CameraScriptPlayer 普通演出期间设为 true，结束后设回 false。
+        /// </summary>
+        public bool Suppressed { get; set; }
+
+        // ── 外部可写属性（保持型镜头用） ──
 
         /// <summary>摄像头距离球体的距离。</summary>
-        public float Distance
-        {
-            get => _distance;
-            set => _distance = value;
-        }
+        public float Distance { get => _distance; set => _distance = value; }
 
         /// <summary>摄像头相对球体的垂直偏移。</summary>
-        public float HeightOffset
-        {
-            get => _heightOffset;
-            set => _heightOffset = value;
-        }
+        public float HeightOffset { get => _heightOffset; set => _heightOffset = value; }
 
         /// <summary>视野角度（直接读写主相机 FOV）。</summary>
         public float FOV
@@ -65,10 +69,48 @@ namespace STGEngine.Runtime.Player
         /// <summary>Yaw 偏移（由保持型镜头叠加）。</summary>
         public float YawOffset { get; set; }
 
+        // ── 只读属性 ──
+
+        /// <summary>
+        /// 为 true 时，鼠标输入驱动玩家自身朝向（独立于相机），
+        /// ViewForward/ViewRight 基于玩家朝向而非相机 yaw。
+        /// 非 Player 参考的 persist 镜头期间启用。
+        /// </summary>
+        public bool DirectMouseControl { get; set; }
+
+        // 玩家自身朝向（DirectMouseControl 模式用）
+        private float _playerYaw;
+        private float _playerPitch;
+
+        /// <summary>
+        /// 为 true 时，ViewForward/ViewRight 使用 effectiveYaw（含 YawOffset），
+        /// 使玩家移动方向与相机画面朝向一致。非 Player 参考的 persist 镜头时启用。
+        /// </summary>
+        public bool UseOffsetForMovement { get; set; }
+
         /// <summary>视角方向的前方（水平投影，Y=0 归一化）。用于玩家相对移动。</summary>
-        public Vector3 ViewForward => Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward;
+        public Vector3 ViewForward
+        {
+            get
+            {
+                float yaw = DirectMouseControl ? _playerYaw
+                          : UseOffsetForMovement ? _yaw + YawOffset
+                          : _yaw;
+                return Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+            }
+        }
+
         /// <summary>视角方向的右方。</summary>
-        public Vector3 ViewRight => Quaternion.Euler(0f, _yaw, 0f) * Vector3.right;
+        public Vector3 ViewRight
+        {
+            get
+            {
+                float yaw = DirectMouseControl ? _playerYaw
+                          : UseOffsetForMovement ? _yaw + YawOffset
+                          : _yaw;
+                return Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
+            }
+        }
         /// <summary>视角方向的上方（世界 Up）。</summary>
         public Vector3 ViewUp => Vector3.up;
 
@@ -122,6 +164,33 @@ namespace STGEngine.Runtime.Player
             if (Camera.main != null) Camera.main.fieldOfView = _defaultFov;
             PitchOffset = 0f;
             YawOffset = 0f;
+            UseOffsetForMovement = false;
+            DirectMouseControl = false;
+            _playerYaw = _yaw;
+            _playerPitch = _pitch;
+        }
+
+        /// <summary>
+        /// 计算当前参数下相机应该在的位置和旋转（不写入 transform）。
+        /// 用于 CameraScriptPlayer 在 blend 期间获取实时的"回归目标"。
+        /// </summary>
+        public (Vector3 position, Quaternion rotation) ComputeGoalPose()
+        {
+            if (_target == null) return (transform.position, transform.rotation);
+
+            float effectivePitch = _pitch + PitchOffset;
+            float effectiveYaw = _yaw + YawOffset;
+
+            var backDir = Quaternion.Euler(effectivePitch, effectiveYaw, 0f) * Vector3.back;
+            var camPos = _target.position + backDir * _distance;
+            camPos.y += _heightOffset;
+
+            var lookDir = _target.position - camPos;
+            var camRot = lookDir.sqrMagnitude > 0.001f
+                ? Quaternion.LookRotation(lookDir)
+                : transform.rotation;
+
+            return (camPos, camRot);
         }
 
         private void LateUpdate()
@@ -130,36 +199,44 @@ namespace STGEngine.Runtime.Player
 
             if (_cursorLocked)
             {
-                _yaw += Input.GetAxis("Mouse X") * _mouseSensitivity;
-                _pitch -= Input.GetAxis("Mouse Y") * _mouseSensitivity;
-                _pitch = Mathf.Clamp(_pitch, _minPitch, _maxPitch);
+                float mx = Input.GetAxis("Mouse X") * _mouseSensitivity;
+                float my = Input.GetAxis("Mouse Y") * _mouseSensitivity;
+
+                if (DirectMouseControl)
+                {
+                    // 鼠标直接驱动玩家自身朝向，相机 yaw/pitch 不变
+                    _playerYaw += mx;
+                    _playerPitch -= my;
+                    _playerPitch = Mathf.Clamp(_playerPitch, _minPitch, _maxPitch);
+                }
+                else
+                {
+                    // 正常模式：鼠标驱动相机绕玩家旋转
+                    _yaw += mx;
+                    _pitch -= my;
+                    _pitch = Mathf.Clamp(_pitch, _minPitch, _maxPitch);
+                }
             }
+
+            // 被抑制时不写 transform——由 CameraScriptPlayer 覆盖
+            if (Suppressed) return;
 
             ApplyTransform();
         }
 
-        /// <summary>
-        /// 相机位置 = 玩家位置 + 沿 pitch/yaw 反方向退 _distance + 世界 Y 轴上移 _heightOffset。
-        /// 相机朝向 = LookAt 玩家位置。
-        /// </summary>
         private void ApplyTransform()
         {
             if (_target == null) return;
 
-            // 叠加保持型镜头的偏移
             float effectivePitch = _pitch + PitchOffset;
             float effectiveYaw = _yaw + YawOffset;
 
-            // 从玩家出发，沿 pitch/yaw 反方向退 _distance
             var backDir = Quaternion.Euler(effectivePitch, effectiveYaw, 0f) * Vector3.back;
             var camPos = _target.position + backDir * _distance;
-
-            // 垂直偏移：相机在玩家上方
             camPos.y += _heightOffset;
 
             transform.position = camPos;
 
-            // LookAt 玩家
             var lookDir = _target.position - camPos;
             if (lookDir.sqrMagnitude > 0.001f)
                 transform.rotation = Quaternion.LookRotation(lookDir);

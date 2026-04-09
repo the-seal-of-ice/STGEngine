@@ -9,6 +9,7 @@ namespace STGEngine.Runtime.Scene
     /// 演出镜头播放器。通过 ActionEvent 驱动，播放关键帧序列并接管相机。
     /// 支持 blendIn/blendOut 平滑过渡和独立的镜头震动。
     /// </summary>
+    [DefaultExecutionOrder(100)] // 在 PlayerCamera (默认 0) 之后执行
     [AddComponentMenu("STGEngine/Scene/CameraScriptPlayer")]
     public class CameraScriptPlayer : MonoBehaviour
     {
@@ -17,6 +18,9 @@ namespace STGEngine.Runtime.Scene
         private State _state = State.Idle;
         private ICameraFrameProvider _frameProvider;
         private Camera _camera;
+
+        // 可选：per-keyframe frame provider 解析回调
+        private System.Func<CameraKeyframe, ICameraFrameProvider> _perKeyframeResolver;
 
         // 当前演出数据
         private CameraScriptParams _params;
@@ -61,12 +65,19 @@ namespace STGEngine.Runtime.Scene
             _camera = Camera.main;
         }
 
+        /// <summary>
+        /// 设置 per-keyframe frame provider 解析器。
+        /// 当关键帧有 ReferenceOverride 时，通过此回调获取对应的 provider。
+        /// </summary>
+        public void SetPerKeyframeResolver(System.Func<CameraKeyframe, ICameraFrameProvider> resolver)
+        {
+            _perKeyframeResolver = resolver;
+        }
+
         /// <summary>开始播放关键帧序列。</summary>
         public void Play(CameraScriptParams scriptParams)
         {
             if (scriptParams == null || scriptParams.Keyframes.Count == 0) return;
-            if (_camera == null) _camera = Camera.main;
-            if (_camera == null) return;
 
             // 检查是否为纯保持型脚本（所有关键帧都是 Persist 或 Revert）
             if (IsPersistOnly(scriptParams))
@@ -74,6 +85,24 @@ namespace STGEngine.Runtime.Scene
                 ApplyPersistScript(scriptParams);
                 return;
             }
+
+            PlayInternal(scriptParams);
+        }
+
+        /// <summary>开始播放关键帧序列，使用指定的 frame provider。</summary>
+        public void Play(CameraScriptParams scriptParams, ICameraFrameProvider overrideProvider)
+        {
+            if (overrideProvider != null)
+                _frameProvider = overrideProvider;
+            Play(scriptParams);
+        }
+
+        /// <summary>内部播放逻辑（普通 Normal 关键帧演出）。</summary>
+        private void PlayInternal(CameraScriptParams scriptParams)
+        {
+            if (scriptParams == null || scriptParams.Keyframes.Count == 0) return;
+            if (_camera == null) _camera = Camera.main;
+            if (_camera == null) return;
 
             _params = scriptParams;
             _elapsed = 0f;
@@ -88,14 +117,6 @@ namespace STGEngine.Runtime.Scene
             DisableActiveController();
 
             _state = scriptParams.BlendIn > 0f ? State.BlendIn : State.Playing;
-        }
-
-        /// <summary>开始播放关键帧序列，使用指定的 frame provider。</summary>
-        public void Play(CameraScriptParams scriptParams, ICameraFrameProvider overrideProvider)
-        {
-            if (overrideProvider != null)
-                _frameProvider = overrideProvider;
-            Play(scriptParams);
         }
 
         /// <summary>触发镜头震动（可与关键帧演出叠加，也可独立使用）。</summary>
@@ -115,7 +136,6 @@ namespace STGEngine.Runtime.Scene
         {
             if (_state == State.PersistBlend)
             {
-                // 中断 persist blend 时，直接跳到终点值
                 ApplyPersistValues(1f);
                 _state = State.Idle;
                 _params = null;
@@ -143,7 +163,7 @@ namespace STGEngine.Runtime.Scene
                 return;
             }
 
-            // 保持型 blend：不接管相机，只插值 PlayerCamera 属性
+            // 保持型 blend：只改 PlayerCamera 属性，PlayerCamera 自己驱动相机
             if (_state == State.PersistBlend)
             {
                 _persistBlendElapsed += Time.deltaTime;
@@ -166,11 +186,15 @@ namespace STGEngine.Runtime.Scene
                 {
                     float t = Mathf.Clamp01(_elapsed / _params.BlendIn);
                     var firstFrame = EvaluateKeyframes(0f);
-                    var worldTarget = LocalToWorld(firstFrame.pos, firstFrame.rot);
+                    var provider0 = GetProviderForKeyframe(firstFrame.segIndex);
+                    var worldTarget = LocalToWorld(firstFrame.pos, firstFrame.rot, provider0);
                     float easedT = ApplyMotionTransition(t, _params.MotionTransition);
-                    targetPos = Vector3.Lerp(_snapshotPos, worldTarget.pos, easedT);
-                    targetRot = Quaternion.Slerp(_snapshotRot, worldTarget.rot, easedT);
-                    targetFov = Mathf.Lerp(_snapshotFov, firstFrame.fov, easedT);
+
+                    // 用 PlayerCamera 的实时目标位置作为 blend 起点（跟随玩家移动）
+                    var blendFrom = GetLivePlayerCameraPose();
+                    targetPos = Vector3.Lerp(blendFrom.pos, worldTarget.pos, easedT);
+                    targetRot = Quaternion.Slerp(blendFrom.rot, worldTarget.rot, easedT);
+                    targetFov = Mathf.Lerp(blendFrom.fov, firstFrame.fov, easedT);
 
                     if (_elapsed >= _params.BlendIn)
                     {
@@ -183,7 +207,8 @@ namespace STGEngine.Runtime.Scene
                 case State.Playing:
                 {
                     var frame = EvaluateKeyframes(_elapsed);
-                    var world = LocalToWorld(frame.pos, frame.rot);
+                    var provider = GetProviderForKeyframe(frame.segIndex);
+                    var world = LocalToWorld(frame.pos, frame.rot, provider);
                     targetPos = world.pos;
                     targetRot = world.rot;
                     targetFov = frame.fov;
@@ -196,7 +221,7 @@ namespace STGEngine.Runtime.Scene
                             _snapshotPos = targetPos;
                             _snapshotRot = targetRot;
                             _snapshotFov = targetFov;
-                            RestoreController();
+                            // 不在这里 RestoreController——BlendOut 期间仍需 suppress
                             _elapsed = 0f;
                             _state = State.BlendOut;
                         }
@@ -213,17 +238,16 @@ namespace STGEngine.Runtime.Scene
                 case State.BlendOut:
                 {
                     float t = Mathf.Clamp01(_elapsed / _params.BlendOut);
-                    // 目标：原控制器此刻应该产生的相机状态（它已被重新启用）
-                    Vector3 restorePos = _camera.transform.position;
-                    Quaternion restoreRot = _camera.transform.rotation;
-                    float restoreFov = _camera.fieldOfView;
 
-                    targetPos = Vector3.Lerp(_snapshotPos, restorePos, SmoothStep(t));
-                    targetRot = Quaternion.Slerp(_snapshotRot, restoreRot, SmoothStep(t));
-                    targetFov = Mathf.Lerp(_snapshotFov, restoreFov, SmoothStep(t));
+                    // 用 PlayerCamera 的实时目标位置作为 blend 终点（跟随玩家移动）
+                    var blendTo = GetLivePlayerCameraPose();
+                    targetPos = Vector3.Lerp(_snapshotPos, blendTo.pos, SmoothStep(t));
+                    targetRot = Quaternion.Slerp(_snapshotRot, blendTo.rot, SmoothStep(t));
+                    targetFov = Mathf.Lerp(_snapshotFov, blendTo.fov, SmoothStep(t));
 
                     if (_elapsed >= _params.BlendOut)
                     {
+                        RestoreController();
                         _state = State.Idle;
                         _params = null;
                         return; // 不再覆写相机
@@ -247,18 +271,36 @@ namespace STGEngine.Runtime.Scene
             _elapsed += Time.deltaTime;
         }
 
+        /// <summary>
+        /// 获取 PlayerCamera 当前帧应该产生的相机位姿（实时跟随玩家）。
+        /// 用于 BlendIn/BlendOut 期间作为动态起点/终点，避免冻结快照导致跳变。
+        /// </summary>
+        private (Vector3 pos, Quaternion rot, float fov) GetLivePlayerCameraPose()
+        {
+            var playerCam = _camera != null
+                ? _camera.GetComponent<STGEngine.Runtime.Player.PlayerCamera>()
+                : null;
+            if (playerCam != null)
+            {
+                var (pos, rot) = playerCam.ComputeGoalPose();
+                return (pos, rot, playerCam.FOV);
+            }
+            // fallback：用当前相机状态
+            return (_camera.transform.position, _camera.transform.rotation, _camera.fieldOfView);
+        }
+
         // ── 关键帧插值 ──
 
-        private (Vector3 pos, Quaternion rot, float fov) EvaluateKeyframes(float time)
+        private (Vector3 pos, Quaternion rot, float fov, int segIndex) EvaluateKeyframes(float time)
         {
             var kfs = _params.Keyframes;
             if (kfs.Count == 1 || time <= kfs[0].Time)
-                return (kfs[0].PositionOffset, kfs[0].Rotation, kfs[0].FOV);
+                return (kfs[0].PositionOffset, kfs[0].Rotation, kfs[0].FOV, 0);
 
             if (time >= kfs[kfs.Count - 1].Time)
             {
                 var last = kfs[kfs.Count - 1];
-                return (last.PositionOffset, last.Rotation, last.FOV);
+                return (last.PositionOffset, last.Rotation, last.FOV, kfs.Count - 1);
             }
 
             // 找到当前区间
@@ -273,23 +315,35 @@ namespace STGEngine.Runtime.Scene
                     Vector3 pos = Vector3.Lerp(kfs[i].PositionOffset, kfs[i + 1].PositionOffset, easedT);
                     Quaternion rot = Quaternion.Slerp(kfs[i].Rotation, kfs[i + 1].Rotation, easedT);
                     float fov = Mathf.Lerp(kfs[i].FOV, kfs[i + 1].FOV, easedT);
-                    return (pos, rot, fov);
+                    return (pos, rot, fov, i);
                 }
             }
 
             var fallback = kfs[kfs.Count - 1];
-            return (fallback.PositionOffset, fallback.Rotation, fallback.FOV);
+            return (fallback.PositionOffset, fallback.Rotation, fallback.FOV, kfs.Count - 1);
+        }
+
+        /// <summary>获取指定关键帧索引对应的 frame provider（支持 per-keyframe 覆盖）。</summary>
+        private ICameraFrameProvider GetProviderForKeyframe(int keyframeIndex)
+        {
+            if (_params == null || _perKeyframeResolver == null) return _frameProvider;
+            var kfs = _params.Keyframes;
+            if (keyframeIndex < 0 || keyframeIndex >= kfs.Count) return _frameProvider;
+            var kf = kfs[keyframeIndex];
+            if (!kf.ReferenceOverride.HasValue) return _frameProvider;
+            var resolved = _perKeyframeResolver(kf);
+            return resolved ?? _frameProvider;
         }
 
         // ── 局部 → 世界坐标转换 ──
 
-        private (Vector3 pos, Quaternion rot) LocalToWorld(Vector3 localOffset, Quaternion localRot)
+        private (Vector3 pos, Quaternion rot) LocalToWorld(Vector3 localOffset, Quaternion localRot, ICameraFrameProvider provider = null)
         {
-            // 每帧实时从 ICameraFrameProvider 取玩家位置和标架
-            Vector3 origin = _frameProvider.PlayerWorldPosition;
-            Vector3 right = _frameProvider.FrameRight;
-            Vector3 up = _frameProvider.FrameUp;
-            Vector3 forward = _frameProvider.FrameForward;
+            var fp = provider ?? _frameProvider;
+            Vector3 origin = fp.PlayerWorldPosition;
+            Vector3 right = fp.FrameRight;
+            Vector3 up = fp.FrameUp;
+            Vector3 forward = fp.FrameForward;
 
             Vector3 worldPos = origin
                 + right   * localOffset.x
@@ -390,13 +444,11 @@ namespace STGEngine.Runtime.Scene
                 return;
             }
 
+            // PlayerCamera：不禁用，改为抑制（保持鼠标输入更新）
             var playerCam = _camera.GetComponent<STGEngine.Runtime.Player.PlayerCamera>();
             if (playerCam != null && playerCam.enabled)
             {
-                // PlayerCamera.OnDisable 会解锁鼠标，禁用后立即重新锁定
-                playerCam.enabled = false;
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
+                playerCam.Suppressed = true;
                 _disabledController = playerCam;
                 return;
             }
@@ -413,12 +465,14 @@ namespace STGEngine.Runtime.Scene
         {
             if (_disabledController != null)
             {
-                _disabledController.enabled = true;
-
-                // PlayerCamera 被禁用时 OnDisable 会解锁鼠标，恢复后需要重新锁定
                 if (_disabledController is STGEngine.Runtime.Player.PlayerCamera playerCam)
                 {
-                    playerCam.SetCursorLock(true);
+                    // 取消抑制，PlayerCamera 下一帧自然接管
+                    playerCam.Suppressed = false;
+                }
+                else
+                {
+                    _disabledController.enabled = true;
                 }
 
                 _disabledController = null;
@@ -439,8 +493,18 @@ namespace STGEngine.Runtime.Scene
         }
 
         /// <summary>
-        /// 启动保持型脚本的渐变过渡：不接管相机，在 BlendIn 时间内
-        /// 平滑插值 PlayerCamera 属性到目标值。PlayerCamera 继续运行。
+        /// 判断 persist 脚本的有效参考对象是否为 Player。
+        /// 只有 Player 参考时才走 PlayerCamera 属性修改路径。
+        /// </summary>
+        private static CameraReferenceTarget GetEffectiveTarget(CameraScriptParams scriptParams)
+        {
+            var lastKf = scriptParams.Keyframes[scriptParams.Keyframes.Count - 1];
+            return lastKf.ReferenceOverride ?? scriptParams.ReferenceTarget;
+        }
+
+        /// <summary>
+        /// 启动保持型脚本。所有 persist/revert 都通过 PersistBlend 修改 PlayerCamera 参数，
+        /// PlayerCamera 始终驱动相机，不接管 transform，零跳变。
         /// </summary>
         private void ApplyPersistScript(CameraScriptParams scriptParams)
         {
@@ -451,6 +515,7 @@ namespace STGEngine.Runtime.Scene
             if (playerCam == null) return;
 
             var lastKf = scriptParams.Keyframes[scriptParams.Keyframes.Count - 1];
+            var effectiveTarget = GetEffectiveTarget(scriptParams);
 
             // 记录起点（当前 PlayerCamera 状态）
             _persistTarget = playerCam;
@@ -463,8 +528,6 @@ namespace STGEngine.Runtime.Scene
             if (lastKf.PersistMode == KeyframePersistMode.Revert)
             {
                 // 回归：终点 = 默认值
-                // RevertToDefaults 会重置，先偷看默认值再恢复
-                // 用一个临时 revert 来获取目标值
                 playerCam.RevertToDefaults();
                 _persistEndDistance = playerCam.Distance;
                 _persistEndHeight = playerCam.HeightOffset;
@@ -477,29 +540,98 @@ namespace STGEngine.Runtime.Scene
                 playerCam.FOV = _persistStartFov;
                 playerCam.PitchOffset = _persistStartPitchOff;
                 playerCam.YawOffset = _persistStartYawOff;
+                // 回归时关闭偏移移动模式和直接鼠标控制
+                playerCam.UseOffsetForMovement = false;
+                playerCam.DirectMouseControl = false;
             }
-            else
+            else if (effectiveTarget == CameraReferenceTarget.Player)
             {
-                // Persist：终点 = 当前值 + 关键帧偏移
+                // Player 参考 Persist：终点 = 当前值 + 关键帧偏移
                 _persistEndDistance = _persistStartDistance + lastKf.PositionOffset.z;
                 _persistEndHeight = _persistStartHeight + lastKf.PositionOffset.y;
                 _persistEndFov = lastKf.FOV > 0f ? lastKf.FOV : _persistStartFov;
                 _persistEndPitchOff = _persistStartPitchOff + lastKf.RotationEuler.x;
                 _persistEndYawOff = _persistStartYawOff + lastKf.RotationEuler.y;
             }
+            else
+            {
+                // 非 Player 参考 Persist：计算目标世界位置，反推为 PlayerCamera 参数变化量
+                var targetWorld = ComputePersistWorldTarget(scriptParams, lastKf);
+                ComputePlayerCameraParamsForTarget(playerCam, targetWorld.pos, targetWorld.rot, lastKf.FOV);
+                // 让玩家移动方向跟随相机朝向（含 YawOffset）
+                playerCam.UseOffsetForMovement = true;
+                // 启用鼠标直接控制玩家朝向（与相机解耦）
+                playerCam.DirectMouseControl = true;
+            }
 
-            // blend 时长 = BlendIn + BlendOut（两段合并为一次平滑过渡）
+            // blend 时长 = BlendIn + BlendOut
             _persistBlendDuration = scriptParams.BlendIn + scriptParams.BlendOut;
             _persistBlendElapsed = 0f;
 
             if (_persistBlendDuration <= 0f)
             {
-                // 无 blend，瞬间应用
                 ApplyPersistValues(1f);
                 return;
             }
 
             _state = State.PersistBlend;
+        }
+
+        /// <summary>用 frame provider 计算 persist 关键帧的世界位置。</summary>
+        private (Vector3 pos, Quaternion rot) ComputePersistWorldTarget(CameraScriptParams scriptParams, CameraKeyframe kf)
+        {
+            // 尝试用 per-keyframe resolver
+            ICameraFrameProvider provider = _frameProvider;
+            if (kf.ReferenceOverride.HasValue && _perKeyframeResolver != null)
+            {
+                var resolved = _perKeyframeResolver(kf);
+                if (resolved != null) provider = resolved;
+            }
+            if (provider == null) provider = _frameProvider;
+            if (provider == null) return (Vector3.zero, Quaternion.identity);
+
+            return LocalToWorld(kf.PositionOffset, kf.Rotation, provider);
+        }
+
+        /// <summary>
+        /// 从目标世界位姿反推 PlayerCamera 参数终点值。
+        /// 不修改 _yaw/_pitch（影响玩家移动方向），用 Offset 补偿。
+        /// </summary>
+        private void ComputePlayerCameraParamsForTarget(
+            STGEngine.Runtime.Player.PlayerCamera playerCam,
+            Vector3 worldPos, Quaternion worldRot, float fov)
+        {
+            if (playerCam.Target == null) return;
+
+            Vector3 playerPos = playerCam.Target.position;
+            Vector3 delta = worldPos - playerPos;
+            Vector3 horizontal = new Vector3(delta.x, 0f, delta.z);
+            float dist = Mathf.Max(0.1f, horizontal.magnitude);
+
+            // 需要的 yaw
+            float neededYaw = horizontal.magnitude > 0.01f
+                ? Mathf.Atan2(horizontal.x, horizontal.z) * Mathf.Rad2Deg + 180f
+                : playerCam.Yaw;
+
+            // 需要的 pitch
+            float neededPitch = worldRot.eulerAngles.x;
+            if (neededPitch > 180f) neededPitch -= 360f;
+
+            // 用 offset 补偿，不改 _yaw/_pitch
+            float yawOff = Mathf.DeltaAngle(playerCam.Yaw, neededYaw);
+            float pitchOff = neededPitch - playerCam.Pitch;
+
+            // heightOffset 扣除 backDir 垂直分量
+            float effPitch = playerCam.Pitch + pitchOff;
+            float effYaw = playerCam.Yaw + yawOff;
+            var backDir = Quaternion.Euler(effPitch, effYaw, 0f) * Vector3.back;
+            float heightOff = delta.y - backDir.y * dist;
+
+            _persistEndDistance = dist;
+            _persistEndHeight = heightOff;
+            _persistEndFov = fov > 0f ? fov : _persistStartFov;
+            _persistEndPitchOff = pitchOff;
+            _persistEndYawOff = yawOff;
         }
 
         /// <summary>按 t (0~1) 插值 PlayerCamera 属性。</summary>

@@ -5951,6 +5951,26 @@ namespace STGEngine.Editor.UI.Timeline
                         });
                         kfBox.Add(persistF);
 
+                        // Per-keyframe reference override
+                        var refOverrideNames = new List<string> { "(Script Default)" };
+                        foreach (Core.Scene.CameraReferenceTarget rt in System.Enum.GetValues(typeof(Core.Scene.CameraReferenceTarget)))
+                            refOverrideNames.Add(rt.ToString());
+                        int refOverrideIdx = kf.ReferenceOverride.HasValue
+                            ? refOverrideNames.IndexOf(kf.ReferenceOverride.Value.ToString())
+                            : 0;
+                        var refOverrideField = new PopupField<string>("Ref Override", refOverrideNames, refOverrideIdx);
+                        refOverrideField.RegisterValueChangedCallback(e =>
+                        {
+                            int sel = refOverrideNames.IndexOf(e.newValue);
+                            if (sel <= 0)
+                                kf.ReferenceOverride = null;
+                            else
+                                kf.ReferenceOverride = (Core.Scene.CameraReferenceTarget)System.Enum.Parse(
+                                    typeof(Core.Scene.CameraReferenceTarget), e.newValue);
+                            OnStageDataChanged();
+                        });
+                        kfBox.Add(refOverrideField);
+
                         // Delete keyframe button at bottom of each kfBox
                         var removeBtn = new Button(() =>
                         {

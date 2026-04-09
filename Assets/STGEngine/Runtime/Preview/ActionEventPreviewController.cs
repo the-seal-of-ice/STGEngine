@@ -100,6 +100,22 @@ namespace STGEngine.Runtime.Preview
                 _editorCameraFrame = new EditorCameraFrame(_freeCam);
                 _cameraScriptPlayer.Initialize(_editorCameraFrame);
 
+                // Per-keyframe frame provider resolver
+                _cameraScriptPlayer.SetPerKeyframeResolver(kf =>
+                {
+                    if (!kf.ReferenceOverride.HasValue) return null;
+                    // 构造一个临时 CameraScriptParams 来复用 ResolveEditorFrameProvider
+                    var tempParams = new CameraScriptParams
+                    {
+                        ReferenceTarget = kf.ReferenceOverride.Value,
+                        FrameMode = kf.FrameModeOverride ?? Core.Scene.CameraFrameMode.SplineAxes,
+                        TargetId = kf.TargetIdOverride ?? "",
+                        FixedWorldPosition = kf.FixedPositionOverride ?? UnityEngine.Vector3.zero,
+                        BoundaryCenterHeight = kf.BoundaryCenterHeightOverride ?? 8f
+                    };
+                    return ResolveEditorFrameProvider(tempParams);
+                });
+
                 // Screen transition controller
                 _screenTransition = new ScreenTransitionController(overlayRoot);
             }

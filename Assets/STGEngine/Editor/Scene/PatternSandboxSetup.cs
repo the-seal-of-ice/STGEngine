@@ -1417,6 +1417,7 @@ namespace STGEngine.Editor.Scene
                     var ep = go.AddComponent<EnemyPlaceholder>();
 
                     // Try to load EnemyType from catalog for visuals + health
+                    // Use Override path so edited Health values are picked up
                     var meshType = MeshType.Diamond;
                     var color = new Color(0.3f, 0.8f, 1f); // Default cyan
                     float scale = 0.8f;
@@ -1424,7 +1425,8 @@ namespace STGEngine.Editor.Scene
 
                     if (_catalog != null)
                     {
-                        var etPath = _catalog.GetEnemyTypePath(enemy.EnemyTypeId);
+                        var etPath = OverrideManager.ResolveEnemyTypePath(
+                            _catalog, wd.ContextId, enemy.EnemyTypeId);
                         if (System.IO.File.Exists(etPath))
                         {
                             try

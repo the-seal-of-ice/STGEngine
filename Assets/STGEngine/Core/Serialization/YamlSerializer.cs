@@ -824,6 +824,11 @@ namespace STGEngine.Core.Serialization
         {
             if (value == null) return null;
 
+            // Nullable<T> → unwrap and convert to T
+            var underlying = Nullable.GetUnderlyingType(targetType);
+            if (underlying != null)
+                return ConvertToType(value, underlying);
+
             // String scalar → primitive conversion
             if (value is string s)
             {

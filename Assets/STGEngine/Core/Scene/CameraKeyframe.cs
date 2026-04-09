@@ -51,5 +51,23 @@ namespace STGEngine.Core.Scene
 
         /// <summary>持久化模式。默认 Normal（普通演出关键帧）。</summary>
         public KeyframePersistMode PersistMode { get; set; } = KeyframePersistMode.Normal;
+
+        /// <summary>
+        /// 每关键帧参考对象覆盖。为 null 时使用脚本级别的 ReferenceTarget。
+        /// 设为具体值时，该关键帧使用独立的参考对象。
+        /// </summary>
+        public CameraReferenceTarget? ReferenceOverride { get; set; }
+
+        /// <summary>每关键帧参考对象的标架模式覆盖。</summary>
+        public CameraFrameMode? FrameModeOverride { get; set; }
+
+        /// <summary>每关键帧 Boss/Enemy 目标 ID 覆盖。</summary>
+        public string TargetIdOverride { get; set; }
+
+        /// <summary>每关键帧固定世界坐标覆盖。</summary>
+        public Vector3? FixedPositionOverride { get; set; }
+
+        /// <summary>每关键帧边界中心高度覆盖。</summary>
+        public float? BoundaryCenterHeightOverride { get; set; }
     }
 }
