@@ -1,0 +1,17 @@
+{
+  "name": "STGEngine.TestRuntime",
+  "rootNamespace": "STGEngine.TestRuntime",
+  "references": [
+    "STGEngine.Core",
+    "STGEngine.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
