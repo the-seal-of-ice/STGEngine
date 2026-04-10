@@ -1,0 +1,17 @@
+{
+  "name": "STGEngine.Tests.Shared",
+  "rootNamespace": "STGEngine.Tests.Shared",
+  "references": [
+    "STGEngine.Core",
+    "STGEngine.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

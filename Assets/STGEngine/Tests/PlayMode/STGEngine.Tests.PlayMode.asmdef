@@ -1,0 +1,26 @@
+{
+  "name": "STGEngine.Tests.PlayMode",
+  "rootNamespace": "STGEngine.Tests.PlayMode",
+  "references": [
+    "STGEngine.Core",
+    "STGEngine.Runtime",
+    "STGEngine.TestRuntime",
+    "STGEngine.Tests.Shared"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

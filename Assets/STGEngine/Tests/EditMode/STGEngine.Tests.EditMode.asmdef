@@ -1,0 +1,29 @@
+{
+  "name": "STGEngine.Tests.EditMode",
+  "rootNamespace": "STGEngine.Tests.EditMode",
+  "references": [
+    "STGEngine.Core",
+    "STGEngine.Runtime",
+    "STGEngine.Editor",
+    "STGEngine.TestRuntime",
+    "STGEngine.Tests.Shared"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
