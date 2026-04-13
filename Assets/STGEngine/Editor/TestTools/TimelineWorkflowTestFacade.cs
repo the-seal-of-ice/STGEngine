@@ -11,15 +11,18 @@ namespace STGEngine.Editor.TestTools
 
     public static class TimelineWorkflowTestFacade
     {
+        private const string DefaultSegmentId = "segment-default";
+
         public static TimelineWorkflowRequest CreateWorkflowRequest(string segmentId)
         {
+            var stableSegmentId = string.IsNullOrWhiteSpace(segmentId) ? DefaultSegmentId : segmentId;
             return new TimelineWorkflowRequest
             {
-                SegmentId = segmentId,
+                SegmentId = stableSegmentId,
                 Status = "Prepared",
-                RequestName = $"timeline-workflow-{segmentId}",
+                RequestName = $"timeline-workflow-{stableSegmentId}",
                 WorkflowName = "TimelinePreview",
-                EntryClipName = $"{segmentId}-entry"
+                EntryClipName = $"{stableSegmentId}-entry"
             };
         }
     }
