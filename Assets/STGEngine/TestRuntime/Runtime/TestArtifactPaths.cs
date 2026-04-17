@@ -26,12 +26,12 @@ namespace STGEngine.TestRuntime.Runtime
 
         public static string GetSnapshotPath(string testName)
         {
-            return GetWorkflowSnapshotPath(testName);
+            return Path.Combine(GetSuiteDirectory(testName), "snapshot.json");
         }
 
         public static string GetScreenshotPath(string testName)
         {
-            return Path.Combine(GetSuiteDirectory(testName), "workflow-screenshot.png");
+            return Path.Combine(GetSuiteDirectory(testName), "screenshot.png");
         }
 
         private static string Sanitize(string value)
