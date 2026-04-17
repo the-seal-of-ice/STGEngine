@@ -15,7 +15,7 @@ namespace STGEngine.Tests.PlayMode.Camera
         {
             var cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
-            var camera = cameraObject.AddComponent<Camera>();
+            var camera = cameraObject.AddComponent<UnityEngine.Camera>();
             camera.fieldOfView = 55f;
 
             var player = new GameObject("Player");
@@ -30,7 +30,7 @@ namespace STGEngine.Tests.PlayMode.Camera
             playerComponent.Play(script);
             yield return null;
 
-            Assert.That(camera.transform.position, Is.EqualTo(new Vector3(11f, 22f, 33f)).Using(Vector3ComparerWithEqualsOperator.Instance));
+            Assert.That(Vector3.Distance(camera.transform.position, new Vector3(11f, 22f, 33f)), Is.LessThan(0.001f));
             Assert.That(camera.transform.rotation.eulerAngles.y, Is.EqualTo(90f).Within(0.5f));
             Assert.That(camera.fieldOfView, Is.EqualTo(42f).Within(0.01f));
             Assert.That(playerComponent.IsActive, Is.False);
@@ -44,7 +44,7 @@ namespace STGEngine.Tests.PlayMode.Camera
 
             var cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
-            var camera = cameraObject.AddComponent<Camera>();
+            var camera = cameraObject.AddComponent<UnityEngine.Camera>();
             var playerCamera = cameraObject.AddComponent<STGEngine.Runtime.Player.PlayerCamera>();
             playerCamera.SetTarget(player.transform);
 
