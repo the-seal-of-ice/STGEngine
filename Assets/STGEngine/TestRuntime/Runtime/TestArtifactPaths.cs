@@ -19,6 +19,11 @@ namespace STGEngine.TestRuntime.Runtime
             return Path.Combine(GetSuiteDirectory(testName), "result.json");
         }
 
+        public static string GetWorkflowSnapshotPath(string testName)
+        {
+            return Path.Combine(GetSuiteDirectory(testName), "workflow-snapshot.json");
+        }
+
         public static string GetSnapshotPath(string testName)
         {
             return Path.Combine(GetSuiteDirectory(testName), "snapshot.json");

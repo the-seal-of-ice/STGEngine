@@ -14,5 +14,10 @@ namespace STGEngine.TestRuntime.Results
                 Directory.CreateDirectory(dir);
             File.WriteAllText(path, json, Encoding.UTF8);
         }
+
+        public static void WriteWorkflowSnapshot(string path, TestWorkflowSnapshot snapshot)
+        {
+            WriteJson(path, snapshot);
+        }
     }
 }

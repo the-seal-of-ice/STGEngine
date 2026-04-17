@@ -25,6 +25,12 @@ namespace STGEngine.TestRuntime.Results
 
         public void AddStep(string step) => Record.Steps.Add(step);
 
+        public void SetSnapshotPath(string snapshotPath) => Record.SnapshotPath = snapshotPath;
+
+        public void SetScreenshotPath(string screenshotPath) => Record.ScreenshotPath = screenshotPath;
+
+        public void AddAttachment(string attachmentPath) => Record.Attachments.Add(attachmentPath);
+
         public void MarkPassed()
         {
             Record.Status = "Passed";
