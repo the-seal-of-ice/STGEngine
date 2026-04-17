@@ -10,19 +10,44 @@ namespace STGEngine.Tests.PlayMode.Camera
 {
     public class CameraScriptWorkflowTests
     {
+        private readonly System.Collections.Generic.List<GameObject> _created = new();
+
+        private GameObject Create(string name)
+        {
+            var go = new GameObject(name);
+            _created.Add(go);
+            return go;
+        }
+
+        [UnitySetUp]
+        public IEnumerator SetUp()
+        {
+            // 销毁场景中已有的 MainCamera，避免 Camera.main 指向错误对象
+            foreach (var cam in GameObject.FindGameObjectsWithTag("MainCamera"))
+                Object.DestroyImmediate(cam);
+            yield return null;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            foreach (var go in _created)
+                if (go != null) Object.DestroyImmediate(go);
+            _created.Clear();
+        }
+
         [UnityTest]
         public IEnumerator CameraScriptPlayer_Play_AppliesFirstKeyframeWorldPose()
         {
-            var cameraObject = new GameObject("Main Camera");
+            var cameraObject = Create("Main Camera");
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.AddComponent<UnityEngine.Camera>();
             camera.fieldOfView = 55f;
 
-            var player = new GameObject("Player");
+            var player = Create("Player");
             player.transform.position = new Vector3(10f, 20f, 30f);
 
-            var host = new GameObject("CameraScriptHost");
-            var playerComponent = host.AddComponent<CameraScriptPlayer>();
+            var playerComponent = cameraObject.AddComponent<CameraScriptPlayer>();
             playerComponent.Initialize(new StaticFrameProvider(player.transform.position, Vector3.right, Vector3.up, Vector3.forward));
 
             var script = CreateSingleFrameScript(new Vector3(1f, 2f, 3f), Quaternion.Euler(0f, 90f, 0f), 42f);
@@ -48,17 +73,16 @@ namespace STGEngine.Tests.PlayMode.Camera
         [UnityTest]
         public IEnumerator CameraScriptPlayer_Play_SuppressesPlayerCameraAndRestoresAfterCompletion()
         {
-            var player = new GameObject("Player");
+            var player = Create("Player");
             player.transform.position = Vector3.zero;
 
-            var cameraObject = new GameObject("Main Camera");
+            var cameraObject = Create("Main Camera");
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.AddComponent<UnityEngine.Camera>();
             var playerCamera = cameraObject.AddComponent<STGEngine.Runtime.Player.PlayerCamera>();
             playerCamera.SetTarget(player.transform);
 
-            var host = new GameObject("CameraScriptHost");
-            var playerComponent = host.AddComponent<CameraScriptPlayer>();
+            var playerComponent = cameraObject.AddComponent<CameraScriptPlayer>();
             playerComponent.Initialize(new StaticFrameProvider(player.transform.position, Vector3.right, Vector3.up, Vector3.forward));
 
             var script = CreateSingleFrameScript(new Vector3(0f, 1f, 5f), Quaternion.identity, 40f);
