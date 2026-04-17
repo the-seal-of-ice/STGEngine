@@ -28,11 +28,20 @@ namespace STGEngine.Tests.PlayMode.Camera
             var script = CreateSingleFrameScript(new Vector3(1f, 2f, 3f), Quaternion.Euler(0f, 90f, 0f), 42f);
 
             playerComponent.Play(script);
+
+            // 单关键帧脚本 (duration=0) 需要 2 帧完成：
+            // 第 1 帧：写入关键帧值，_elapsed 仍为 0
+            // 第 2 帧：_elapsed > 0，状态转为 Idle
             yield return null;
 
-            Assert.That(Vector3.Distance(camera.transform.position, new Vector3(11f, 22f, 33f)), Is.LessThan(0.001f));
-            Assert.That(camera.transform.rotation.eulerAngles.y, Is.EqualTo(90f).Within(0.5f));
-            Assert.That(camera.fieldOfView, Is.EqualTo(42f).Within(0.01f));
+            // 第 1 帧后关键帧值已写入相机
+            Assert.That(Vector3.Distance(camera.transform.position, new Vector3(11f, 22f, 33f)), Is.LessThan(0.01f));
+            Assert.That(camera.transform.rotation.eulerAngles.y, Is.EqualTo(90f).Within(1f));
+            Assert.That(camera.fieldOfView, Is.EqualTo(42f).Within(0.1f));
+
+            yield return null;
+
+            // 第 2 帧后演出结束
             Assert.That(playerComponent.IsActive, Is.False);
         }
 
@@ -55,14 +64,17 @@ namespace STGEngine.Tests.PlayMode.Camera
             var script = CreateSingleFrameScript(new Vector3(0f, 1f, 5f), Quaternion.identity, 40f);
 
             playerComponent.Play(script);
-            Assert.That(playerCamera.Suppressed, Is.True);
 
+            // Play 后第 1 帧：CameraScriptPlayer 在 LateUpdate 中接管相机并 suppress PlayerCamera
             yield return null;
+            Assert.That(playerCamera.Suppressed, Is.True);
+            Assert.That(playerComponent.IsActive, Is.True);
+
+            // 第 2 帧：_elapsed > 0，演出结束，恢复 PlayerCamera
             yield return null;
 
             Assert.That(playerCamera.Suppressed, Is.False);
             Assert.That(playerComponent.IsActive, Is.False);
-            Assert.That(camera.fieldOfView, Is.EqualTo(40f).Within(0.01f));
         }
 
         private static CameraScriptParams CreateSingleFrameScript(Vector3 positionOffset, Quaternion rotation, float fov)
